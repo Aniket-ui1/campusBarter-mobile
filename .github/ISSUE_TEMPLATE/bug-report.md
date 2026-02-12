@@ -4,6 +4,7 @@ about: Report a bug in the app
 title: '[BUG] '
 labels: bug
 assignees: ''
+
 ---
 
 **Description**
