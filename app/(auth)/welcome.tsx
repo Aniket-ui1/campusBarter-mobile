@@ -3,14 +3,42 @@ import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import {
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    View,
+} from 'react-native';
+import Animated, {
+    FadeInDown,
+} from 'react-native-reanimated';
 
 const FEATURES = [
-  { icon: 'book-outline', title: 'Post Skills', desc: 'Share what you can teach' },
-  { icon: 'search-outline', title: 'Find Help', desc: 'Browse student offerings' },
-  { icon: 'repeat-outline', title: 'Exchange', desc: 'Trade with time credits' },
-  { icon: 'star-outline', title: 'Build Rep', desc: 'Earn ratings & reviews' },
+  {
+    icon: 'book-outline',
+    title: 'Post Skills',
+    desc: 'Share what you can teach',
+    tint: 'rgba(59,130,246,0.12)',
+  },
+  {
+    icon: 'search-outline',
+    title: 'Find Help',
+    desc: 'Browse student offerings',
+    tint: 'rgba(16,185,129,0.12)',
+  },
+  {
+    icon: 'repeat-outline',
+    title: 'Exchange',
+    desc: 'Trade with time credits',
+    tint: 'rgba(234,179,8,0.15)',
+  },
+  {
+    icon: 'star-outline',
+    title: 'Build Rep',
+    desc: 'Earn ratings & reviews',
+    tint: 'rgba(168,85,247,0.15)',
+  },
 ];
 
 export default function WelcomeScreen() {
@@ -20,7 +48,7 @@ export default function WelcomeScreen() {
     <View style={styles.container}>
       <View style={styles.statusSpacer} />
 
-      {/* Soft glow background */}
+      {/* Stronger glow background */}
       <View style={styles.blobTopLeft} />
       <View style={styles.blobBottomRight} />
 
@@ -30,61 +58,89 @@ export default function WelcomeScreen() {
         style={styles.header}
       >
         <View style={styles.logoCircle}>
-          <Ionicons name="globe-outline" size={34} color={AppColors.primary} />
+          <Ionicons
+            name="globe-outline"
+            size={32}
+            color={AppColors.primary}
+          />
         </View>
 
-        <Text style={styles.title}>Welcome to Campus Barter</Text>
-        <Text style={styles.subtitle}>Trade skills, not cash</Text>
+        <Text style={styles.title}>
+          Turn Your Skills Into Opportunity
+        </Text>
+        <Text style={styles.subtitle}>
+          Connect. Teach. Learn. Grow.
+        </Text>
       </Animated.View>
 
-      {/* Features */}
-      <Animated.View
-        entering={FadeInDown.delay(250).duration(600)}
-        style={styles.grid}
-      >
+      {/* Feature Cards with stagger + interaction */}
+      <View style={styles.grid}>
         {FEATURES.map((feature, index) => (
           <Animated.View
             key={feature.title}
-            entering={FadeInDown.delay(350 + index * 100).duration(500)}
-            style={styles.card}
+            entering={FadeInDown.delay(250 + index * 120).duration(600)}
+            style={{ width: '48%' }}
           >
-            <View style={styles.iconWrapper}>
-              <Ionicons
-                name={feature.icon as any}
-                size={20}
-                color={AppColors.primary}
-              />
-            </View>
+            <Pressable
+              style={({ pressed }) => [
+                styles.card,
+                pressed && styles.cardPressed,
+              ]}
+            >
+              <View
+                style={[
+                  styles.iconWrapper,
+                  { backgroundColor: feature.tint },
+                ]}
+              >
+                <Ionicons
+                  name={feature.icon as any}
+                  size={20}
+                  color={AppColors.primary}
+                />
+              </View>
 
-            <Text style={styles.cardTitle}>{feature.title}</Text>
-            <Text style={styles.cardDesc}>{feature.desc}</Text>
+              <Text style={styles.cardTitle}>
+                {feature.title}
+              </Text>
+
+              <Text style={styles.cardDesc}>
+                {feature.desc}
+              </Text>
+            </Pressable>
           </Animated.View>
         ))}
-      </Animated.View>
+      </View>
 
-      {/* CTA Buttons */}
+      {/* CTA Section */}
       <Animated.View
-        entering={FadeInDown.delay(700).duration(600)}
+        entering={FadeInDown.delay(800).duration(600)}
         style={styles.ctaSection}
       >
         <Button
-          title="Sign In"
-          onPress={() => router.push('/(auth)/sign-in')}
+          title="Create Account"
+          onPress={() =>
+            router.push('/(auth)/register-step1')
+          }
           fullWidth
           size="lg"
         />
 
         <Pressable
-          onPress={() => router.push('/(auth)/register-step1')}
-          style={styles.createButton}
+          onPress={() =>
+            router.push('/(auth)/sign-in')
+          }
+          style={styles.secondaryBtn}
         >
-          <Text style={styles.createText}>Create Account</Text>
+          <Text style={styles.secondaryText}>
+            Already have an account? Sign In
+          </Text>
         </Pressable>
       </Animated.View>
 
-      {/* Footer Links */}
+      {/* Footer */}
       <Animated.View
-        entering={FadeInDown.delay(850).duration(400)}
+        entering={FadeInDown.delay(950).duration(400)}
         style={styles.footer}
       >
         <Pressable onPress={() => router.push('/terms')}>
@@ -108,17 +164,16 @@ export default function WelcomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: AppColors.background,
+    paddingHorizontal: Spacing.xl,
 
-container: {
-  flex: 1,
-  backgroundColor: AppColors.background,
-  paddingHorizontal: Spacing.xl,
-
-  // Constrain width in web preview
-  maxWidth: 480,
-  width: '100%',
-  alignSelf: 'center',
-},
+    // Web preview constraint
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
+  },
 
   statusSpacer: {
     height: Platform.OS === 'ios' ? 60 : 40,
@@ -126,22 +181,22 @@ container: {
 
   blobTopLeft: {
     position: 'absolute',
-    top: -120,
+    top: -100,
     left: -80,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: 'rgba(107,143,113,0.08)',
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: 'rgba(107,143,113,0.16)',
   },
 
   blobBottomRight: {
     position: 'absolute',
     bottom: -100,
     right: -60,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(52,86,53,0.08)',
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(52,86,53,0.14)',
   },
 
   header: {
@@ -160,15 +215,11 @@ container: {
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.lg,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
     elevation: 6,
   },
 
   title: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '900',
     color: AppColors.text,
     textAlign: 'center',
@@ -176,7 +227,7 @@ container: {
   },
 
   subtitle: {
-    fontSize: 15,
+    fontSize: 14,
     color: AppColors.textSecondary,
     textAlign: 'center',
   },
@@ -190,24 +241,23 @@ container: {
   },
 
   card: {
-    width: '48%',
     backgroundColor: AppColors.surface,
     borderRadius: Radii.lg,
     padding: Spacing.md,
     borderWidth: 1,
     borderColor: AppColors.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
     elevation: 4,
+  },
+
+  cardPressed: {
+    transform: [{ scale: 0.96 }],
+    opacity: 0.9,
   },
 
   iconWrapper: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: AppColors.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.sm,
@@ -231,12 +281,12 @@ container: {
     marginBottom: Spacing.lg,
   },
 
-  createButton: {
+  secondaryBtn: {
     alignItems: 'center',
     marginTop: Spacing.sm,
   },
 
-  createText: {
+  secondaryText: {
     fontSize: 14,
     color: AppColors.primary,
     fontWeight: '600',
