@@ -10,9 +10,7 @@ import {
     Text,
     View,
 } from 'react-native';
-import Animated, {
-    FadeInDown,
-} from 'react-native-reanimated';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 const FEATURES = [
   {
@@ -20,24 +18,28 @@ const FEATURES = [
     title: 'Post Skills',
     desc: 'Share what you can teach',
     tint: 'rgba(59,130,246,0.12)',
+    iconColor: '#3B82F6', // blue
   },
   {
     icon: 'search-outline',
     title: 'Find Help',
     desc: 'Browse student offerings',
     tint: 'rgba(16,185,129,0.12)',
+    iconColor: '#10B981', // green
   },
   {
     icon: 'repeat-outline',
     title: 'Exchange',
     desc: 'Trade with time credits',
     tint: 'rgba(234,179,8,0.15)',
+    iconColor: '#EAB308', // amber
   },
   {
     icon: 'star-outline',
     title: 'Build Rep',
     desc: 'Earn ratings & reviews',
     tint: 'rgba(168,85,247,0.15)',
+    iconColor: '#A855F7', // purple
   },
 ];
 
@@ -66,14 +68,14 @@ export default function WelcomeScreen() {
         </View>
 
         <Text style={styles.title}>
-          Campus Barter
+          Turn Your Skills Into Opportunity
         </Text>
         <Text style={styles.subtitle}>
-          Trade skills, not cash.
+          Connect. Teach. Learn. Grow.
         </Text>
       </Animated.View>
 
-      {/* Feature Cards with stagger + interaction */}
+      {/* Feature Cards */}
       <View style={styles.grid}>
         {FEATURES.map((feature, index) => (
           <Animated.View
@@ -96,7 +98,7 @@ export default function WelcomeScreen() {
                 <Ionicons
                   name={feature.icon as any}
                   size={20}
-                  color={AppColors.primary}
+                  color={feature.iconColor}
                 />
               </View>
 
@@ -168,8 +170,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: AppColors.background,
     paddingHorizontal: Spacing.xl,
-
-    // Web preview constraint
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',
