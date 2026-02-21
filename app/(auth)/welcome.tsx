@@ -14,32 +14,32 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 const FEATURES = [
   {
-    icon: 'book-outline',
+    icon: 'book',
     title: 'Post Skills',
     desc: 'Share what you can teach',
-    tint: 'rgba(59,130,246,0.12)',
-    iconColor: '#3B82F6', // blue
+    tint: 'rgba(59,130,246,0.15)',
+    iconColor: '#3B82F6',
   },
   {
-    icon: 'search-outline',
+    icon: 'search',
     title: 'Find Help',
     desc: 'Browse student offerings',
-    tint: 'rgba(16,185,129,0.12)',
-    iconColor: '#10B981', // green
+    tint: 'rgba(16,185,129,0.15)',
+    iconColor: '#10B981',
   },
   {
-    icon: 'repeat-outline',
+    icon: 'swap-horizontal',
     title: 'Exchange',
     desc: 'Trade with time credits',
-    tint: 'rgba(234,179,8,0.15)',
-    iconColor: '#EAB308', // amber
+    tint: 'rgba(234,179,8,0.18)',
+    iconColor: '#EAB308',
   },
   {
-    icon: 'star-outline',
+    icon: 'star',
     title: 'Build Rep',
     desc: 'Earn ratings & reviews',
-    tint: 'rgba(168,85,247,0.15)',
-    iconColor: '#A855F7', // purple
+    tint: 'rgba(168,85,247,0.18)',
+    iconColor: '#A855F7',
   },
 ];
 
@@ -49,19 +49,16 @@ export default function WelcomeScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.statusSpacer} />
-
-      {/* Stronger glow background */}
       <View style={styles.blobTopLeft} />
       <View style={styles.blobBottomRight} />
 
-      {/* Header */}
       <Animated.View
         entering={FadeInDown.delay(100).duration(600)}
         style={styles.header}
       >
         <View style={styles.logoCircle}>
           <Ionicons
-            name="globe-outline"
+            name="globe"
             size={32}
             color={AppColors.primary}
           />
@@ -75,7 +72,6 @@ export default function WelcomeScreen() {
         </Text>
       </Animated.View>
 
-      {/* Feature Cards */}
       <View style={styles.grid}>
         {FEATURES.map((feature, index) => (
           <Animated.View
@@ -97,7 +93,7 @@ export default function WelcomeScreen() {
               >
                 <Ionicons
                   name={feature.icon as any}
-                  size={20}
+                  size={22}
                   color={feature.iconColor}
                 />
               </View>
@@ -114,7 +110,6 @@ export default function WelcomeScreen() {
         ))}
       </View>
 
-      {/* CTA Section */}
       <Animated.View
         entering={FadeInDown.delay(800).duration(600)}
         style={styles.ctaSection}
@@ -140,7 +135,6 @@ export default function WelcomeScreen() {
         </Pressable>
       </Animated.View>
 
-      {/* Footer */}
       <Animated.View
         entering={FadeInDown.delay(950).duration(400)}
         style={styles.footer}
@@ -255,9 +249,9 @@ const styles = StyleSheet.create({
   },
 
   iconWrapper: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.sm,
