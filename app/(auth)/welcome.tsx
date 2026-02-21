@@ -66,10 +66,10 @@ export default function WelcomeScreen() {
         </View>
 
         <Text style={styles.title}>
-          Turn Your Skills Into Opportunity
+          Campus Barter
         </Text>
         <Text style={styles.subtitle}>
-          Connect. Teach. Learn. Grow.
+          Trade skills, not cash.
         </Text>
       </Animated.View>
 
