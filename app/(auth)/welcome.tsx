@@ -108,11 +108,17 @@ export default function WelcomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: AppColors.background,
-    paddingHorizontal: Spacing.xl,
-  },
+
+container: {
+  flex: 1,
+  backgroundColor: AppColors.background,
+  paddingHorizontal: Spacing.xl,
+
+  // Constrain width in web preview
+  maxWidth: 480,
+  width: '100%',
+  alignSelf: 'center',
+},
 
   statusSpacer: {
     height: Platform.OS === 'ios' ? 60 : 40,
