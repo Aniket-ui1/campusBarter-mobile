@@ -1,6 +1,5 @@
 import { Button } from '@/components/ui/Button';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import {
@@ -14,32 +13,24 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 const FEATURES = [
   {
-    icon: 'book',
+    icon: '📋',
     title: 'Post Skills',
     desc: 'Share what you can teach',
-    tint: 'rgba(59,130,246,0.15)',
-    iconColor: '#3B82F6',
   },
   {
-    icon: 'search',
+    icon: '🔍',
     title: 'Find Help',
     desc: 'Browse student offerings',
-    tint: 'rgba(16,185,129,0.15)',
-    iconColor: '#10B981',
   },
   {
-    icon: 'swap-horizontal',
+    icon: '🤝',
     title: 'Exchange',
     desc: 'Trade with time credits',
-    tint: 'rgba(234,179,8,0.18)',
-    iconColor: '#EAB308',
   },
   {
-    icon: 'star',
+    icon: '⭐',
     title: 'Build Rep',
     desc: 'Earn ratings & reviews',
-    tint: 'rgba(168,85,247,0.18)',
-    iconColor: '#A855F7',
   },
 ];
 
@@ -52,16 +43,13 @@ export default function WelcomeScreen() {
       <View style={styles.blobTopLeft} />
       <View style={styles.blobBottomRight} />
 
+      {/* Header */}
       <Animated.View
         entering={FadeInDown.delay(100).duration(600)}
         style={styles.header}
       >
         <View style={styles.logoCircle}>
-          <Ionicons
-            name="globe"
-            size={32}
-            color={AppColors.primary}
-          />
+          <Text style={{ fontSize: 32 }}>🌐</Text>
         </View>
 
         <Text style={styles.title}>
@@ -72,6 +60,7 @@ export default function WelcomeScreen() {
         </Text>
       </Animated.View>
 
+      {/* Features */}
       <View style={styles.grid}>
         {FEATURES.map((feature, index) => (
           <Animated.View
@@ -85,17 +74,10 @@ export default function WelcomeScreen() {
                 pressed && styles.cardPressed,
               ]}
             >
-              <View
-                style={[
-                  styles.iconWrapper,
-                  { backgroundColor: feature.tint },
-                ]}
-              >
-                <Ionicons
-                  name={feature.icon as any}
-                  size={22}
-                  color={feature.iconColor}
-                />
+              <View style={styles.iconWrapper}>
+                <Text style={styles.emojiIcon}>
+                  {feature.icon}
+                </Text>
               </View>
 
               <Text style={styles.cardTitle}>
@@ -110,6 +92,7 @@ export default function WelcomeScreen() {
         ))}
       </View>
 
+      {/* CTA */}
       <Animated.View
         entering={FadeInDown.delay(800).duration(600)}
         style={styles.ctaSection}
@@ -135,6 +118,7 @@ export default function WelcomeScreen() {
         </Pressable>
       </Animated.View>
 
+      {/* Footer */}
       <Animated.View
         entering={FadeInDown.delay(950).duration(400)}
         style={styles.footer}
@@ -249,12 +233,17 @@ const styles = StyleSheet.create({
   },
 
   iconWrapper: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: 12,
+    backgroundColor: AppColors.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.sm,
+  },
+
+  emojiIcon: {
+    fontSize: 20,
   },
 
   cardTitle: {
