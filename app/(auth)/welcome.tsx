@@ -20,16 +20,20 @@ export default function WelcomeScreen() {
     <View style={styles.container}>
       <View style={styles.statusSpacer} />
 
+      {/* Soft glow background */}
+      <View style={styles.blobTopLeft} />
+      <View style={styles.blobBottomRight} />
+
       {/* Header */}
       <Animated.View
         entering={FadeInDown.delay(100).duration(600)}
         style={styles.header}
       >
         <View style={styles.logoCircle}>
-          <Ionicons name="globe-outline" size={36} color={AppColors.primary} />
+          <Ionicons name="globe-outline" size={34} color={AppColors.primary} />
         </View>
 
-        <Text style={styles.title}>Welcome to Campus Barter!</Text>
+        <Text style={styles.title}>Welcome to Campus Barter</Text>
         <Text style={styles.subtitle}>Trade skills, not cash</Text>
       </Animated.View>
 
@@ -47,7 +51,7 @@ export default function WelcomeScreen() {
             <View style={styles.iconWrapper}>
               <Ionicons
                 name={feature.icon as any}
-                size={22}
+                size={20}
                 color={AppColors.primary}
               />
             </View>
@@ -58,7 +62,7 @@ export default function WelcomeScreen() {
         ))}
       </Animated.View>
 
-      {/* Buttons */}
+      {/* CTA Buttons */}
       <Animated.View
         entering={FadeInDown.delay(700).duration(600)}
         style={styles.ctaSection}
@@ -114,10 +118,30 @@ const styles = StyleSheet.create({
     height: Platform.OS === 'ios' ? 60 : 40,
   },
 
+  blobTopLeft: {
+    position: 'absolute',
+    top: -120,
+    left: -80,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: 'rgba(107,143,113,0.08)',
+  },
+
+  blobBottomRight: {
+    position: 'absolute',
+    bottom: -100,
+    right: -60,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(52,86,53,0.08)',
+  },
+
   header: {
     alignItems: 'center',
-    marginTop: Spacing['3xl'],
-    marginBottom: Spacing['3xl'],
+    marginTop: Spacing['2xl'],
+    marginBottom: Spacing['2xl'],
   },
 
   logoCircle: {
@@ -125,15 +149,20 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     backgroundColor: AppColors.surface,
+    borderWidth: 1,
+    borderColor: AppColors.border,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.lg,
-    borderWidth: 1,
-    borderColor: AppColors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
   },
 
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '900',
     color: AppColors.text,
     textAlign: 'center',
@@ -141,7 +170,7 @@ const styles = StyleSheet.create({
   },
 
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: AppColors.textSecondary,
     textAlign: 'center',
   },
@@ -150,23 +179,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    gap: Spacing.md,
-    marginBottom: Spacing['3xl'],
+    rowGap: Spacing.lg,
+    marginBottom: Spacing['2xl'],
   },
 
   card: {
     width: '48%',
     backgroundColor: AppColors.surface,
     borderRadius: Radii.lg,
-    padding: Spacing.lg,
+    padding: Spacing.md,
     borderWidth: 1,
     borderColor: AppColors.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
 
   iconWrapper: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: AppColors.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
@@ -183,11 +217,12 @@ const styles = StyleSheet.create({
   cardDesc: {
     fontSize: 12,
     color: AppColors.textSecondary,
+    lineHeight: 18,
   },
 
   ctaSection: {
-    gap: Spacing.md,
-    marginBottom: Spacing.xl,
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
   },
 
   createButton: {
