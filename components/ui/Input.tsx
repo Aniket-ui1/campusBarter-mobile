@@ -1,19 +1,23 @@
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import React, { useState } from 'react';
 import {
+    Platform,
     StyleSheet,
     Text,
     TextInput,
     View,
+    type StyleProp,
     type TextInputProps,
-    type ViewStyle
+    type TextStyle,
+    type ViewStyle,
 } from 'react-native';
 
-type Props = TextInputProps & {
+type Props = Omit<TextInputProps, 'style'> & {
   label?: string;
   error?: string;
   icon?: React.ReactNode;
   containerStyle?: ViewStyle;
+  style?: StyleProp<TextStyle>;
 };
 
 export function Input({
@@ -40,6 +44,7 @@ export function Input({
         {icon && <View style={styles.iconWrap}>{icon}</View>}
 
         <TextInput
+          {...rest}
           style={[styles.input, style]}
           placeholderTextColor={AppColors.textMuted}
           underlineColorAndroid="transparent"
@@ -51,7 +56,6 @@ export function Input({
             setFocused(false);
             rest.onBlur?.(e);
           }}
-          {...rest}
         />
       </View>
 
@@ -61,7 +65,9 @@ export function Input({
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 6 },
+  container: {
+    gap: 6,
+  },
 
   label: {
     color: AppColors.textSecondary,
@@ -74,11 +80,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: AppColors.surface,
-    borderWidth: 1, // was 1.5 (too harsh)
+    borderWidth: 1,
     borderColor: AppColors.border,
     borderRadius: Radii.md,
     paddingHorizontal: Spacing.lg,
-    transitionDuration: '150ms' as any,
   },
 
   inputFocused: {
@@ -103,6 +108,13 @@ const styles = StyleSheet.create({
     color: AppColors.text,
     fontSize: 15,
     paddingVertical: 14,
+
+    // 🔥 Remove ugly browser focus outline (Web only)
+    ...(Platform.OS === 'web'
+      ? ({
+          outlineStyle: 'none',
+        } as any)
+      : {}),
   },
 
   error: {
