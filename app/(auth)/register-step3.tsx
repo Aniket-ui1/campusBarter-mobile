@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import StepProgress from '@/components/ui/StepProgress';
 import { AppColors, Spacing } from '@/constants/theme';
 import { useAuth, type SignUpData } from '@/context/AuthContext';
@@ -7,15 +6,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
+    Keyboard,
     KeyboardAvoidingView,
     Platform,
     Pressable,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
+    TouchableWithoutFeedback,
     View,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function RegisterStep3() {
   const router = useRouter();
@@ -58,12 +59,15 @@ export default function RegisterStep3() {
     }
   };
 
-  return (
+  const content = (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.statusSpacer} />
 
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
@@ -72,17 +76,15 @@ export default function RegisterStep3() {
 
         <StepProgress currentStep={3} />
 
-        <Animated.View entering={FadeInDown.duration(400)}>
-          <Text style={styles.step}>Step 3 of 3</Text>
-          <Text style={styles.title}>Almost there!</Text>
-          <Text style={styles.subtitle}>
-            Add a bio and accept our policies.
-          </Text>
-        </Animated.View>
+        <Text style={styles.step}>Step 3 of 3</Text>
+        <Text style={styles.title}>Almost there!</Text>
+        <Text style={styles.subtitle}>
+          Add a bio and accept our policies.
+        </Text>
 
         <View style={styles.form}>
 
-          {/* 🔥 PROFILE PHOTO SECTION (RESTORED) */}
+          {/* Profile Photo Section */}
           <View style={styles.avatarSection}>
             <Pressable style={styles.avatarCircle}>
               <Ionicons
@@ -95,17 +97,19 @@ export default function RegisterStep3() {
               Add a profile photo (optional)
             </Text>
           </View>
-          <Input
-            label="Bio (optional)"
+
+          {/* Bio */}
+          <TextInput
+            style={[styles.input, { minHeight: 100 }]}
             placeholder="Tell students about yourself..."
+            placeholderTextColor="#888"
             value={bio}
             onChangeText={setBio}
             multiline
-            numberOfLines={3}
-            style={{ minHeight: 80, textAlignVertical: 'top' }}
-             />
+            textAlignVertical="top"
+          />
 
-          {/* Terms checkbox */}
+          {/* Terms */}
           <Pressable
             style={styles.termsRow}
             onPress={() => setAgreedTerms(!agreedTerms)}
@@ -117,7 +121,7 @@ export default function RegisterStep3() {
               ]}
             >
               {agreedTerms && (
-                <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                <Ionicons name="checkmark" size={14} color="#fff" />
               )}
             </View>
 
@@ -154,6 +158,18 @@ export default function RegisterStep3() {
       </ScrollView>
     </KeyboardAvoidingView>
   );
+
+  // Web → no wrapper
+  if (Platform.OS === 'web') {
+    return content;
+  }
+
+  // Mobile → dismiss keyboard on tap
+  return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      {content}
+    </TouchableWithoutFeedback>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -174,7 +190,6 @@ const styles = StyleSheet.create({
   step: {
     fontSize: 12,
     color: AppColors.primary,
-    fontWeight: '600',
     marginBottom: 6,
   },
 
@@ -182,7 +197,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '900',
     color: AppColors.text,
-    marginBottom: Spacing.xs,
   },
 
   subtitle: {
@@ -191,11 +205,11 @@ const styles = StyleSheet.create({
     marginBottom: Spacing['3xl'],
   },
 
-  form: { gap: Spacing.xl },
+  form: { gap: 20 },
 
   avatarSection: {
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: 8,
   },
 
   avatarCircle: {
@@ -215,10 +229,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
+  input: {
+    borderWidth: 1,
+    borderColor: AppColors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: AppColors.text,
+  },
+
   termsRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: Spacing.md,
+    gap: 12,
   },
 
   checkbox: {
@@ -229,7 +252,7 @@ const styles = StyleSheet.create({
     borderColor: AppColors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 1,
+    marginTop: 2,
   },
 
   checkboxChecked: {
@@ -252,6 +275,5 @@ const styles = StyleSheet.create({
   errorText: {
     color: AppColors.error,
     fontSize: 13,
-    fontWeight: '500',
   },
 });

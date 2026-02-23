@@ -1,5 +1,3 @@
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import StepProgress from '@/components/ui/StepProgress';
 import { PROGRAMS, SEMESTERS } from '@/constants/categories';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
@@ -8,15 +6,17 @@ import { Picker } from '@react-native-picker/picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
+    Keyboard,
     KeyboardAvoidingView,
     Platform,
     Pressable,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
+    TouchableWithoutFeedback,
     View,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function RegisterStep2() {
   const router = useRouter();
@@ -40,18 +40,22 @@ export default function RegisterStep2() {
 
   const handleNext = () => {
     if (!validate()) return;
+
     router.push({
       pathname: '/(auth)/register-step3',
       params: { ...params, displayName, program, major, semester },
     });
   };
 
-  return (
+  const content = (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.statusSpacer} />
 
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
@@ -61,30 +65,26 @@ export default function RegisterStep2() {
 
         <StepProgress currentStep={2} />
 
-        <Animated.View entering={FadeInDown.duration(400)}>
-          <Text style={styles.step}>Step 2 of 3</Text>
-          <Text style={styles.title}>Academic Info</Text>
-          <Text style={styles.subtitle}>
-            Help us verify your campus identity.
-          </Text>
-        </Animated.View>
+        <Text style={styles.step}>Step 2 of 3</Text>
+        <Text style={styles.title}>Academic Info</Text>
+        <Text style={styles.subtitle}>
+          Help us verify your campus identity.
+        </Text>
 
         <View style={styles.form}>
-          <Input
-            label="Full Name"
-            placeholder="Your name"
+          {/* Full Name */}
+          <TextInput
+            style={styles.input}
+            placeholder="Full Name"
+            placeholderTextColor="#888"
             value={displayName}
             onChangeText={setDisplayName}
-            error={errors.displayName}
-            icon={
-              <Ionicons
-                name="person-outline"
-                size={18}
-                color={AppColors.textMuted}
-              />
-            }
           />
+          {errors.displayName && (
+            <Text style={styles.error}>{errors.displayName}</Text>
+          )}
 
+          {/* Program Chips */}
           <View style={{ gap: 6 }}>
             <Text style={styles.label}>Program</Text>
             <View style={styles.chipGrid}>
@@ -113,29 +113,27 @@ export default function RegisterStep2() {
             )}
           </View>
 
-          <Input
-            label="Major / Focus Area"
-            placeholder="e.g. Full-Stack, UI/UX"
+          {/* Major */}
+          <TextInput
+            style={styles.input}
+            placeholder="Major / Focus Area"
+            placeholderTextColor="#888"
             value={major}
             onChangeText={setMajor}
-            error={errors.major}
-            icon={
-              <Ionicons
-                name="school-outline"
-                size={18}
-                color={AppColors.textMuted}
-              />
-            }
           />
+          {errors.major && (
+            <Text style={styles.error}>{errors.major}</Text>
+          )}
 
+          {/* Semester Picker */}
           <View style={{ gap: 6 }}>
             <Text style={styles.label}>Semester</Text>
 
-            <View style={styles.dropdownWrapper}>
+            <View style={styles.pickerWrapper}>
               <Picker
                 selectedValue={semester}
-                onValueChange={(itemValue: string | number) =>
-                  setSemester(String(itemValue))
+                onValueChange={(value) =>
+                  setSemester(String(value))
                 }
                 style={styles.picker}
               >
@@ -155,81 +153,91 @@ export default function RegisterStep2() {
             )}
           </View>
 
-          <Button title="Continue" onPress={handleNext} fullWidth size="lg" />
+          <Pressable style={styles.button} onPress={handleNext}>
+            <Text style={styles.buttonText}>Continue</Text>
+          </Pressable>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
+  );
+
+  // ✅ Web: no Touchable wrapper
+  if (Platform.OS === 'web') {
+    return content;
+  }
+
+  // ✅ Mobile: tap outside dismisses keyboard
+  return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      {content}
+    </TouchableWithoutFeedback>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: AppColors.background },
-  scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40 },
-  statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
+
+  scroll: {
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: 40,
+  },
+
+  statusSpacer: {
+    height: Platform.OS === 'ios' ? 54 : 36,
+  },
+
   backBtn: {
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: AppColors.surface,
-    paddingHorizontal: 12,
     flexDirection: 'row',
-    gap: 6,
-    alignSelf: 'flex-start',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
     marginBottom: Spacing.xl,
   },
+
   backText: {
     color: AppColors.text,
-    fontSize: 14,
     fontWeight: '600',
   },
-  avatarSection: {
-  alignItems: 'center',
-  marginBottom: Spacing.lg,
-},
-
-avatarCircle: {
-  width: 90,
-  height: 90,
-  borderRadius: 45,
-  backgroundColor: AppColors.surface,
-  borderWidth: 2,
-  borderColor: AppColors.border,
-  borderStyle: 'dashed',
-  alignItems: 'center',
-  justifyContent: 'center',
-},
-
-avatarHint: {
-  marginTop: 8,
-  color: AppColors.textMuted,
-  fontSize: 13,
-},
 
   step: {
     fontSize: 12,
     color: AppColors.primary,
-    fontWeight: '600',
     marginBottom: 6,
   },
+
   title: {
     fontSize: 28,
     fontWeight: '900',
     color: AppColors.text,
-    marginBottom: Spacing.xs,
   },
+
   subtitle: {
     fontSize: 15,
     color: AppColors.textSecondary,
     marginBottom: Spacing['3xl'],
   },
-  form: { gap: Spacing.xl },
+
+  form: { gap: 16 },
+
+  input: {
+    height: 50,
+    borderWidth: 1,
+    borderColor: AppColors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    color: AppColors.text,
+  },
+
   label: {
     color: AppColors.textSecondary,
-    fontSize: 13,
     fontWeight: '500',
   },
-  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+
+  chipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -238,29 +246,45 @@ avatarHint: {
     borderColor: AppColors.border,
     backgroundColor: AppColors.surface,
   },
+
   chipActive: {
     backgroundColor: AppColors.primary,
     borderColor: AppColors.primary,
   },
+
   chipText: {
     color: AppColors.textSecondary,
-    fontSize: 13,
-    fontWeight: '500',
   },
+
   chipTextActive: {
-    color: '#FFFFFF',
+    color: '#fff',
     fontWeight: '700',
   },
-  dropdownWrapper: {
+
+  pickerWrapper: {
     borderWidth: 1,
     borderColor: AppColors.border,
-    borderRadius: Radii.md,
+    borderRadius: 10,
     backgroundColor: AppColors.surface,
   },
+
   picker: {
-    height: 50,
     width: '100%',
   },
+
+  button: {
+    height: 50,
+    backgroundColor: AppColors.primary,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  buttonText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+
   error: {
     color: AppColors.error,
     fontSize: 12,

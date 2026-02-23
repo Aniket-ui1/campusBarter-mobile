@@ -1,23 +1,24 @@
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import StepProgress from '@/components/ui/StepProgress';
 import { AppColors, Spacing } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
+    Keyboard,
     KeyboardAvoidingView,
     Platform,
     Pressable,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
+    TouchableWithoutFeedback,
     View,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function RegisterStep1() {
   const router = useRouter();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -25,28 +26,38 @@ export default function RegisterStep1() {
 
   const validate = () => {
     const e: Record<string, string> = {};
+
     if (!email.toLowerCase().endsWith('@edu.sait.ca'))
       e.email = 'Must be a SAIT student email (@edu.sait.ca)';
-    if (password.length < 8) e.password = 'Minimum 8 characters';
-    if (password !== confirm) e.confirm = 'Passwords do not match';
+
+    if (password.length < 8)
+      e.password = 'Minimum 8 characters';
+
+    if (password !== confirm)
+      e.confirm = 'Passwords do not match';
+
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
   const handleNext = () => {
     if (!validate()) return;
+
     router.push({
       pathname: '/(auth)/register-step2',
       params: { email, password },
     });
   };
 
-  return (
+  const content = (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.statusSpacer} />
 
         <Pressable
@@ -59,85 +70,81 @@ export default function RegisterStep1() {
 
         <StepProgress currentStep={1} />
 
-        <Animated.View entering={FadeInDown.duration(500)}>
-          <Text style={styles.step}>Step 1 of 3</Text>
-          <Text style={styles.title}>Create your account</Text>
-          <Text style={styles.subtitle}>
-            Start with your email and a secure password.
-          </Text>
-        </Animated.View>
+        <Text style={styles.step}>Step 1 of 3</Text>
+        <Text style={styles.title}>Create your account</Text>
+        <Text style={styles.subtitle}>
+          Start with your email and a secure password.
+        </Text>
 
         <View style={styles.form}>
-          <Input
-            label="Email"
+          <TextInput
+            style={styles.input}
             placeholder="you@edu.sait.ca"
+            placeholderTextColor="#888"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
             autoCapitalize="none"
-            error={errors.email}
-            icon={
-              <Ionicons
-                name="mail-outline"
-                size={18}
-                color={AppColors.textMuted}
-              />
-            }
           />
+          {errors.email && <Text style={styles.error}>{errors.email}</Text>}
 
-          <Input
-            label="Password"
+          <TextInput
+            style={styles.input}
             placeholder="Min 8 characters"
+            placeholderTextColor="#888"
             value={password}
             onChangeText={setPassword}
             secureTextEntry
-            error={errors.password}
-            icon={
-              <Ionicons
-                name="lock-closed-outline"
-                size={18}
-                color={AppColors.textMuted}
-              />
-            }
           />
+          {errors.password && <Text style={styles.error}>{errors.password}</Text>}
 
-          <Input
-            label="Confirm Password"
+          <TextInput
+            style={styles.input}
             placeholder="Re-enter password"
+            placeholderTextColor="#888"
             value={confirm}
             onChangeText={setConfirm}
             secureTextEntry
-            error={errors.confirm}
-            icon={
-              <Ionicons
-                name="shield-checkmark-outline"
-                size={18}
-                color={AppColors.textMuted}
-              />
-            }
           />
+          {errors.confirm && <Text style={styles.error}>{errors.confirm}</Text>}
 
-          <Button title="Continue" onPress={handleNext} fullWidth size="lg" />
+          <Pressable style={styles.button} onPress={handleNext}>
+            <Text style={styles.buttonText}>Continue</Text>
+          </Pressable>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
+
+  // ✅ Web should NOT use TouchableWithoutFeedback
+  if (Platform.OS === 'web') {
+    return content;
+  }
+
+  // ✅ Mobile uses it so tapping outside dismisses keyboard
+  return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      {content}
+    </TouchableWithoutFeedback>
+  );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: AppColors.background },
-  scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40 },
-  statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
+  container: {
+    flex: 1,
+    backgroundColor: AppColors.background,
+  },
+  scroll: {
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: 40,
+  },
+  statusSpacer: {
+    height: Platform.OS === 'ios' ? 54 : 36,
+  },
   backBtn: {
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: AppColors.surface,
-    paddingHorizontal: 12,
     flexDirection: 'row',
-    gap: 6,
-    alignSelf: 'flex-start',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
     marginBottom: Spacing.xl,
   },
   backText: {
@@ -155,12 +162,37 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '900',
     color: AppColors.text,
-    marginBottom: Spacing.xs,
+    marginBottom: 6,
   },
   subtitle: {
     fontSize: 15,
     color: AppColors.textSecondary,
     marginBottom: Spacing['3xl'],
   },
-  form: { gap: Spacing.xl },
+  form: {
+    gap: 16,
+  },
+  input: {
+    height: 50,
+    borderWidth: 1,
+    borderColor: AppColors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    color: AppColors.text,
+  },
+  button: {
+    height: 50,
+    backgroundColor: AppColors.primary,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  error: {
+    color: AppColors.error,
+    fontSize: 12,
+  },
 });
