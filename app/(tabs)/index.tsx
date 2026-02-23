@@ -1,3 +1,4 @@
+
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
@@ -135,6 +136,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: Spacing.lg,
+
   },
   sectionTitle: { fontSize: 20, fontWeight: '800', color: AppColors.text },
   seeAll: { fontSize: 13, color: AppColors.primary, fontWeight: '600' },

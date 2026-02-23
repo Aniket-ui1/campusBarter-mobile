@@ -77,6 +77,7 @@ export default function ChatWindowScreen() {
                     disabled={!message.trim()}
                     onPress={() => { setMessage(''); }}>
                     <Ionicons name="send" size={20} color={message.trim() ? '#FFFFFF' : AppColors.textMuted} />
+
                 </Pressable>
             </View>
         </KeyboardAvoidingView>
@@ -138,4 +139,5 @@ const styles = StyleSheet.create({
         alignItems: 'center', justifyContent: 'center',
     },
     sendBtnDisabled: { backgroundColor: AppColors.surface },
+
 });

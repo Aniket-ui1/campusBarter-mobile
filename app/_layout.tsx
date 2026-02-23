@@ -2,10 +2,10 @@ import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
-
 import { AppColors } from '@/constants/theme';
 import { AuthProvider } from '@/context/AuthContext';
 import { OnboardingProvider } from '@/context/OnboardingContext';
+
 
 const CampusBarterTheme = {
   ...DefaultTheme,
