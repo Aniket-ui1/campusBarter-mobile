@@ -1,18 +1,20 @@
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    KeyboardAvoidingView,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableWithoutFeedback,
+  View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -56,12 +58,11 @@ export default function SignInScreen() {
     }
   };
 
-  return (
+  const content = (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* Background Glow */}
       <View style={styles.backgroundGlow} />
 
       <ScrollView
@@ -71,12 +72,10 @@ export default function SignInScreen() {
       >
         <View style={styles.statusSpacer} />
 
-        {/* Back Button */}
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={20} color={AppColors.text} />
         </Pressable>
 
-        {/* Logo */}
         <Animated.View
           entering={FadeInDown.delay(100).duration(500)}
           style={styles.logoSection}
@@ -86,7 +85,6 @@ export default function SignInScreen() {
           </View>
         </Animated.View>
 
-        {/* Card */}
         <Animated.View
           entering={FadeInDown.delay(200).duration(500)}
           style={styles.card}
@@ -110,41 +108,33 @@ export default function SignInScreen() {
           )}
 
           <View style={styles.form}>
-            <Input
-              label="Email"
+            {/* Email */}
+            <TextInput
+              style={styles.input}
               placeholder="your@edu.sait.ca"
+              placeholderTextColor="#888"
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
-              autoComplete="email"
-              error={errors.email}
-              icon={
-                <Ionicons
-                  name="mail-outline"
-                  size={18}
-                  color={AppColors.textMuted}
-                />
-              }
             />
+            {errors.email && (
+              <Text style={styles.errorText}>{errors.email}</Text>
+            )}
 
+            {/* Password */}
             <View>
-              <Input
-                label="Password"
+              <TextInput
+                style={styles.input}
                 placeholder="Enter your password"
+                placeholderTextColor="#888"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
-                autoComplete="password"
-                error={errors.password}
-                icon={
-                  <Ionicons
-                    name="lock-closed-outline"
-                    size={18}
-                    color={AppColors.textMuted}
-                  />
-                }
               />
+              {errors.password && (
+                <Text style={styles.errorText}>{errors.password}</Text>
+              )}
 
               <Pressable
                 style={styles.eyeBtn}
@@ -199,6 +189,18 @@ export default function SignInScreen() {
         </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
+  );
+
+  // Web → no wrapper
+  if (Platform.OS === 'web') {
+    return content;
+  }
+
+  // Mobile → tap outside dismiss keyboard
+  return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      {content}
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -258,10 +260,6 @@ const styles = StyleSheet.create({
     backgroundColor: AppColors.surface,
     borderRadius: Radii.lg,
     padding: Spacing.xl,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
     elevation: 8,
   },
 
@@ -284,6 +282,15 @@ const styles = StyleSheet.create({
     gap: Spacing.xl,
   },
 
+  input: {
+    height: 50,
+    borderWidth: 1,
+    borderColor: AppColors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    color: AppColors.text,
+  },
+
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -302,10 +309,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  errorText: {
+    color: AppColors.error,
+    fontSize: 12,
+  },
+
   eyeBtn: {
     position: 'absolute',
     right: 14,
-    top: 40,
+    top: 14,
   },
 
   forgotRow: {
