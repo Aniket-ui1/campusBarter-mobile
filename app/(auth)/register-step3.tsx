@@ -67,6 +67,7 @@ export default function RegisterStep3() {
 
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={22} color={AppColors.text} />
+          <Text style={styles.backText}>Go Back</Text>
         </Pressable>
 
         <StepProgress currentStep={3} />
@@ -129,13 +130,21 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40 },
   statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
   backBtn: {
-    width: 40,
     height: 40,
     borderRadius: 12,
     backgroundColor: AppColors.surface,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    gap: 6,
+    alignSelf: 'flex-start',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.xl,
+  },
+  backText: {
+    color: AppColors.text,
+    fontSize: 14,
+    fontWeight: '600',
   },
   step: {
     fontSize: 12,
