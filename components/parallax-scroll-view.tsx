@@ -1,5 +1,5 @@
 import type { PropsWithChildren, ReactElement } from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, {
   interpolate,
   useAnimatedRef,
@@ -7,15 +7,13 @@ import Animated, {
   useScrollOffset,
 } from 'react-native-reanimated';
 
-import { ThemedView } from '@/components/themed-view';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useThemeColor } from '@/hooks/use-theme-color';
+import { AppColors } from '@/constants/theme';
 
-const HEADER_HEIGHT = 250;
+const HEADER_HEIGHT = 220;
 
 type Props = PropsWithChildren<{
   headerImage: ReactElement;
-  headerBackgroundColor: { dark: string; light: string };
+  headerBackgroundColor?: { dark: string; light: string };
 }>;
 
 export default function ParallaxScrollView({
@@ -23,8 +21,6 @@ export default function ParallaxScrollView({
   headerImage,
   headerBackgroundColor,
 }: Props) {
-  const backgroundColor = useThemeColor({}, 'background');
-  const colorScheme = useColorScheme() ?? 'light';
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollOffset = useScrollOffset(scrollRef);
   const headerAnimatedStyle = useAnimatedStyle(() => {
@@ -44,36 +40,49 @@ export default function ParallaxScrollView({
     };
   });
 
+  const bgColor = headerBackgroundColor?.dark ?? AppColors.forest;
+
   return (
     <Animated.ScrollView
       ref={scrollRef}
-      style={{ backgroundColor, flex: 1 }}
+      style={{ backgroundColor: AppColors.dark, flex: 1 }}
       scrollEventThrottle={16}>
       <Animated.View
         style={[
           styles.header,
-          { backgroundColor: headerBackgroundColor[colorScheme] },
+          { backgroundColor: bgColor },
           headerAnimatedStyle,
         ]}>
+        {/* Glow blob overlay */}
+        <View style={styles.glowBlob} />
         {headerImage}
       </Animated.View>
-      <ThemedView style={styles.content}>{children}</ThemedView>
+      <View style={styles.content}>{children}</View>
     </Animated.ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   header: {
     height: HEADER_HEIGHT,
     overflow: 'hidden',
+    position: 'relative',
+  },
+  glowBlob: {
+    position: 'absolute',
+    top: -40,
+    left: -40,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(107,143,113,0.15)',
+    // Note: filter/blur not supported in RN — this just adds a subtle tinted circle
   },
   content: {
     flex: 1,
-    padding: 32,
+    padding: 24,
     gap: 16,
     overflow: 'hidden',
+    backgroundColor: AppColors.dark,
   },
 });

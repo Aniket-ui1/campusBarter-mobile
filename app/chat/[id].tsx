@@ -1,73 +1,83 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
-import { useData } from '../../context/DataContext';
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { Avatar } from '@/components/ui/Avatar';
+import { useAuth } from '@/context/AuthContext';
+import { MOCK_MESSAGES, MOCK_CHAT_THREADS } from '@/data/mock';
 
-export default function ChatScreen() {
-    const { id } = useLocalSearchParams();
-    const { getChatById, sendMessage } = useData();
+export default function ChatWindowScreen() {
+    const { id } = useLocalSearchParams<{ id: string }>();
+    const router = useRouter();
     const { user } = useAuth();
-    const [text, setText] = useState('');
-    const flatListRef = useRef<FlatList>(null);
+    const [message, setMessage] = useState('');
 
-    const chat = getChatById(id as string);
+    const thread = MOCK_CHAT_THREADS.find((t) => t.id === id);
+    const messages = MOCK_MESSAGES[id || ''] || [];
 
-    useEffect(() => {
-        // Scroll to bottom on open
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    }, [chat?.messages]);
-
-    if (!chat) return <Text>Chat not found</Text>;
-
-    const handleSend = () => {
-        if (!text.trim() || !user) return;
-        sendMessage(chat.id, text, user.id);
-        setText('');
-    };
-
-    const renderMessage = ({ item }: { item: any }) => {
-        const isMe = item.senderId === user?.id;
-        return (
-            <View style={[styles.messageBubble, isMe ? styles.myMessage : styles.theirMessage]}>
-                <Text style={[styles.messageText, isMe ? styles.myMessageText : styles.theirMessageText]}>
-                    {item.text}
-                </Text>
-                <Text style={styles.timestamp}>
-                    {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </Text>
-            </View>
-        );
+    const formatTime = (ts: string) => {
+        const d = new Date(ts);
+        return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     };
 
     return (
-        <KeyboardAvoidingView
-            style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-        >
+        <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <View style={styles.statusSpacer} />
+
+            {/* Header */}
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>{chat.listingTitle}</Text>
+                <Pressable style={styles.backBtn} onPress={() => router.back()}>
+                    <Ionicons name="arrow-back" size={22} color={AppColors.text} />
+                </Pressable>
+                <Avatar name={thread?.participantName || ''} size={36} />
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.chatName}>{thread?.participantName}</Text>
+                    <Text style={styles.chatStatus}>Online</Text>
+                </View>
+                <Pressable style={styles.headerAction} onPress={() => router.push('/report')}>
+                    <Ionicons name="ellipsis-vertical" size={20} color={AppColors.textMuted} />
+                </Pressable>
             </View>
 
+            {/* Messages */}
             <FlatList
-                ref={flatListRef}
-                data={chat.messages}
-                renderItem={renderMessage}
-                keyExtractor={item => item.id}
-                contentContainerStyle={styles.list}
+                data={messages}
+                keyExtractor={(m) => m.id}
+                contentContainerStyle={styles.messagesContent}
+                showsVerticalScrollIndicator={false}
+                renderItem={({ item }) => {
+                    const isMe = item.senderId === user?.id;
+                    return (
+                        <View style={[styles.bubbleRow, isMe && styles.bubbleRowMe]}>
+                            {!isMe && <Avatar name={thread?.participantName || ''} size={28} />}
+                            <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleOther]}>
+                                <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>{item.text}</Text>
+                                <View style={styles.bubbleMeta}>
+                                    <Text style={[styles.timeText, isMe && styles.timeTextMe]}>{formatTime(item.timestamp)}</Text>
+                                    {isMe && item.seen && <Ionicons name="checkmark-done" size={14} color={AppColors.primary} />}
+                                </View>
+                            </View>
+                        </View>
+                    );
+                }}
             />
 
-            <View style={styles.inputContainer}>
+            {/* Input */}
+            <View style={styles.inputBar}>
                 <TextInput
                     style={styles.input}
                     placeholder="Type a message..."
-                    value={text}
-                    onChangeText={setText}
+                    placeholderTextColor={AppColors.textMuted}
+                    value={message}
+                    onChangeText={setMessage}
+                    multiline
                 />
-                <Pressable onPress={handleSend} style={styles.sendButton}>
-                    <Ionicons name="send" size={24} color="white" />
+                <Pressable style={[styles.sendBtn, !message.trim() && styles.sendBtnDisabled]}
+                    disabled={!message.trim()}
+                    onPress={() => { setMessage(''); }}>
+                    <Ionicons name="send" size={20} color={message.trim() ? '#FFFFFF' : AppColors.textMuted} />
+
                 </Pressable>
             </View>
         </KeyboardAvoidingView>
@@ -75,82 +85,59 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#f5f5f5',
-    },
+    container: { flex: 1, backgroundColor: AppColors.background },
+    statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
     header: {
-        padding: 16,
-        backgroundColor: 'white',
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-        elevation: 2,
+        flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+        paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
+        borderBottomWidth: 1, borderBottomColor: AppColors.border,
     },
-    headerTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        textAlign: 'center',
+    backBtn: {
+        width: 36, height: 36, borderRadius: 10,
+        backgroundColor: AppColors.surface, alignItems: 'center', justifyContent: 'center',
     },
-    list: {
-        padding: 16,
-        paddingBottom: 20,
+    chatName: { fontSize: 16, fontWeight: '700', color: AppColors.text },
+    chatStatus: { fontSize: 11, color: AppColors.success },
+    headerAction: { padding: 4 },
+
+    messagesContent: { padding: Spacing.xl, gap: Spacing.md },
+    bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.sm },
+    bubbleRowMe: { justifyContent: 'flex-end' },
+    bubble: {
+        maxWidth: '75%',
+        borderRadius: Radii.lg, padding: Spacing.md,
     },
-    messageBubble: {
-        maxWidth: '80%',
-        padding: 12,
-        borderRadius: 16,
-        marginBottom: 8,
-    },
-    myMessage: {
-        alignSelf: 'flex-end',
-        backgroundColor: '#007bff',
+    bubbleMe: {
+        backgroundColor: AppColors.primary,
         borderBottomRightRadius: 4,
     },
-    theirMessage: {
-        alignSelf: 'flex-start',
-        backgroundColor: 'white',
+    bubbleOther: {
+        backgroundColor: AppColors.surfaceLight,
         borderBottomLeftRadius: 4,
-        borderWidth: 1,
-        borderColor: '#eee',
     },
-    messageText: {
-        fontSize: 16,
-    },
-    myMessageText: {
-        color: 'white',
-    },
-    theirMessageText: {
-        color: '#333',
-    },
-    timestamp: {
-        fontSize: 10,
-        marginTop: 4,
-        alignSelf: 'flex-end',
-        opacity: 0.7,
-    },
-    inputContainer: {
-        flexDirection: 'row',
-        padding: 10,
-        backgroundColor: 'white',
-        alignItems: 'center',
-        gap: 10,
+    bubbleText: { fontSize: 14, color: AppColors.text, lineHeight: 20 },
+    bubbleTextMe: { color: '#FFFFFF' },
+    bubbleMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, alignSelf: 'flex-end' },
+    timeText: { fontSize: 10, color: AppColors.textMuted },
+    timeTextMe: { color: 'rgba(255,255,255,0.7)' },
+
+    inputBar: {
+        flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.sm,
+        paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
+        borderTopWidth: 1, borderTopColor: AppColors.border,
+        paddingBottom: Platform.OS === 'ios' ? 30 : Spacing.md,
     },
     input: {
-        flex: 1,
-        backgroundColor: '#f9f9f9',
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        fontSize: 16,
-        borderWidth: 1,
-        borderColor: '#eee',
+        flex: 1, backgroundColor: AppColors.surface,
+        borderWidth: 1, borderColor: AppColors.border, borderRadius: Radii.lg,
+        paddingHorizontal: Spacing.lg, paddingVertical: 10, color: AppColors.text,
+        fontSize: 15, maxHeight: 100,
     },
-    sendButton: {
-        backgroundColor: '#007bff',
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        justifyContent: 'center',
-        alignItems: 'center',
+    sendBtn: {
+        width: 44, height: 44, borderRadius: 14,
+        backgroundColor: AppColors.primary,
+        alignItems: 'center', justifyContent: 'center',
     },
+    sendBtnDisabled: { backgroundColor: AppColors.surface },
+
 });

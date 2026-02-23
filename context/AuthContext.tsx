@@ -1,3 +1,4 @@
+
 // context/AuthContext.tsx
 import * as AuthSession from "expo-auth-session";
 import { router } from "expo-router";
@@ -238,3 +239,4 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     </AuthContext.Provider>
   );
 };
+main

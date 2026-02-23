@@ -1,209 +1,143 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Link, useRouter } from "expo-router";
-import React, { useState } from "react";
-import { FlatList, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useAuth } from "../../context/AuthContext";
-import { Listing, useData } from "../../context/DataContext";
+
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React from 'react';
+import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { Card } from '@/components/ui/Card';
+import { Avatar } from '@/components/ui/Avatar';
+import { Badge } from '@/components/ui/Badge';
+import { MOCK_LISTINGS } from '@/data/mock';
 
 export default function HomeScreen() {
-  const { listings } = useData();
   const { user } = useAuth();
-  const [filter, setFilter] = useState<'OFFER' | 'REQUEST'>('OFFER');
   const router = useRouter();
+  const [refreshing, setRefreshing] = React.useState(false);
 
-  const filteredListings = listings.filter(l => l.type === filter);
+  const activeListings = MOCK_LISTINGS.filter((l) => l.status === 'active');
 
-  const renderItem = ({ item }: { item: Listing }) => (
-    <Link href={`/listing/${item.id}`} asChild>
-      <TouchableOpacity style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={[styles.badge, item.type === 'OFFER' ? styles.offerBadge : styles.requestBadge]}>
-            {item.type}
-          </Text>
-          <Text style={styles.credits}>{item.credits} Credits</Text>
-        </View>
-        <Text style={styles.title}>{item.title}</Text>
-        <Text style={styles.description} numberOfLines={2}>{item.description}</Text>
-        <View style={styles.userRow}>
-          <Ionicons name="person-circle-outline" size={20} color="#666" />
-          <Text style={styles.userName}>{item.userName}</Text>
-        </View>
-      </TouchableOpacity>
-    </Link>
-  );
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await new Promise((r) => setTimeout(r, 800));
+    setRefreshing(false);
+  };
 
   return (
     <View style={styles.container}>
+      <View style={styles.statusSpacer} />
+
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Campus Barter</Text>
-        <View style={styles.creditsContainer}>
-          <Text style={styles.userCredits}>{user?.credits || 0} ⌛</Text>
+        <View style={styles.headerLeft}>
+          <Avatar name={user?.displayName || 'User'} size={40} />
+          <View>
+            <Text style={styles.greeting}>Welcome back,</Text>
+            <Text style={styles.userName}>{user?.displayName?.split(' ')[0] || 'Student'}</Text>
+          </View>
+        </View>
+        <View style={styles.headerRight}>
+          <Pressable style={styles.iconBtn} onPress={() => router.push('/notifications')}>
+            <Ionicons name="notifications-outline" size={22} color={AppColors.text} />
+            <View style={styles.notifDot} />
+          </Pressable>
         </View>
       </View>
 
-      {/* Filter Tabs */}
-      <View style={styles.tabs}>
-        <Pressable
-          style={[styles.tab, filter === 'OFFER' && styles.activeTab]}
-          onPress={() => setFilter('OFFER')}
-        >
-          <Text style={[styles.tabText, filter === 'OFFER' && styles.activeTabText]}>Offers</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.tab, filter === 'REQUEST' && styles.activeTab]}
-          onPress={() => setFilter('REQUEST')}
-        >
-          <Text style={[styles.tabText, filter === 'REQUEST' && styles.activeTabText]}>Requests</Text>
-        </Pressable>
-      </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={AppColors.primary} />}
+      >
+        {/* Quick stats */}
+        <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.statsRow}>
+          <Pressable style={styles.statCard} onPress={() => router.push('/my-listings')}>
+            <Text style={styles.statNum}>{MOCK_LISTINGS.filter((l) => l.userId === user?.id).length}</Text>
+            <Text style={styles.statLabel}>My Listings</Text>
+          </Pressable>
+          <Pressable style={styles.statCard} onPress={() => router.push('/my-requests')}>
+            <Text style={styles.statNum}>3</Text>
+            <Text style={styles.statLabel}>Requests</Text>
+          </Pressable>
+          <View style={styles.statCard}>
+            <Text style={styles.statNum}>{user?.rating?.toFixed(1)}</Text>
+            <Text style={styles.statLabel}>Rating</Text>
+          </View>
+        </Animated.View>
 
-      {/* List */}
-      <FlatList
-        data={filteredListings}
-        renderItem={renderItem}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={<Text style={styles.emptyText}>No listings found.</Text>}
-      />
+        {/* Section header */}
+        <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Trending Skills</Text>
+          <Pressable onPress={() => router.push('/(tabs)/search')}>
+            <Text style={styles.seeAll}>See all</Text>
+          </Pressable>
+        </Animated.View>
 
-      {/* FAB */}
-      <Link href="/listing/create" asChild>
-        <TouchableOpacity style={styles.fab}>
-          <Ionicons name="add" size={30} color="white" />
-        </TouchableOpacity>
-      </Link>
+        {/* Listing cards */}
+        {activeListings.map((listing, i) => (
+          <Animated.View key={listing.id} entering={FadeInDown.delay(250 + i * 60).duration(400)}>
+            <Card
+              title={listing.title}
+              userName={listing.userName}
+              userAvatar={listing.userAvatar}
+              category={listing.category}
+              description={listing.description}
+              credits={listing.credits}
+              rating={listing.rating}
+              availability={listing.availability}
+              onPress={() => router.push({ pathname: '/skill/[id]', params: { id: listing.id } })}
+              onConnect={() => router.push({ pathname: '/skill/[id]', params: { id: listing.id } })}
+              style={{ marginBottom: Spacing.md }}
+            />
+          </Animated.View>
+        ))}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f5f5f5",
-    paddingTop: 50, // Safe area top
-  },
+  container: { flex: 1, backgroundColor: AppColors.background },
+  statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
+
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    marginBottom: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
+    borderBottomWidth: 1, borderBottomColor: AppColors.border,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#333",
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  greeting: { fontSize: 12, color: AppColors.textSecondary },
+  userName: { fontSize: 17, fontWeight: '800', color: AppColors.text },
+  headerRight: { flexDirection: 'row', gap: Spacing.sm },
+  iconBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: AppColors.surface, borderWidth: 1, borderColor: AppColors.border,
+    alignItems: 'center', justifyContent: 'center',
   },
-  creditsContainer: {
-    backgroundColor: "#fff",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    elevation: 2,
+  notifDot: {
+    position: 'absolute', top: 8, right: 8,
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: AppColors.error,
   },
-  userCredits: {
-    fontWeight: "bold",
-    fontSize: 16,
+
+  scrollContent: { padding: Spacing.xl, paddingBottom: 40 },
+
+  statsRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.xl },
+  statCard: {
+    flex: 1, backgroundColor: AppColors.surfaceLight,
+    borderWidth: 1, borderColor: AppColors.border, borderRadius: Radii.lg,
+    paddingVertical: Spacing.lg, alignItems: 'center', gap: 4,
   },
-  tabs: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    marginBottom: 10,
-    gap: 10,
+  statNum: { fontSize: 22, fontWeight: '900', color: AppColors.primary },
+  statLabel: { fontSize: 11, color: AppColors.textSecondary, fontWeight: '500' },
+
+  sectionHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: Spacing.lg,
+
   },
-  tab: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    backgroundColor: "#fff",
-  },
-  activeTab: {
-    backgroundColor: "#d32f2f", // SAIT Red
-    borderColor: "#d32f2f",
-  },
-  tabText: {
-    color: "#666",
-    fontWeight: "600",
-  },
-  activeTabText: {
-    color: "white",
-  },
-  list: {
-    paddingHorizontal: 20,
-    paddingBottom: 80,
-  },
-  card: {
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  badge: {
-    fontSize: 12,
-    fontWeight: "bold",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  offerBadge: {
-    backgroundColor: "#e3f2fd",
-    color: "#1976d2",
-  },
-  requestBadge: {
-    backgroundColor: "#fbe4ec",
-    color: "#c2185b",
-  },
-  credits: {
-    fontWeight: "bold",
-    color: "#f57c00",
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  description: {
-    color: "#666",
-    marginBottom: 8,
-  },
-  userRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  userName: {
-    fontSize: 12,
-    color: "#999",
-  },
-  emptyText: {
-    textAlign: "center",
-    marginTop: 40,
-    color: "#999",
-  },
-  fab: {
-    position: "absolute",
-    bottom: 20,
-    right: 20,
-    backgroundColor: "#d32f2f",
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 5,
-  },
+  sectionTitle: { fontSize: 20, fontWeight: '800', color: AppColors.text },
+  seeAll: { fontSize: 13, color: AppColors.primary, fontWeight: '600' },
 });
