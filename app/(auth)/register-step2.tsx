@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import StepProgress from '@/components/ui/StepProgress';
 import { PROGRAMS, SEMESTERS } from '@/constants/categories';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -50,24 +51,16 @@ export default function RegisterStep2() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-      >
+      <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.statusSpacer} />
 
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={22} color={AppColors.text} />
         </Pressable>
 
-        {/* PROGRESS BAR */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressBackground}>
-            <View style={[styles.progressFill, { width: '66%' }]} />
-          </View>
-        </View>
+        <StepProgress currentStep={2} />
 
-        <Animated.View entering={FadeInDown.duration(500)}>
+        <Animated.View entering={FadeInDown.duration(400)}>
           <Text style={styles.step}>Step 2 of 3</Text>
           <Text style={styles.title}>Academic Info</Text>
           <Text style={styles.subtitle}>
@@ -91,7 +84,6 @@ export default function RegisterStep2() {
             }
           />
 
-          {/* Program chips */}
           <View style={{ gap: 6 }}>
             <Text style={styles.label}>Program</Text>
             <View style={styles.chipGrid}>
@@ -135,18 +127,16 @@ export default function RegisterStep2() {
             }
           />
 
-          {/* SEMESTER DROPDOWN */}
           <View style={{ gap: 6 }}>
             <Text style={styles.label}>Semester</Text>
 
             <View style={styles.dropdownWrapper}>
               <Picker
                 selectedValue={semester}
-                onValueChange={(itemValue) =>
+                onValueChange={(itemValue: string | number) =>
                   setSemester(String(itemValue))
                 }
                 style={styles.picker}
-                dropdownIconColor={AppColors.textSecondary}
               >
                 <Picker.Item label="Select your semester" value="" />
                 {SEMESTERS.map((s) => (
@@ -164,12 +154,7 @@ export default function RegisterStep2() {
             )}
           </View>
 
-          <Button
-            title="Continue"
-            onPress={handleNext}
-            fullWidth
-            size="lg"
-          />
+          <Button title="Continue" onPress={handleNext} fullWidth size="lg" />
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -180,7 +165,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: AppColors.background },
   scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40 },
   statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
-
   backBtn: {
     width: 40,
     height: 40,
@@ -190,57 +174,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: Spacing.xl,
   },
-
-  /* PROGRESS BAR */
-  progressContainer: {
-    marginBottom: Spacing['2xl'],
-  },
-  progressBackground: {
-    height: 8,
-    width: '100%',
-    backgroundColor: AppColors.border,
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: 8,
-    backgroundColor: AppColors.primary,
-    borderRadius: 6,
-  },
-
   step: {
     fontSize: 12,
     color: AppColors.primary,
     fontWeight: '600',
-    letterSpacing: 1,
     marginBottom: 6,
   },
-
   title: {
     fontSize: 28,
     fontWeight: '900',
     color: AppColors.text,
-    letterSpacing: -0.5,
     marginBottom: Spacing.xs,
   },
-
   subtitle: {
     fontSize: 15,
     color: AppColors.textSecondary,
     marginBottom: Spacing['3xl'],
   },
-
   form: { gap: Spacing.xl },
-
   label: {
     color: AppColors.textSecondary,
     fontSize: 13,
     fontWeight: '500',
-    marginLeft: 2,
   },
-
   chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -249,40 +206,31 @@ const styles = StyleSheet.create({
     borderColor: AppColors.border,
     backgroundColor: AppColors.surface,
   },
-
   chipActive: {
     backgroundColor: AppColors.primary,
     borderColor: AppColors.primary,
   },
-
   chipText: {
     color: AppColors.textSecondary,
     fontSize: 13,
     fontWeight: '500',
   },
-
   chipTextActive: {
     color: '#FFFFFF',
     fontWeight: '700',
   },
-
   dropdownWrapper: {
     borderWidth: 1,
     borderColor: AppColors.border,
     borderRadius: Radii.md,
     backgroundColor: AppColors.surface,
-    justifyContent: 'center',
   },
-
   picker: {
     height: 50,
-    color: AppColors.text,
+    width: '100%',
   },
-
   error: {
     color: AppColors.error,
     fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 2,
   },
 });
