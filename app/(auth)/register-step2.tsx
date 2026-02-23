@@ -183,6 +183,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  avatarSection: {
+  alignItems: 'center',
+  marginBottom: Spacing.lg,
+},
+
+avatarCircle: {
+  width: 90,
+  height: 90,
+  borderRadius: 45,
+  backgroundColor: AppColors.surface,
+  borderWidth: 2,
+  borderColor: AppColors.border,
+  borderStyle: 'dashed',
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+
+avatarHint: {
+  marginTop: 8,
+  color: AppColors.textMuted,
+  fontSize: 13,
+},
+
   step: {
     fontSize: 12,
     color: AppColors.primary,

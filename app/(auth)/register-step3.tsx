@@ -20,6 +20,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 export default function RegisterStep3() {
   const router = useRouter();
   const { signUp, isLoading } = useAuth();
+
   const params = useLocalSearchParams<{
     email: string;
     password: string;
@@ -67,7 +68,6 @@ export default function RegisterStep3() {
 
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={22} color={AppColors.text} />
-          <Text style={styles.backText}>Go Back</Text>
         </Pressable>
 
         <StepProgress currentStep={3} />
@@ -81,6 +81,20 @@ export default function RegisterStep3() {
         </Animated.View>
 
         <View style={styles.form}>
+
+          {/* 🔥 PROFILE PHOTO SECTION (RESTORED) */}
+          <View style={styles.avatarSection}>
+            <Pressable style={styles.avatarCircle}>
+              <Ionicons
+                name="camera-outline"
+                size={28}
+                color={AppColors.textMuted}
+              />
+            </Pressable>
+            <Text style={styles.avatarHint}>
+              Add a profile photo (optional)
+            </Text>
+          </View>
           <Input
             label="Bio (optional)"
             placeholder="Tell students about yourself..."
@@ -89,8 +103,9 @@ export default function RegisterStep3() {
             multiline
             numberOfLines={3}
             style={{ minHeight: 80, textAlignVertical: 'top' }}
-          />
+             />
 
+          {/* Terms checkbox */}
           <Pressable
             style={styles.termsRow}
             onPress={() => setAgreedTerms(!agreedTerms)}
@@ -105,12 +120,28 @@ export default function RegisterStep3() {
                 <Ionicons name="checkmark" size={14} color="#FFFFFF" />
               )}
             </View>
+
             <Text style={styles.termsText}>
-              I agree to the Terms of Service and Privacy Policy
+              I agree to the{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={() => router.push('/terms')}
+              >
+                Terms of Service
+              </Text>{' '}
+              and{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={() => router.push('/privacy')}
+              >
+                Privacy Policy
+              </Text>
             </Text>
           </Pressable>
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {error ? (
+            <Text style={styles.errorText}>{error}</Text>
+          ) : null}
 
           <Button
             title="Create Account"
@@ -129,46 +160,67 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: AppColors.background },
   scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40 },
   statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
+
   backBtn: {
+    width: 40,
     height: 40,
     borderRadius: 12,
     backgroundColor: AppColors.surface,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    gap: 6,
-    alignSelf: 'flex-start',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.xl,
   },
-  backText: {
-    color: AppColors.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
+
   step: {
     fontSize: 12,
     color: AppColors.primary,
     fontWeight: '600',
     marginBottom: 6,
   },
+
   title: {
     fontSize: 28,
     fontWeight: '900',
     color: AppColors.text,
     marginBottom: Spacing.xs,
   },
+
   subtitle: {
     fontSize: 15,
     color: AppColors.textSecondary,
     marginBottom: Spacing['3xl'],
   },
+
   form: { gap: Spacing.xl },
+
+  avatarSection: {
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+
+  avatarCircle: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: AppColors.surface,
+    borderWidth: 2,
+    borderColor: AppColors.border,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  avatarHint: {
+    color: AppColors.textMuted,
+    fontSize: 13,
+  },
+
   termsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: Spacing.md,
   },
+
   checkbox: {
     width: 22,
     height: 22,
@@ -177,18 +229,29 @@ const styles = StyleSheet.create({
     borderColor: AppColors.border,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 1,
   },
+
   checkboxChecked: {
     backgroundColor: AppColors.primary,
     borderColor: AppColors.primary,
   },
+
   termsText: {
     flex: 1,
     color: AppColors.textSecondary,
     fontSize: 13,
+    lineHeight: 20,
   },
+
+  termsLink: {
+    color: AppColors.primary,
+    fontWeight: '600',
+  },
+
   errorText: {
     color: AppColors.error,
     fontSize: 13,
+    fontWeight: '500',
   },
 });
