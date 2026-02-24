@@ -9,7 +9,18 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { StarRating } from '@/components/ui/StarRating';
 
-
+function ChipList({ items, color }: { items: string[]; color: string }) {
+    if (!items || items.length === 0) return null;
+    return (
+        <View style={chipStyles.row}>
+            {items.map((item) => (
+                <View key={item} style={[chipStyles.chip, { borderColor: color }]}>
+                    <Text style={[chipStyles.chipText, { color }]}>{item}</Text>
+                </View>
+            ))}
+        </View>
+    );
+}
 
 export default function ProfileScreen() {
     const { user, signOut } = useAuth();
@@ -31,21 +42,46 @@ export default function ProfileScreen() {
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
                 {/* Profile card */}
                 <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.profileCard}>
-                    <Avatar name={user?.displayName || ''} size={72} />
+                    <Avatar name={user?.displayName || ''} uri={user?.avatarUrl} size={72} />
                     <Text style={styles.name}>{user?.displayName}</Text>
                     <Text style={styles.email}>{user?.email}</Text>
                     <View style={styles.infoRow}>
-                        <Badge label={user?.program || ''} variant="primary" />
-                        <Badge label={`Sem ${user?.semester}`} variant="subtle" />
+                        {user?.program ? <Badge label={user.program} variant="primary" /> : null}
+                        {user?.major ? <Badge label={user.major} variant="subtle" /> : null}
+                        <Badge label={`Sem ${user?.semester ?? 1}`} variant="subtle" />
                     </View>
                     <StarRating rating={user?.rating || 0} size={16} />
-                    <Text style={styles.reviewCount}>{user?.reviewCount} reviews</Text>
+                    <Text style={styles.reviewCount}>{user?.reviewCount ?? 0} reviews</Text>
                     {user?.bio ? <Text style={styles.bio}>{user.bio}</Text> : null}
                     <Pressable style={styles.editBtn} onPress={() => router.push('/edit-profile')}>
                         <Ionicons name="create-outline" size={16} color={AppColors.primary} />
                         <Text style={styles.editText}>Edit Profile</Text>
                     </Pressable>
                 </Animated.View>
+
+                {/* Skills, Interests, Weaknesses */}
+                {((user?.skills?.length ?? 0) > 0 || (user?.interests?.length ?? 0) > 0 || (user?.weaknesses?.length ?? 0) > 0) && (
+                    <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.detailsCard}>
+                        {(user?.skills?.length ?? 0) > 0 && (
+                            <View style={styles.detailSection}>
+                                <Text style={styles.detailLabel}>💪 Skills</Text>
+                                <ChipList items={user!.skills!} color={AppColors.primary} />
+                            </View>
+                        )}
+                        {(user?.interests?.length ?? 0) > 0 && (
+                            <View style={styles.detailSection}>
+                                <Text style={styles.detailLabel}>✨ Interests</Text>
+                                <ChipList items={user!.interests!} color="#6B8F71" />
+                            </View>
+                        )}
+                        {(user?.weaknesses?.length ?? 0) > 0 && (
+                            <View style={styles.detailSection}>
+                                <Text style={styles.detailLabel}>📚 Areas to Improve</Text>
+                                <ChipList items={user!.weaknesses!} color={AppColors.textSecondary} />
+                            </View>
+                        )}
+                    </Animated.View>
+                )}
 
                 {/* Menu */}
                 <Animated.View entering={FadeInDown.delay(300).duration(400)} style={styles.menu}>
@@ -87,6 +123,15 @@ export default function ProfileScreen() {
     );
 }
 
+const chipStyles = StyleSheet.create({
+    row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    chip: {
+        paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6,
+        borderWidth: 1, backgroundColor: 'transparent',
+    },
+    chipText: { fontSize: 12, fontWeight: '600' },
+});
+
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: AppColors.background },
     statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
@@ -95,11 +140,11 @@ const styles = StyleSheet.create({
     profileCard: {
         alignItems: 'center', gap: Spacing.sm,
         backgroundColor: AppColors.surfaceLight, borderWidth: 1, borderColor: AppColors.border,
-        borderRadius: Radii.xl, padding: Spacing['2xl'], marginBottom: Spacing.xl,
+        borderRadius: Radii.xl, padding: Spacing['2xl'], marginBottom: Spacing.lg,
     },
     name: { fontSize: 22, fontWeight: '900', color: AppColors.text, marginTop: Spacing.sm },
     email: { fontSize: 13, color: AppColors.textSecondary },
-    infoRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs },
+    infoRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs, flexWrap: 'wrap', justifyContent: 'center' },
     reviewCount: { fontSize: 12, color: AppColors.textSecondary, marginTop: -2 },
     bio: { fontSize: 13, color: AppColors.textSecondary, textAlign: 'center', lineHeight: 20, marginTop: Spacing.sm },
     editBtn: {
@@ -109,6 +154,13 @@ const styles = StyleSheet.create({
         borderRadius: Radii.sm, borderWidth: 1, borderColor: AppColors.primary,
     },
     editText: { color: AppColors.primary, fontSize: 13, fontWeight: '600' },
+
+    detailsCard: {
+        backgroundColor: AppColors.surfaceLight, borderWidth: 1, borderColor: AppColors.border,
+        borderRadius: Radii.lg, padding: Spacing.lg, marginBottom: Spacing.lg, gap: Spacing.lg,
+    },
+    detailSection: { gap: 8 },
+    detailLabel: { fontSize: 14, fontWeight: '700', color: AppColors.text },
 
     menu: {
         backgroundColor: AppColors.surfaceLight, borderWidth: 1, borderColor: AppColors.border,

@@ -1,132 +1,92 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/context/AuthContext';
 
 export default function SignInScreen() {
     const router = useRouter();
-    const { signIn, isLoading } = useAuth();
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
-    const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
-
-    const validate = () => {
-        const e: typeof errors = {};
-        if (!email.trim()) e.email = 'Email is required';
-        else if (!email.toLowerCase().endsWith('@edu.sait.ca')) e.email = 'Must be a SAIT student email (@edu.sait.ca)';
-        if (!password) e.password = 'Password is required';
-        else if (password.length < 6) e.password = 'Password must be at least 6 characters';
-        setErrors(e);
-        return Object.keys(e).length === 0;
-    };
-
-    const handleSignIn = async () => {
-        if (!validate()) return;
-        try {
-            await signIn(email, password);
-        } catch {
-            setErrors({ general: 'Invalid email or password. Please try again.' });
-        }
-    };
+    const { loginWithMicrosoft, isLoading } = useAuth();
 
     return (
-        <KeyboardAvoidingView
-            style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-            <ScrollView
-                contentContainerStyle={styles.scroll}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-            >
-                <View style={styles.statusSpacer} />
+        <View style={styles.container}>
+            <View style={styles.statusSpacer} />
 
-                {/* Back button */}
-                <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={22} color={AppColors.text} />
+            {/* Back button */}
+            <Pressable style={styles.backBtn} onPress={() => router.back()}>
+                <Ionicons name="arrow-back" size={22} color={AppColors.text} />
+            </Pressable>
+
+            {/* Header */}
+            <Animated.View entering={FadeInDown.delay(100).duration(500)} style={styles.headerSection}>
+                <View style={styles.lockCircle}>
+                    <Ionicons name="shield-checkmark" size={36} color={AppColors.primary} />
+                </View>
+                <Text style={styles.title}>Welcome back</Text>
+                <Text style={styles.subtitle}>
+                    Sign in with your Microsoft account to access CampusBarter.
+                    {'\n'}Only authorized SAIT students can log in.
+                </Text>
+            </Animated.View>
+
+            {/* Microsoft Sign In Button */}
+            <Animated.View entering={FadeInDown.delay(300).duration(500)} style={styles.btnSection}>
+                <Pressable
+                    style={[styles.microsoftBtn, isLoading && styles.microsoftBtnDisabled]}
+                    onPress={loginWithMicrosoft}
+                    disabled={isLoading}
+                >
+                    {isLoading ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                        <>
+                            <View style={styles.msLogoWrap}>
+                                <View style={styles.msGrid}>
+                                    <View style={[styles.msSquare, { backgroundColor: '#F25022' }]} />
+                                    <View style={[styles.msSquare, { backgroundColor: '#7FBA00' }]} />
+                                    <View style={[styles.msSquare, { backgroundColor: '#00A4EF' }]} />
+                                    <View style={[styles.msSquare, { backgroundColor: '#FFB900' }]} />
+                                </View>
+                            </View>
+                            <Text style={styles.microsoftBtnText}>Sign in with Microsoft</Text>
+                        </>
+                    )}
                 </Pressable>
 
-                {/* Header */}
-                <Animated.View entering={FadeInDown.delay(100).duration(500)}>
-                    <Text style={styles.title}>Welcome back</Text>
-                    <Text style={styles.subtitle}>Sign in to your CampusBarter account</Text>
-                </Animated.View>
-
-                {/* Form */}
-                <Animated.View entering={FadeInDown.delay(250).duration(500)} style={styles.form}>
-                    {errors.general && (
-                        <View style={styles.errorBanner}>
-                            <Ionicons name="alert-circle" size={18} color={AppColors.error} />
-                            <Text style={styles.errorBannerText}>{errors.general}</Text>
-                        </View>
-                    )}
-
-                    <Input
-                        label="Email"
-                        placeholder="you@edu.sait.ca"
-                        value={email}
-                        onChangeText={setEmail}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                        autoComplete="email"
-                        error={errors.email}
-                        icon={<Ionicons name="mail-outline" size={18} color={AppColors.textMuted} />}
-                    />
-
-                    <View>
-                        <Input
-                            label="Password"
-                            placeholder="Enter your password"
-                            value={password}
-                            onChangeText={setPassword}
-                            secureTextEntry={!showPassword}
-                            autoComplete="password"
-                            error={errors.password}
-                            icon={<Ionicons name="lock-closed-outline" size={18} color={AppColors.textMuted} />}
-                        />
-                        <Pressable style={styles.eyeBtn} onPress={() => setShowPassword(!showPassword)}>
-                            <Ionicons
-                                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                                size={20}
-                                color={AppColors.textMuted}
-                            />
-                        </Pressable>
-                    </View>
-
-                    <Pressable onPress={() => router.push('/(auth)/forgot-password')} style={styles.forgotRow}>
-                        <Text style={styles.forgotText}>Forgot password?</Text>
-                    </Pressable>
-
-                    <Button
-                        title="Sign In"
-                        onPress={handleSignIn}
-                        loading={isLoading}
-                        fullWidth
-                        size="lg"
-                    />
-                </Animated.View>
-
-                {/* Bottom link */}
-                <View style={styles.bottomRow}>
-                    <Text style={styles.bottomText}>Don't have an account? </Text>
-                    <Pressable onPress={() => router.push('/(auth)/register-step1')}>
-                        <Text style={styles.bottomLink}>Create one</Text>
-                    </Pressable>
+                <View style={styles.infoBox}>
+                    <Ionicons name="information-circle-outline" size={18} color={AppColors.primary} />
+                    <Text style={styles.infoText}>
+                        Use your @campusbarter.onmicrosoft.com account provided by your administrator.
+                    </Text>
                 </View>
-            </ScrollView>
-        </KeyboardAvoidingView>
+            </Animated.View>
+
+            {/* Footer links */}
+            <View style={styles.footer}>
+                <Pressable onPress={() => router.push('/terms')}>
+                    <Text style={styles.linkText}>Terms</Text>
+                </Pressable>
+                <Text style={styles.linkDot}>·</Text>
+                <Pressable onPress={() => router.push('/privacy')}>
+                    <Text style={styles.linkText}>Privacy</Text>
+                </Pressable>
+                <Text style={styles.linkDot}>·</Text>
+                <Pressable onPress={() => router.push('/about')}>
+                    <Text style={styles.linkText}>About</Text>
+                </Pressable>
+            </View>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: AppColors.background },
-    scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40 },
+    container: {
+        flex: 1,
+        backgroundColor: AppColors.background,
+        paddingHorizontal: Spacing.xl,
+    },
     statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
     backBtn: {
         width: 40, height: 40, borderRadius: 12,
@@ -134,33 +94,91 @@ const styles = StyleSheet.create({
         alignItems: 'center', justifyContent: 'center',
         marginBottom: Spacing['2xl'],
     },
+
+    headerSection: {
+        alignItems: 'center',
+        marginBottom: Spacing['3xl'],
+    },
+    lockCircle: {
+        width: 72, height: 72, borderRadius: 36,
+        backgroundColor: AppColors.surfaceLight,
+        borderWidth: 1.5, borderColor: AppColors.border,
+        alignItems: 'center', justifyContent: 'center',
+        marginBottom: Spacing.xl,
+    },
     title: {
         fontSize: 28, fontWeight: '900', color: AppColors.text,
-        letterSpacing: -0.5, marginBottom: Spacing.xs,
+        letterSpacing: -0.5, marginBottom: Spacing.sm,
     },
     subtitle: {
         fontSize: 15, color: AppColors.textSecondary,
-        marginBottom: Spacing['3xl'],
+        textAlign: 'center', lineHeight: 22,
     },
-    form: { gap: Spacing.xl },
-    errorBanner: {
-        flexDirection: 'row', alignItems: 'center', gap: 8,
-        backgroundColor: 'rgba(239,68,68,0.1)',
-        borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
-        borderRadius: Radii.md, padding: Spacing.md,
+
+    btnSection: {
+        gap: Spacing.xl,
     },
-    errorBannerText: { color: AppColors.error, fontSize: 13, flex: 1 },
-    eyeBtn: {
-        position: 'absolute', right: 14, top: 40,
+    microsoftBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 12,
+        backgroundColor: '#2F2F2F',
+        paddingVertical: 16,
+        paddingHorizontal: 24,
+        borderRadius: Radii.lg,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 6,
+        elevation: 3,
     },
-    forgotRow: { alignSelf: 'flex-end' },
-    forgotText: {
-        color: AppColors.primary, fontSize: 13, fontWeight: '600',
+    microsoftBtnDisabled: {
+        opacity: 0.6,
     },
-    bottomRow: {
-        flexDirection: 'row', justifyContent: 'center',
-        marginTop: Spacing['3xl'],
+    msLogoWrap: {
+        width: 22, height: 22,
     },
-    bottomText: { color: AppColors.textSecondary, fontSize: 14 },
-    bottomLink: { color: AppColors.primary, fontSize: 14, fontWeight: '600' },
+    msGrid: {
+        flexDirection: 'row', flexWrap: 'wrap', gap: 2,
+        width: 22, height: 22,
+    },
+    msSquare: {
+        width: 10, height: 10,
+    },
+    microsoftBtnText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+
+    infoBox: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 10,
+        backgroundColor: AppColors.surfaceLight,
+        borderWidth: 1,
+        borderColor: AppColors.border,
+        borderRadius: Radii.md,
+        padding: Spacing.lg,
+    },
+    infoText: {
+        flex: 1,
+        fontSize: 13,
+        color: AppColors.textSecondary,
+        lineHeight: 20,
+    },
+
+    footer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: Spacing.sm,
+        position: 'absolute',
+        bottom: 40,
+        left: Spacing.xl,
+        right: Spacing.xl,
+    },
+    linkText: { fontSize: 13, color: AppColors.textMuted, fontWeight: '500' },
+    linkDot: { color: AppColors.textMuted, fontSize: 13 },
 });

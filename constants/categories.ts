@@ -13,6 +13,13 @@ export const CATEGORIES = [
     { key: 'other', label: 'Other', icon: '🔧' },
 ] as const;
 
+export const SKILLS_OPTIONS = [
+    'Coding', 'Design', 'Math', 'Writing', 'Music',
+    'Languages', 'Science', 'Business', 'Fitness',
+    'Photography', 'Communication', 'Leadership',
+    'Problem Solving', 'Time Management', 'Teamwork',
+] as const;
+
 export const PROGRAMS = [
     'Software Development',
     'Business Administration',
