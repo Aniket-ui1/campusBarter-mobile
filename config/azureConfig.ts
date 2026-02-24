@@ -1,12 +1,13 @@
 // config/azureConfig.ts
 const azureConfig = {
-  clientId: "0afbd5b7-5abf-48a1-bea2-1b7abb8fd91d",
-  tenantId: "b458f7e5-1224-40a2-b3aa-7db22dc0dde4",
+  clientId: "c25cd73c-5917-4e99-9906-49c6e77124e1",
+  tenantId: "25cf3e13-f550-42d6-b0a9-366ae872b929",
 
   scopes: ["openid", "profile", "email", "offline_access"],
 
+  // Entra External ID uses ciamlogin.com instead of login.microsoftonline.com
   get discoveryUrl(): string {
-    return `https://login.microsoftonline.com/${this.tenantId}/v2.0`;
+    return `https://campusbarter.ciamlogin.com/${this.tenantId}/v2.0`;
   },
 };
 

@@ -1,6 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { AppColors, Radii } from '@/constants/theme';
+import { Image, StyleSheet, Text, View } from 'react-native';
+import { AppColors } from '@/constants/theme';
 
 type Props = {
     name: string;
@@ -25,12 +25,21 @@ function hashColor(name: string): string {
 }
 
 export function Avatar({ name, uri, size = 40 }: Props) {
-    // For now, always show initials (no image loading)
     const bg = hashColor(name);
     const fontSize = size * 0.38;
+    const borderRadius = size / 2;
+
+    if (uri) {
+        return (
+            <Image
+                source={{ uri }}
+                style={[styles.image, { width: size, height: size, borderRadius }]}
+            />
+        );
+    }
 
     return (
-        <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: bg }]}>
+        <View style={[styles.avatar, { width: size, height: size, borderRadius, backgroundColor: bg }]}>
             <Text style={[styles.initials, { fontSize }]}>{getInitials(name)}</Text>
         </View>
     );
@@ -45,5 +54,8 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontWeight: '700',
         letterSpacing: 0.5,
+    },
+    image: {
+        resizeMode: 'cover',
     },
 });

@@ -16,7 +16,7 @@ export default function RegisterStep1() {
 
     const validate = () => {
         const e: Record<string, string> = {};
-        if (!email.toLowerCase().endsWith('@edu.sait.ca')) e.email = 'Must be a SAIT student email (@edu.sait.ca)';
+        if (!email.toLowerCase().endsWith('@edu.sait.ca') && !email.toLowerCase().endsWith('@sait.ca') && !email.toLowerCase().endsWith('@campusbarter.onmicrosoft.com')) e.email = 'Must be a SAIT or CampusBarter email';
         if (password.length < 8) e.password = 'Minimum 8 characters';
         if (password !== confirm) e.confirm = 'Passwords do not match';
         setErrors(e);

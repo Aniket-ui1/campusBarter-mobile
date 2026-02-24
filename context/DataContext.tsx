@@ -1,136 +1,142 @@
-import React, { createContext, useContext, useState } from "react";
-// Wait, I am overwriting the file, so I need to redefine interfaces.
+// context/DataContext.tsx
+// ─────────────────────────────────────────────────────────────────
+// All app data (listings, chats, messages) is stored in Firestore.
+// Real-time onSnapshot listeners keep UI in sync automatically.
+// ─────────────────────────────────────────────────────────────────
 
-export interface Listing {
-    id: string;
-    type: 'OFFER' | 'REQUEST';
-    title: string;
-    description: string;
-    credits: number;
-    userId: string;
-    userName: string;
-    createdAt: string;
-    status: 'OPEN' | 'CLOSED';
-}
+import React, {
+    createContext,
+    useContext,
+    useEffect,
+    useState,
+} from "react";
+import {
+    closeListing,
+    createListing,
+    FSChat,
+    FSListing,
+    FSMessage,
+    sendMessage as fsSendMessage,
+    startChat as fsStartChat,
+    subscribeToChats,
+    subscribeToListings,
+    subscribeToMessages,
+} from "../lib/firestore";
+import { useAuth } from "./AuthContext";
 
-export interface Chat {
-    id: string;
-    listingId: string;
-    listingTitle: string;
-    participants: string[]; // userIds
-    messages: Array<{
-        id: string;
-        senderId: string;
-        text: string;
-        timestamp: string;
-    }>;
-}
+// ── Public types ──────────────────────────────────────────────────
+
+// Re-export Firestore types under the names the rest of the app uses
+export type Listing = FSListing;
+export type Chat = FSChat & { messages: FSMessage[] };
 
 interface DataContextType {
     listings: Listing[];
-    addListing: (listing: Omit<Listing, "id" | "createdAt" | "status" | "userName">) => void;
+    addListing: (
+        listing: Omit<Listing, "id" | "createdAt" | "status">
+    ) => Promise<void>;
     getListingById: (id: string) => Listing | undefined;
+    closeListing: (id: string) => Promise<void>;
+
     chats: Chat[];
-    startChat: (listingId: string, listingTitle: string, userIds: string[]) => string; // Returns chatId
-    sendMessage: (chatId: string, text: string, senderId: string) => void;
+    startChat: (
+        listingId: string,
+        listingTitle: string,
+        userIds: string[]
+    ) => Promise<string>;
+    sendMessage: (chatId: string, text: string, senderId: string) => Promise<void>;
     getChatById: (chatId: string) => Chat | undefined;
+    subscribeToMessages: (
+        chatId: string,
+        cb: (messages: FSMessage[]) => void
+    ) => () => void;
 }
+
+// ── Context ───────────────────────────────────────────────────────
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const useData = () => {
     const context = useContext(DataContext);
-    if (!context) {
-        throw new Error("useData must be used within a DataProvider");
-    }
+    if (!context) throw new Error("useData must be used within a DataProvider");
     return context;
 };
 
-// Mock Data
-const MOCK_LISTINGS: Listing[] = [
-    {
-        id: "1",
-        type: "OFFER",
-        title: "Math Tutoring (Calculus I)",
-        description: "I can help with derivatives and integrals. Available evenings.",
-        credits: 1,
-        userId: "user2",
-        userName: "MathWhiz",
-        createdAt: new Date().toISOString(),
-        status: "OPEN",
-    },
-    {
-        id: "2",
-        type: "REQUEST",
-        title: "Moving Help",
-        description: "Need help moving a couch this Saturday.",
-        credits: 2,
-        userId: "user3",
-        userName: "MoverNeeded",
-        createdAt: new Date().toISOString(),
-        status: "OPEN",
-    },
-];
+// ── Provider ──────────────────────────────────────────────────────
 
 export const DataProvider = ({ children }: { children: React.ReactNode }) => {
-    const [listings, setListings] = useState<Listing[]>(MOCK_LISTINGS);
+    const { user } = useAuth();
+    const [listings, setListings] = useState<Listing[]>([]);
     const [chats, setChats] = useState<Chat[]>([]);
 
-    const addListing = (newListing: Omit<Listing, "id" | "createdAt" | "status" | "userName">) => {
-        const listing: Listing = {
-            ...newListing,
-            id: Math.random().toString(),
-            createdAt: new Date().toISOString(),
-            status: "OPEN",
-            userName: "Me",
-        };
-        setListings([listing, ...listings]);
+    // ── Subscribe to listings ─────────────────────────────────────
+    useEffect(() => {
+        const unsub = subscribeToListings((data) => setListings(data));
+        return unsub;
+    }, []);
+
+    // ── Subscribe to chats for the current user ───────────────────
+    useEffect(() => {
+        if (!user) {
+            setChats([]);
+            return;
+        }
+        const unsub = subscribeToChats(user.id, (data) =>
+            // Cast to Chat — messages are loaded per-chat in the chat screen
+            setChats(data.map((c) => ({ ...c, messages: [] })))
+        );
+        return unsub;
+    }, [user?.id]);
+
+    // ── Listings API ──────────────────────────────────────────────
+
+    const addListing = async (
+        newListing: Omit<Listing, "id" | "createdAt" | "status">
+    ) => {
+        await createListing(newListing);
+        // onSnapshot will push the new doc automatically — no setState needed
     };
 
     const getListingById = (id: string) => listings.find((l) => l.id === id);
 
-    const startChat = (listingId: string, listingTitle: string, userIds: string[]) => {
-        // Check if chat already exists
-        const existingChat = chats.find(c => c.listingId === listingId &&
-            userIds.every(uid => c.participants.includes(uid)));
-
-        if (existingChat) return existingChat.id;
-
-        const newChat: Chat = {
-            id: Math.random().toString(),
-            listingId,
-            listingTitle,
-            participants: userIds,
-            messages: []
-        };
-        setChats([newChat, ...chats]);
-        return newChat.id;
+    const handleCloseListing = async (id: string) => {
+        await closeListing(id);
     };
 
-    const sendMessage = (chatId: string, text: string, senderId: string) => {
-        setChats(currentChats => currentChats.map(c => {
-            if (c.id === chatId) {
-                return {
-                    ...c,
-                    messages: [
-                        ...c.messages,
-                        {
-                            id: Math.random().toString(),
-                            senderId,
-                            text,
-                            timestamp: new Date().toISOString()
-                        }
-                    ]
-                };
-            }
-            return c;
-        }));
+    // ── Chats API ─────────────────────────────────────────────────
+
+    const startChat = async (
+        listingId: string,
+        listingTitle: string,
+        userIds: string[]
+    ) => {
+        return fsStartChat(listingId, listingTitle, userIds);
     };
 
-    const getChatById = (chatId: string) => chats.find(c => c.id === chatId);
+    const sendMessage = async (
+        chatId: string,
+        text: string,
+        senderId: string
+    ) => {
+        await fsSendMessage(chatId, senderId, text);
+    };
+
+    const getChatById = (chatId: string) => chats.find((c) => c.id === chatId);
 
     return (
-        <DataContext.Provider value={{ listings, addListing, getListingById, chats, startChat, sendMessage, getChatById }}>
+        <DataContext.Provider
+            value={{
+                listings,
+                addListing,
+                getListingById,
+                closeListing: handleCloseListing,
+                chats,
+                startChat,
+                sendMessage,
+                getChatById,
+                subscribeToMessages,
+            }}
+        >
             {children}
         </DataContext.Provider>
     );

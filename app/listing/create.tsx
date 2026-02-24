@@ -36,7 +36,8 @@ export default function CreateListing() {
             title,
             description,
             credits: creditCost,
-            userId: user.id
+            userId: user.id,
+            userName: user.displayName || user.name,
         });
 
         router.back();

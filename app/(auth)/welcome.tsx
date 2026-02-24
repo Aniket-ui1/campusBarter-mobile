@@ -6,6 +6,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
 
+import { useAuth } from '@/context/AuthContext';
+
 const FEATURES = [
     { icon: '📋', title: 'Post Skills', desc: 'Share what you can teach' },
     { icon: '🔍', title: 'Find Help', desc: 'Browse student offerings' },
@@ -15,6 +17,7 @@ const FEATURES = [
 
 export default function WelcomeScreen() {
     const router = useRouter();
+    const { loginWithMicrosoft, isLoading } = useAuth();
 
     return (
         <View style={styles.container}>
@@ -46,20 +49,23 @@ export default function WelcomeScreen() {
                 ))}
             </Animated.View>
 
-            {/* CTAs */}
+            {/* Microsoft Sign In */}
             <Animated.View entering={FadeInDown.delay(500).duration(500)} style={styles.ctaSection}>
-                <Button
-                    title="Sign In"
-                    onPress={() => router.push('/(auth)/sign-in')}
-                    icon={<Ionicons name="log-in-outline" size={20} color="#FFFFFF" />}
-                    fullWidth
-                />
-                <Button
-                    title="Create Account"
-                    onPress={() => router.push('/(auth)/register-step1')}
-                    variant="secondary"
-                    fullWidth
-                />
+                <Pressable
+                    style={[styles.microsoftBtn, isLoading && { opacity: 0.6 }]}
+                    onPress={loginWithMicrosoft}
+                    disabled={isLoading}
+                >
+                    <View style={styles.msGrid}>
+                        <View style={[styles.msSquare, { backgroundColor: '#F25022' }]} />
+                        <View style={[styles.msSquare, { backgroundColor: '#7FBA00' }]} />
+                        <View style={[styles.msSquare, { backgroundColor: '#00A4EF' }]} />
+                        <View style={[styles.msSquare, { backgroundColor: '#FFB900' }]} />
+                    </View>
+                    <Text style={styles.microsoftBtnText}>
+                        {isLoading ? 'Signing in…' : 'Sign in with Microsoft'}
+                    </Text>
+                </Pressable>
             </Animated.View>
 
             {/* Links */}
@@ -156,6 +162,33 @@ const styles = StyleSheet.create({
     ctaSection: {
         gap: Spacing.md,
         marginBottom: Spacing.xl,
+    },
+    microsoftBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 12,
+        backgroundColor: '#2F2F2F',
+        paddingVertical: 16,
+        paddingHorizontal: 24,
+        borderRadius: Radii.lg,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 6,
+        elevation: 3,
+    },
+    msGrid: {
+        flexDirection: 'row', flexWrap: 'wrap', gap: 2,
+        width: 22, height: 22,
+    },
+    msSquare: {
+        width: 10, height: 10,
+    },
+    microsoftBtnText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '600',
     },
 
     links: {
