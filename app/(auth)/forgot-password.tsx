@@ -34,7 +34,7 @@ export default function ForgotPasswordScreen() {
                 {!sent ? (
                     <Animated.View entering={FadeInDown.duration(500)}>
                         <Text style={styles.title}>Reset password</Text>
-                        <Text style={styles.subtitle}>Enter your email and we'll send you a reset link.</Text>
+                        <Text style={styles.subtitle}>Enter your email and we&apos;ll send you a reset link.</Text>
 
                         <View style={styles.form}>
                             <Input
