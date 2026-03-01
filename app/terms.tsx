@@ -34,7 +34,7 @@ export default function TermsScreen() {
                     <Text style={styles.subhead}>6. Termination{'\n'}</Text>
                     We may suspend or terminate accounts that violate these terms. You may also delete your account at any time through Settings.{'\n\n'}
                     <Text style={styles.subhead}>7. Limitation of Liability{'\n'}</Text>
-                    CampusBarter is provided "as is". We are not liable for any damages arising from your use of the app or from interactions with other users.
+                    CampusBarter is provided &quot;as is&quot;. We are not liable for any damages arising from your use of the app or from interactions with other users.
                 </Text>
             </ScrollView>
         </View>
