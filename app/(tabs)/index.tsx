@@ -75,7 +75,7 @@ export default function HomeScreen() {
         <Animated.View entering={FadeInDown.delay(80).duration(400)} style={styles.heroBanner}>
           <View style={styles.heroContent}>
             <Text style={styles.heroTitle}>Trade skills{'\n'}with students 🎓</Text>
-            <Text style={styles.heroSubtitle}>Teach what you know, learn what you don't</Text>
+            <Text style={styles.heroSubtitle}>Teach what you know, learn what you don&apos;t</Text>
             <Pressable style={styles.heroBtn} onPress={() => router.push('/(tabs)/search')}>
               <Text style={styles.heroBtnText}>Explore Skills</Text>
               <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />

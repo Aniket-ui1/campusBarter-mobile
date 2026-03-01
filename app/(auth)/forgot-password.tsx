@@ -57,7 +57,7 @@ export default function ForgotPasswordScreen() {
                         </View>
                         <Text style={styles.title}>Check your email</Text>
                         <Text style={styles.subtitle}>
-                            We've sent a password reset link to {email}. Check your inbox.
+                            We&apos;ve sent a password reset link to {email}. Check your inbox.
                         </Text>
                         <Button title="Back to Sign In" onPress={() => router.replace('/(auth)/sign-in')} fullWidth />
                     </Animated.View>
