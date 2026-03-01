@@ -1,0 +1,49 @@
+# .github/labeler.yml
+# Auto-labels Issues based on keywords found in the issue title.
+# Used by the kanban.yml workflow.
+#
+# Format: label: [regex patterns to match in the title]
+
+"bug":
+  - ".*bug.*"
+  - ".*fix.*"
+  - ".*broken.*"
+  - ".*crash.*"
+  - ".*error.*"
+
+"security":
+  - ".*security.*"
+  - ".*vulnerability.*"
+  - ".*auth.*"
+  - ".*password.*"
+  - ".*token.*"
+
+"feature":
+  - ".*feature.*"
+  - ".*add.*"
+  - ".*new.*"
+  - ".*implement.*"
+
+"database":
+  - ".*database.*"
+  - ".*sql.*"
+  - ".*firestore.*"
+  - ".*azure sql.*"
+
+"ui":
+  - ".*ui.*"
+  - ".*design.*"
+  - ".*screen.*"
+  - ".*layout.*"
+
+"azure":
+  - ".*azure.*"
+  - ".*cloud.*"
+  - ".*deploy.*"
+  - ".*infrastructure.*"
+
+"documentation":
+  - ".*doc.*"
+  - ".*readme.*"
+  - ".*policy.*"
+  - ".*compliance.*"
