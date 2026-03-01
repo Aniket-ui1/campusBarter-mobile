@@ -1,0 +1,46 @@
+name: 📋 Kanban Board Automation
+
+# Runs when issues or PRs are opened, closed, or merged
+on:
+  issues:
+    types: [opened, closed, reopened]
+  pull_request:
+    types: [opened, closed, reopened]
+
+jobs:
+  # ── Auto-add new Issues to the Kanban board ───────────────────────
+  add-issue-to-project:
+    name: Add Issue to Project Board
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+    steps:
+      - name: Add Issue to Project
+        uses: actions/add-to-project@v0.6.1
+        with:
+          project-url: https://github.com/users/Aniket-ui1/projects/1
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+
+  # ── Auto-add new PRs to the Kanban board ──────────────────────────
+  add-pr-to-project:
+    name: Add PR to Project Board
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    steps:
+      - name: Add PR to Project
+        uses: actions/add-to-project@v0.6.1
+        with:
+          project-url: https://github.com/users/Aniket-ui1/projects/1
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+
+  # ── Auto-label Issues for better board organisation ───────────────
+  auto-label:
+    name: Auto Label Issues
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+    steps:
+      - name: Label based on title keywords
+        uses: github/issue-labeler@v3.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          configuration-path: .github/labeler.yml
+          enable-versioned-regex: 0

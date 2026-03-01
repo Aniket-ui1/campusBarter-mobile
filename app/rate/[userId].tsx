@@ -1,22 +1,29 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppColors, Spacing } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { MOCK_USERS } from '@/data/mock';
+import { getUserProfile } from '@/lib/firestore';
 
 export default function RateScreen() {
     const { userId } = useLocalSearchParams<{ userId: string }>();
     const router = useRouter();
-    const user = MOCK_USERS.find((u) => u.id === userId);
+    const [userName, setUserName] = useState('');
     const [rating, setRating] = useState(0);
     const [comment, setComment] = useState('');
 
+    useEffect(() => {
+        if (!userId) return;
+        getUserProfile(userId).then((p) => {
+            if (p) setUserName(p.displayName || 'User');
+        });
+    }, [userId]);
+
     const handleSubmit = () => {
         if (rating === 0) { Alert.alert('Select a rating'); return; }
-        Alert.alert('Review Submitted!', `Thank you for rating ${user?.displayName}.`);
+        Alert.alert('Review Submitted!', `Thank you for rating ${userName}.`);
         router.back();
     };
 
@@ -32,7 +39,7 @@ export default function RateScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.scroll}>
-                <Text style={styles.label}>How was your experience with {user?.displayName}?</Text>
+                <Text style={styles.label}>How was your experience with {userName || 'this user'}?</Text>
                 <View style={styles.stars}>
                     {[1, 2, 3, 4, 5].map((s) => (
                         <Pressable key={s} onPress={() => setRating(s)}>

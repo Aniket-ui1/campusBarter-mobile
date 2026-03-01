@@ -1,0 +1,94 @@
+name: 🚀 CI / CD Pipeline
+
+# ── Trigger Rules ─────────────────────────────────────────────────
+# Security scan + lint + build runs on EVERY branch push (catch errors early)
+# Deploy step ONLY runs when code is merged into main
+on:
+  push:
+    branches: ["**"]        # All branches — runs checks
+  pull_request:
+    branches: [main]        # PRs targeting main — runs checks before merge
+
+jobs:
+  # ── Step 1: Security Vulnerability Scan ───────────────────────────
+  security-scan:
+    name: 🔒 Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run npm audit (Vulnerability Check)
+        run: npm audit --audit-level=high
+        # Fails if HIGH or CRITICAL vulnerabilities are found
+
+  # ── Step 2: Lint ──────────────────────────────────────────────────
+  lint:
+    name: 🧹 Lint Check
+    runs-on: ubuntu-latest
+    needs: security-scan
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Lint
+        run: npm run lint
+
+  # ── Step 3: TypeScript Build ───────────────────────────────────────
+  build:
+    name: 🏗️ TypeScript Build
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Type Check
+        run: npx tsc --noEmit
+        # Checks TypeScript without outputting files — catches type errors
+
+  # ── Step 4: Deploy (main branch only) ────────────────────────────
+  # This step is a placeholder — uncomment and configure when you have
+  # your Azure App Service set up in Phase 2.
+  #
+  # deploy:
+  #   name: ☁️ Deploy to Azure
+  #   runs-on: ubuntu-latest
+  #   needs: build
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   steps:
+  #     - name: Checkout Code
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Deploy to Azure App Service
+  #       uses: azure/webapps-deploy@v3
+  #       with:
+  #         app-name: campusbarter-api
+  #         publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}

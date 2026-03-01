@@ -6,9 +6,9 @@ import { AppColors } from '@/constants/theme';
 
 export default function Index() {
     const { user, isLoading } = useAuth();
-    const { hasSeenOnboarding } = useOnboarding();
+    const { hasSeenOnboarding, isReady } = useOnboarding();
 
-    if (isLoading) {
+    if (isLoading || !isReady) {
         return (
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: AppColors.background }}>
                 <ActivityIndicator size="large" color={AppColors.primary} />
@@ -26,3 +26,4 @@ export default function Index() {
 
     return <Redirect href="/(tabs)" />;
 }
+
