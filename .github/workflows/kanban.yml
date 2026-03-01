@@ -39,7 +39,7 @@ jobs:
     if: github.event_name == 'issues' && github.event.action == 'opened'
     steps:
       - name: Label based on title keywords
-        uses: github/issue-labeler@v3.0
+        uses: github/issue-labeler@v3.4
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           configuration-path: .github/labeler.yml
