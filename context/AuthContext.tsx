@@ -78,6 +78,7 @@ export interface SignUpData {
     semester: number;
     campus?: string;
     bio?: string;
+
 }
 
 // ── Context type — all methods past + present ─────────────────────
@@ -87,6 +88,7 @@ interface AuthContextType {
     isLoading: boolean;
 
     // New canonical names
+
     login: (email: string, password: string) => Promise<void>;
     register: (name: string, email: string, password: string) => Promise<void>;
     logout: () => void;
@@ -106,6 +108,7 @@ interface AuthContextType {
         weaknesses: string[];
         interests: string[];
     }) => Promise<void>;
+
 }
 
 // ── Constants ─────────────────────────────────────────────────────
@@ -383,6 +386,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Log the redirect URI so you know exactly what to register in Azure
     console.log("🔑 Auth redirect URI:", redirectUri);
 
+
     const [request, response, promptAsync] = AuthSession.useAuthRequest(
         {
             clientId: azureConfig.clientId,
@@ -418,6 +422,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 const idToken = tokenResponse.idToken;
                 if (!idToken) {
                     throw new Error("No id_token returned from Azure. Make sure 'openid' scope is included.");
+
                 }
 
                 const claims = decodeJwtPayload(idToken);
@@ -454,6 +459,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 await persistUser(u);
                 // Always go to tabs — ProfileSetupOverlay modal
                 // will appear on top if profileComplete is false
+
                 router.replace("/(tabs)");
             } catch (err) {
                 console.error("Token exchange failed:", err);
@@ -462,6 +468,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 setIsLoading(false);
             }
         })();
+
     }, [response, discovery]);
 
     const loginWithMicrosoft = async () => {
@@ -495,6 +502,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 updateProfile,
                 completeProfile,
             }}
+
         >
             {children}
         </AuthContext.Provider>
