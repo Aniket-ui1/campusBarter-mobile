@@ -3,14 +3,14 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { MOCK_LISTINGS } from '@/data/mock';
+import { Button } from '@/components/ui/Button';
 
 export default function DraftsScreen() {
     const router = useRouter();
-    const drafts = MOCK_LISTINGS.filter((l) => l.status === 'draft');
 
+    // Drafts are a client-side feature — we can implement local storage later.
+    // For now, this screen shows an empty state with a CTA to create a new post.
     return (
         <View style={styles.container}>
             <View style={styles.statusSpacer} />
@@ -22,25 +22,18 @@ export default function DraftsScreen() {
                 <View style={{ width: 40 }} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-                {drafts.length === 0 ? (
-                    <EmptyState icon="📝" title="No drafts" description="Your saved drafts will appear here." />
-                ) : (
-                    drafts.map((d) => (
-                        <View key={d.id} style={styles.card}>
-                            <Text style={styles.cardTitle}>{d.title}</Text>
-                            <Text style={styles.cardDesc} numberOfLines={2}>{d.description}</Text>
-                            <View style={styles.cardActions}>
-                                <Badge label={d.category} variant="primary" />
-                                <Pressable style={styles.publishBtn}>
-                                    <Ionicons name="rocket-outline" size={14} color="#FFFFFF" />
-                                    <Text style={styles.publishText}>Publish</Text>
-                                </Pressable>
-                            </View>
-                        </View>
-                    ))
-                )}
-            </ScrollView>
+            <View style={styles.center}>
+                <EmptyState
+                    icon="📝"
+                    title="No drafts"
+                    description="Your saved drafts will appear here. Start posting to create one!"
+                />
+                <Button
+                    title="Create a Post"
+                    onPress={() => router.push('/(tabs)/post')}
+                    icon={<Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />}
+                />
+            </View>
         </View>
     );
 }
@@ -54,11 +47,5 @@ const styles = StyleSheet.create({
     },
     backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: AppColors.surface, alignItems: 'center', justifyContent: 'center' },
     headerTitle: { fontSize: 17, fontWeight: '700', color: AppColors.text },
-    scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40, gap: Spacing.md },
-    card: { backgroundColor: AppColors.surfaceLight, borderWidth: 1, borderColor: AppColors.border, borderRadius: Radii.lg, padding: Spacing.lg, gap: Spacing.sm },
-    cardTitle: { fontSize: 16, fontWeight: '700', color: AppColors.text },
-    cardDesc: { fontSize: 13, color: AppColors.textSecondary, lineHeight: 20 },
-    cardActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    publishBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: AppColors.primary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
-    publishText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xl, gap: Spacing.lg },
 });

@@ -1,6 +1,6 @@
 // context/DataContext.tsx
 // ─────────────────────────────────────────────────────────────────
-// All app data (listings, chats, messages) is stored in Firestore.
+// All app data (listings, chats, notifications) is stored in Firestore.
 // Real-time onSnapshot listeners keep UI in sync automatically.
 // ─────────────────────────────────────────────────────────────────
 
@@ -8,19 +8,26 @@ import React, {
     createContext,
     useContext,
     useEffect,
+    useMemo,
     useState,
 } from "react";
 import {
     closeListing,
     createListing,
+    deleteListing,
     FSChat,
     FSListing,
     FSMessage,
+    FSNotification,
     sendMessage as fsSendMessage,
     startChat as fsStartChat,
     subscribeToChats,
     subscribeToListings,
     subscribeToMessages,
+    subscribeToNotifications,
+    createNotification as fsCreateNotification,
+    markNotificationRead as fsMarkRead,
+    markAllNotificationsRead as fsMarkAllRead,
 } from "../lib/firestore";
 import { useAuth } from "./AuthContext";
 
@@ -29,6 +36,7 @@ import { useAuth } from "./AuthContext";
 // Re-export Firestore types under the names the rest of the app uses
 export type Listing = FSListing;
 export type Chat = FSChat & { messages: FSMessage[] };
+export type AppNotification = FSNotification;
 
 interface DataContextType {
     listings: Listing[];
@@ -37,6 +45,7 @@ interface DataContextType {
     ) => Promise<void>;
     getListingById: (id: string) => Listing | undefined;
     closeListing: (id: string) => Promise<void>;
+    deleteListing: (id: string) => Promise<void>;
 
     chats: Chat[];
     startChat: (
@@ -50,6 +59,15 @@ interface DataContextType {
         chatId: string,
         cb: (messages: FSMessage[]) => void
     ) => () => void;
+
+    notifications: AppNotification[];
+    unreadCount: number;
+    addNotification: (
+        userId: string,
+        data: Omit<AppNotification, "id" | "createdAt" | "read">
+    ) => Promise<void>;
+    markRead: (notifId: string) => Promise<void>;
+    markAllRead: () => Promise<void>;
 }
 
 // ── Context ───────────────────────────────────────────────────────
@@ -68,6 +86,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const { user } = useAuth();
     const [listings, setListings] = useState<Listing[]>([]);
     const [chats, setChats] = useState<Chat[]>([]);
+    const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
     // ── Subscribe to listings ─────────────────────────────────────
     useEffect(() => {
@@ -88,19 +107,39 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         return unsub;
     }, [user?.id]);
 
+    // ── Subscribe to notifications for the current user ───────────
+    useEffect(() => {
+        if (!user) {
+            setNotifications([]);
+            return;
+        }
+        const unsub = subscribeToNotifications(user.id, (data) =>
+            setNotifications(data)
+        );
+        return unsub;
+    }, [user?.id]);
+
+    const unreadCount = useMemo(
+        () => notifications.filter((n) => !n.read).length,
+        [notifications]
+    );
+
     // ── Listings API ──────────────────────────────────────────────
 
     const addListing = async (
         newListing: Omit<Listing, "id" | "createdAt" | "status">
     ) => {
         await createListing(newListing);
-        // onSnapshot will push the new doc automatically — no setState needed
     };
 
     const getListingById = (id: string) => listings.find((l) => l.id === id);
 
     const handleCloseListing = async (id: string) => {
         await closeListing(id);
+    };
+
+    const handleDeleteListing = async (id: string) => {
+        await deleteListing(id);
     };
 
     // ── Chats API ─────────────────────────────────────────────────
@@ -123,6 +162,25 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
     const getChatById = (chatId: string) => chats.find((c) => c.id === chatId);
 
+    // ── Notifications API ─────────────────────────────────────────
+
+    const addNotification = async (
+        userId: string,
+        data: Omit<AppNotification, "id" | "createdAt" | "read">
+    ) => {
+        await fsCreateNotification(userId, data);
+    };
+
+    const markRead = async (notifId: string) => {
+        if (!user) return;
+        await fsMarkRead(user.id, notifId);
+    };
+
+    const markAllRead = async () => {
+        if (!user) return;
+        await fsMarkAllRead(user.id);
+    };
+
     return (
         <DataContext.Provider
             value={{
@@ -130,11 +188,17 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 addListing,
                 getListingById,
                 closeListing: handleCloseListing,
+                deleteListing: handleDeleteListing,
                 chats,
                 startChat,
                 sendMessage,
                 getChatById,
                 subscribeToMessages,
+                notifications,
+                unreadCount,
+                addNotification,
+                markRead,
+                markAllRead,
             }}
         >
             {children}

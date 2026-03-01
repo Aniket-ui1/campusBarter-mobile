@@ -1,58 +1,66 @@
 /**
- * Campus Barter — Forest Green Design System
- * Light background, dark text, sage green accents.
+ * Campus Barter — Premium Forest Green Design System
+ * Inspired by Depop / OfferUp / Fiverr aesthetics.
  */
 
 import { Platform } from 'react-native';
 
-// Reference palette from design brief
-// dark:   #0D2B1D  — deep forest (text, headings)
-// forest: #345635  — medium forest (surfaces, accents)
-// sage:   #6B8F71  — sage green (primary interactive)
-// mist:   #AEC3B0  — mist green (secondary text, borders)
-// cream:  #E3EFD3  — light green-cream (cards, surfaces)
-// white:  #F7FDF2  — near-white background
-
+// ── Core palette ─────────────────────────────────────────────────
 export const AppColors = {
-  // Primary accent — sage green
-  primary: '#6B8F71',
+  // Primary accent
+  primary: '#4A7C59',
+  primaryLight: '#6B8F71',
+  primaryDark: '#345635',
   secondary: '#345635',
   accent: '#4A7C59',
-  gradientFrom: '#6B8F71',
-  gradientTo: '#345635',
 
-  // Backgrounds (light)
-  background: '#F7FDF2',   // near-white with a green tint
-  surface: '#EBF5E0',   // slightly deeper cream for cards
-  surfaceLight: '#E3EFD3',   // cream — used for elevated cards
-  elevated: '#D6E8C7',   // a step darker for modals / popovers
+  // WhatsApp-inspired chat
+  chatGreen: '#DCF8C6',
+  chatWhite: '#FFFFFF',
+  chatBg: '#ECE5DD',
+
+  // Gradients
+  gradientFrom: '#4A7C59',
+  gradientTo: '#345635',
+  gradientHero: '#2D4A35',
+
+  // Backgrounds
+  background: '#FAFDF7',
+  surface: '#F0F5EB',
+  surfaceLight: '#E8F0DE',
+  elevated: '#DCE8CF',
 
   // Borders
-  border: 'rgba(107,143,113,0.25)',   // mist-green, semi-transparent
-  borderLight: 'rgba(107,143,113,0.12)',
+  border: 'rgba(74,124,89,0.18)',
+  borderLight: 'rgba(74,124,89,0.08)',
+  borderMedium: 'rgba(74,124,89,0.30)',
 
-  // Text (dark on light)
-  text: '#0D2B1D',   // deep forest — primary text
-  textSecondary: '#345635',   // medium forest — secondary text
-  textMuted: '#6B8F71',   // sage — muted / placeholder
+  // Text
+  text: '#0D2B1D',
+  textSecondary: '#3D5A42',
+  textMuted: '#7A9A7F',
+  textLight: '#A8C4AD',
 
   // Semantic
   success: '#22C55E',
-  warning: '#D97706',
-  error: '#DC2626',
+  warning: '#F59E0B',
+  error: '#EF4444',
+  info: '#3B82F6',
 
-  // Named aliases (match design reference)
+  // Named aliases
   dark: '#0D2B1D',
   forest: '#345635',
   sage: '#6B8F71',
   mist: '#AEC3B0',
-  cream: '#E3EFD3',
-  white: '#F7FDF2',
+  cream: '#E8F0DE',
+  white: '#FAFDF7',
+
+  // Overlay
+  overlay: 'rgba(13,43,29,0.5)',
+  overlayLight: 'rgba(13,43,29,0.08)',
 };
 
-/**
- * Themed color map used by useThemeColor and themed components.
- */
+// ── Themed colors ────────────────────────────────────────────────
 export const Colors = {
   light: {
     text: AppColors.text,
@@ -90,6 +98,7 @@ export const Colors = {
   },
 };
 
+// ── Fonts ─────────────────────────────────────────────────────────
 export const Fonts = Platform.select({
   ios: {
     sans: 'system-ui',
@@ -111,9 +120,7 @@ export const Fonts = Platform.select({
   },
 });
 
-/**
- * Spacing scale (4px base)
- */
+// ── Spacing scale (4px base) ─────────────────────────────────────
 export const Spacing = {
   xs: 4,
   sm: 8,
@@ -126,13 +133,59 @@ export const Spacing = {
   '5xl': 48,
 };
 
-/**
- * Border radius tokens
- */
+// ── Border radius ────────────────────────────────────────────────
 export const Radii = {
+  xs: 6,
   sm: 8,
   md: 12,
   lg: 16,
   xl: 20,
+  '2xl': 24,
   full: 9999,
+};
+
+// ── Shadows ──────────────────────────────────────────────────────
+export const Shadows = {
+  sm: Platform.select({
+    ios: { shadowColor: '#0D2B1D', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3 },
+    android: { elevation: 2 },
+    default: {},
+  }),
+  md: Platform.select({
+    ios: { shadowColor: '#0D2B1D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 8 },
+    android: { elevation: 4 },
+    default: {},
+  }),
+  lg: Platform.select({
+    ios: { shadowColor: '#0D2B1D', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 16 },
+    android: { elevation: 8 },
+    default: {},
+  }),
+};
+
+// ── Category metadata ────────────────────────────────────────────
+export const CATEGORY_COLORS: Record<string, string> = {
+  tutoring: '#4A7C59',
+  design: '#8B5CF6',
+  tech: '#3B82F6',
+  writing: '#F59E0B',
+  music: '#EC4899',
+  fitness: '#EF4444',
+  cooking: '#F97316',
+  language: '#06B6D4',
+  business: '#6366F1',
+  other: '#6B7280',
+};
+
+export const CATEGORY_EMOJIS: Record<string, string> = {
+  tutoring: '📚',
+  design: '🎨',
+  tech: '💻',
+  writing: '✍️',
+  music: '🎵',
+  fitness: '💪',
+  cooking: '🍳',
+  language: '🌍',
+  business: '📈',
+  other: '✨',
 };

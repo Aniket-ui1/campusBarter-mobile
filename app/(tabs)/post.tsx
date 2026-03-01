@@ -3,16 +3,19 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { AppColors, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { CategoryChip } from '@/components/ui/CategoryChip';
 import { CATEGORIES, LOCATION_OPTIONS } from '@/constants/categories';
+import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
 
 const SKILL_CATEGORIES = CATEGORIES.filter((c) => c.key !== 'all');
 
 export default function PostScreen() {
     const router = useRouter();
+    const { user } = useAuth();
+    const { addListing } = useData();
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [category, setCategory] = useState('');
@@ -20,6 +23,7 @@ export default function PostScreen() {
     const [tags, setTags] = useState('');
     const [isDraft, setIsDraft] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const validate = () => {
         const e: Record<string, string> = {};
@@ -31,10 +35,38 @@ export default function PostScreen() {
         return Object.keys(e).length === 0;
     };
 
-    const handlePublish = () => {
+    const handlePublish = async () => {
         if (!validate()) return;
-        Alert.alert(isDraft ? 'Draft Saved' : 'Skill Published!', isDraft ? 'You can edit it later from Drafts.' : 'Your skill is now visible to other students.');
+        if (!user) { Alert.alert('Error', 'You must be logged in to post.'); return; }
+
+        setIsSubmitting(true);
+        try {
+            await addListing({
+                type: 'OFFER',
+                title: title.trim(),
+                description: description.trim(),
+                credits: 1,
+                userId: user.id,
+                userName: user.displayName || user.name,
+            });
+
+            Alert.alert(
+                isDraft ? 'Draft Saved' : 'Published! 🚀',
+                isDraft ? 'You can edit it later from Drafts.' : 'Your skill is now live.',
+                [{ text: 'OK' }]
+            );
+            setTitle(''); setDescription(''); setCategory('');
+            setLocation('online'); setTags(''); setIsDraft(false); setErrors({});
+        } catch (err) {
+            Alert.alert('Error', 'Failed to publish. Please try again.');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
+
+    // Progress: title → description → category → done
+    const steps = [!!title.trim(), !!description.trim() && description.trim().length >= 20, !!category];
+    const progress = steps.filter(Boolean).length;
 
     return (
         <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -47,6 +79,14 @@ export default function PostScreen() {
                     <Text style={styles.draftsLink}>Drafts</Text>
                 </Pressable>
             </View>
+
+            {/* Progress bar */}
+            <Animated.View entering={FadeInDown.duration(300)} style={styles.progressWrap}>
+                <View style={styles.progressBar}>
+                    <View style={[styles.progressFill, { width: `${(progress / 3) * 100}%` }]} />
+                </View>
+                <Text style={styles.progressText}>{progress}/3 completed</Text>
+            </Animated.View>
 
             <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <Animated.View entering={FadeInDown.duration(400)} style={styles.form}>
@@ -63,8 +103,14 @@ export default function PostScreen() {
                         <Text style={styles.label}>Category</Text>
                         <View style={styles.chipGrid}>
                             {SKILL_CATEGORIES.map((c) => (
-                                <CategoryChip key={c.key} label={c.label} icon={c.icon}
-                                    active={category === c.key} onPress={() => setCategory(c.key)} />
+                                <Pressable key={c.key}
+                                    style={[styles.catChip, category === c.key && styles.catChipActive]}
+                                    onPress={() => setCategory(c.key)}>
+                                    <Text style={styles.catChipEmoji}>{CATEGORY_EMOJIS[c.key] ?? '✨'}</Text>
+                                    <Text style={[styles.catChipText, category === c.key && styles.catChipTextActive]}>
+                                        {c.label}
+                                    </Text>
+                                </Pressable>
                             ))}
                         </View>
                         {errors.category && <Text style={styles.error}>{errors.category}</Text>}
@@ -98,8 +144,13 @@ export default function PostScreen() {
                             thumbColor="#FFFFFF" />
                     </View>
 
-                    <Button title={isDraft ? 'Save Draft' : 'Publish Skill'} onPress={handlePublish} fullWidth size="lg"
-                        icon={<Ionicons name={isDraft ? 'bookmark-outline' : 'rocket-outline'} size={20} color="#FFFFFF" />} />
+                    <Button
+                        title={isDraft ? 'Save Draft' : 'Publish Skill'}
+                        onPress={handlePublish}
+                        fullWidth size="lg"
+                        loading={isSubmitting} disabled={isSubmitting}
+                        icon={<Ionicons name={isDraft ? 'bookmark-outline' : 'rocket-outline'} size={20} color="#FFFFFF" />}
+                    />
                 </Animated.View>
             </ScrollView>
         </KeyboardAvoidingView>
@@ -111,19 +162,43 @@ const styles = StyleSheet.create({
     statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
     header: {
         flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-        paddingHorizontal: Spacing.xl, marginBottom: Spacing.lg,
+        paddingHorizontal: Spacing.xl, marginBottom: Spacing.md,
     },
     headerTitle: { fontSize: 28, fontWeight: '900', color: AppColors.text, letterSpacing: -0.5 },
     draftsLink: { fontSize: 14, color: AppColors.primary, fontWeight: '600' },
+
+    // Progress
+    progressWrap: {
+        flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+        marginHorizontal: Spacing.xl, marginBottom: Spacing.lg,
+    },
+    progressBar: {
+        flex: 1, height: 6, backgroundColor: AppColors.surface,
+        borderRadius: 3, overflow: 'hidden',
+    },
+    progressFill: { height: '100%', backgroundColor: AppColors.primary, borderRadius: 3 },
+    progressText: { fontSize: 12, color: AppColors.textMuted, fontWeight: '600' },
+
     scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40 },
     form: { gap: Spacing.xl },
-    label: { color: AppColors.textSecondary, fontSize: 13, fontWeight: '500', marginLeft: 2 },
+    label: { color: AppColors.textSecondary, fontSize: 13, fontWeight: '600', marginLeft: 2 },
+
     chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    catChip: {
+        flexDirection: 'row', alignItems: 'center', gap: 5,
+        paddingHorizontal: 12, paddingVertical: 8, borderRadius: Radii.sm,
+        borderWidth: 1, borderColor: AppColors.border, backgroundColor: '#FFFFFF',
+    },
+    catChipActive: { backgroundColor: AppColors.primary, borderColor: AppColors.primary },
+    catChipEmoji: { fontSize: 14 },
+    catChipText: { fontSize: 12, fontWeight: '600', color: AppColors.textSecondary },
+    catChipTextActive: { color: '#FFFFFF' },
     error: { color: AppColors.error, fontSize: 12, fontWeight: '500', marginLeft: 2 },
+
     locRow: { flexDirection: 'row', gap: 8 },
     locBtn: {
         flex: 1, paddingVertical: 12, borderRadius: Radii.sm,
-        borderWidth: 1, borderColor: AppColors.border, backgroundColor: AppColors.surface,
+        borderWidth: 1, borderColor: AppColors.border, backgroundColor: '#FFFFFF',
         alignItems: 'center',
     },
     locBtnActive: { backgroundColor: AppColors.primary, borderColor: AppColors.primary },
@@ -131,9 +206,9 @@ const styles = StyleSheet.create({
     locTextActive: { color: '#FFFFFF' },
     draftRow: {
         flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-        backgroundColor: AppColors.surface, borderWidth: 1, borderColor: AppColors.border,
+        backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: AppColors.border,
         borderRadius: Radii.md, padding: Spacing.lg,
     },
     draftLabel: { color: AppColors.text, fontSize: 15, fontWeight: '600' },
-    draftHint: { color: AppColors.textSecondary, fontSize: 12, marginTop: 2 },
+    draftHint: { color: AppColors.textMuted, fontSize: 12, marginTop: 2 },
 });
