@@ -30,7 +30,7 @@ export function initMonitoring(): void {
         .setAutoCollectExceptions(true)        // log every uncaught exception
         .setAutoCollectDependencies(true)      // log SQL queries, HTTP calls
         .setAutoCollectConsole(true, true)     // capture console.log/error
-        .setAutoCollectPerformance(true)       // CPU, memory, response time
+        .setAutoCollectPerformance(true, false) // CPU, memory, response time
         .setSendLiveMetrics(true)              // real-time dashboard in Azure
         .start();
 
