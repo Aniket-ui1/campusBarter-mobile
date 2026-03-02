@@ -42,11 +42,6 @@ export default function AdminDashboard() {
     const [auditLog, setAuditLog] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Guard: only admin/moderator
-    if (!user) {
-        return null;
-    }
-
     const loadData = async () => {
         setLoading(true);
         try {
@@ -65,7 +60,11 @@ export default function AdminDashboard() {
         }
     };
 
+    // ⚠️ ALL hooks must be declared before any early return (Rules of Hooks)
     useEffect(() => { void loadData(); }, []);
+
+    // Guard: only render for logged-in users (role check can be added here)
+    if (!user) return null;
 
     const deleteListing = async (id: string) => {
         Alert.alert('Delete Listing', 'This will permanently remove the listing.', [
