@@ -106,9 +106,9 @@ export async function getOpenListings(): Promise<FSListing[]> {
         WHERE  status = 'OPEN'
         ORDER  BY createdAt DESC
     `);
-    return result.recordset.map(row => ({
+    return result.recordset.map((row: Record<string, unknown>) => ({
         ...row,
-        createdAt: row.createdAt.toISOString(),
+        createdAt: (row.createdAt as Date).toISOString(),
     }));
 }
 
@@ -174,9 +174,9 @@ export async function getMessages(chatId: string): Promise<FSMessage[]> {
             WHERE  chatId = @chatId
             ORDER  BY timestamp ASC
         `);
-    return result.recordset.map(row => ({
+    return result.recordset.map((row: Record<string, unknown>) => ({
         ...row,
-        timestamp: row.timestamp.toISOString(),
+        timestamp: (row.timestamp as Date).toISOString(),
     }));
 }
 

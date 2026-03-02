@@ -80,7 +80,7 @@ export async function verifyAzureAdToken(
                 id: payload.oid,          // Azure AD Object ID
                 email: email,
                 displayName: payload.name,
-                role: payload['campusbarter_role'] as 'Student' | 'Moderator' | 'Admin' ?? 'Student',
+                role: (payload['campusbarter_role'] as 'Student' | 'Moderator' | 'Admin') ?? 'Student',
             };
 
             next();

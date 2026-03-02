@@ -54,7 +54,6 @@ app.use(express.json({ limit: '1mb' }));
 
 app.use(async (req, res, next) => {
     res.on('finish', async () => {
-        // @ts-expect-error — userId set by auth middleware
         const userId = req.user?.id ?? null;
         await auditLog(
             userId,
