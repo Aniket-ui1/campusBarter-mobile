@@ -109,7 +109,7 @@ export async function getOpenListings(): Promise<FSListing[]> {
     return result.recordset.map((row: Record<string, unknown>) => ({
         ...row,
         createdAt: (row.createdAt as Date).toISOString(),
-    }));
+    } as FSListing));
 }
 
 export async function createListing(
@@ -177,7 +177,7 @@ export async function getMessages(chatId: string): Promise<FSMessage[]> {
     return result.recordset.map((row: Record<string, unknown>) => ({
         ...row,
         timestamp: (row.timestamp as Date).toISOString(),
-    }));
+    } as FSMessage));
 }
 
 export async function sendMessage(
