@@ -40,6 +40,8 @@ import {
 import azureConfig from "../config/azureConfig";
 import { db } from "../lib/firebase";
 import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { setApiToken, clearApiToken, registerPushToken } from "../lib/api";
+import { connectSocket, disconnectSocket } from "../lib/socket";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -237,10 +239,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         })();
     }, []);
 
-    const persistUser = async (u: User) => {
+    const persistUser = async (u: User, idToken?: string) => {
         setUser(u);
         await storage.setItem(AUTH_KEY, JSON.stringify(u));
         await upsertFirestoreUser(u);
+        // Wire up Azure API + socket if we have a real Microsoft token
+        if (idToken) {
+            setApiToken(idToken);
+            connectSocket();
+            // Register push token (best effort — ignore failure)
+            try {
+                const Notifications = await import('expo-notifications');
+                const { status } = await Notifications.requestPermissionsAsync();
+                if (status === 'granted') {
+                    const tokenRes = await Notifications.getExpoPushTokenAsync();
+                    await registerPushToken(tokenRes.data).catch(() => { });
+                }
+            } catch { /* push not available on web / simulator */ }
+        }
     };
 
     // ── Core auth actions ─────────────────────────────────────────
@@ -306,6 +322,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const logout = async () => {
         setUser(null);
         await storage.deleteItem(AUTH_KEY);
+        clearApiToken();
+        disconnectSocket();
         router.replace("/(auth)/sign-in");
     };
 
@@ -482,7 +500,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     reviewCount: existingProfile?.reviewCount ?? 0,
                 });
 
-                await persistUser(u);
+                await persistUser(u, idToken);
                 // Always go to tabs — ProfileSetupOverlay modal
                 // will appear on top if profileComplete is false
 
