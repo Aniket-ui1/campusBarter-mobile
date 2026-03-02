@@ -1,9 +1,8 @@
 // backend/src/routes/credits.ts
-// GET  /api/credits/balance  — current user's Time Credits balance
-// GET  /api/credits/history  — paginated transaction log
-// POST /api/credits/transfer — transfer credits to another user (atomic)
 
 import { Router, Request, Response } from 'express';
+import { body, query } from 'express-validator';
+import { validate } from '../middleware/validate';
 import { getCreditsBalance, getCreditsHistory, transferCredits } from '../db';
 
 export const creditsRouter = Router();
@@ -19,45 +18,40 @@ creditsRouter.get('/balance', async (req: Request, res: Response) => {
 });
 
 // GET /api/credits/history?page=1
-creditsRouter.get('/history', async (req: Request, res: Response) => {
-    try {
-        const page = Math.max(1, Number(req.query.page) || 1);
-        const history = await getCreditsHistory(req.user!.id, page);
-        res.json({ page, transactions: history });
-    } catch {
-        res.status(500).json({ error: 'Failed to fetch credits history' });
+creditsRouter.get('/history',
+    validate([query('page').optional().isInt({ min: 1 }).withMessage('page must be a positive integer')]),
+    async (req: Request, res: Response) => {
+        try {
+            const page = Math.max(1, Number(req.query.page) || 1);
+            const history = await getCreditsHistory(req.user!.id, page);
+            res.json({ page, transactions: history });
+        } catch {
+            res.status(500).json({ error: 'Failed to fetch credits history' });
+        }
     }
-});
+);
 
-// POST /api/credits/transfer — transfer credits to another user
-creditsRouter.post('/transfer', async (req: Request, res: Response) => {
+// POST /api/credits/transfer
+const transferRules = [
+    body('toUserId').trim().notEmpty().withMessage('toUserId is required'),
+    body('amount').isInt({ min: 1 }).withMessage('Amount must be a positive integer'),
+    body('reason').trim().notEmpty().withMessage('Reason is required')
+        .isLength({ max: 500 }).withMessage('Reason max 500 characters'),
+];
+
+creditsRouter.post('/transfer', validate(transferRules), async (req: Request, res: Response) => {
     try {
         const { toUserId, amount, reason } = req.body;
 
-        // Input validation
-        if (!toUserId?.trim()) {
-            res.status(400).json({ error: 'toUserId is required' });
-            return;
-        }
         if (toUserId.trim() === req.user!.id) {
-            res.status(400).json({ error: 'Cannot transfer credits to yourself' });
-            return;
-        }
-        const parsedAmount = Number(amount);
-        if (!Number.isInteger(parsedAmount) || parsedAmount < 1) {
-            res.status(400).json({ error: 'Amount must be a positive whole number' });
-            return;
-        }
-        if (!reason?.trim() || reason.length > 500) {
-            res.status(400).json({ error: 'Reason is required (max 500 chars)' });
+            res.status(400).json({ errors: [{ field: 'toUserId', message: 'Cannot transfer credits to yourself' }] });
             return;
         }
 
-        await transferCredits(req.user!.id, toUserId.trim(), parsedAmount, reason.trim());
-        res.json({ message: `${parsedAmount} credits transferred successfully` });
+        await transferCredits(req.user!.id, toUserId.trim(), Number(amount), reason.trim());
+        res.json({ message: `${amount} credits transferred successfully` });
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Transfer failed';
-        // Return 402 for insufficient credits so frontend can handle it specifically
         const status = message === 'Insufficient credits' ? 402 : 500;
         res.status(status).json({ error: message });
     }

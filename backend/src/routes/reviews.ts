@@ -1,56 +1,46 @@
 // backend/src/routes/reviews.ts
-// POST /api/reviews  — submit a rating after an exchange
-// GET  /api/reviews/user/:id — get all reviews for a user
 
 import { Router, Request, Response } from 'express';
+import { body, param } from 'express-validator';
+import { validate } from '../middleware/validate';
 import { createReview, getReviews } from '../db';
 
 export const reviewsRouter = Router();
 
-// POST /api/reviews — create a review (authenticated user reviewing another user)
-reviewsRouter.post('/', async (req: Request, res: Response) => {
+// POST /api/reviews — submit a review
+const createReviewRules = [
+    body('revieweeId').trim().notEmpty().withMessage('revieweeId is required'),
+    body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be a whole number between 1 and 5'),
+    body('comment').trim().notEmpty().withMessage('Comment is required')
+        .isLength({ max: 1000 }).withMessage('Comment max 1000 characters'),
+];
+
+reviewsRouter.post('/', validate(createReviewRules), async (req: Request, res: Response) => {
     try {
         const { revieweeId, rating, comment } = req.body;
 
-        // Input validation
-        if (!revieweeId?.trim()) {
-            res.status(400).json({ error: 'revieweeId is required' });
-            return;
-        }
-        if (revieweeId === req.user!.id) {
-            res.status(400).json({ error: 'You cannot review yourself' });
-            return;
-        }
-        const parsedRating = Number(rating);
-        if (!Number.isInteger(parsedRating) || parsedRating < 1 || parsedRating > 5) {
-            res.status(400).json({ error: 'Rating must be a whole number between 1 and 5' });
-            return;
-        }
-        if (!comment?.trim() || comment.length > 1000) {
-            res.status(400).json({ error: 'Comment is required (max 1000 chars)' });
+        if (revieweeId.trim() === req.user!.id) {
+            res.status(400).json({ errors: [{ field: 'revieweeId', message: 'You cannot review yourself' }] });
             return;
         }
 
-        const reviewId = await createReview(
-            req.user!.id,
-            revieweeId.trim(),
-            parsedRating,
-            comment
-        );
-
-        res.status(201).json({ id: reviewId, message: 'Review submitted' });
+        const id = await createReview(req.user!.id, revieweeId.trim(), Number(rating), comment);
+        res.status(201).json({ id, message: 'Review submitted' });
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to create review';
         res.status(500).json({ error: message });
     }
 });
 
-// GET /api/reviews/user/:id — get all reviews for a given user (public)
-reviewsRouter.get('/user/:id', async (req: Request, res: Response) => {
-    try {
-        const reviews = await getReviews(req.params.id);
-        res.json(reviews);
-    } catch {
-        res.status(500).json({ error: 'Failed to fetch reviews' });
+// GET /api/reviews/user/:id — get all reviews for a user
+reviewsRouter.get('/user/:id',
+    validate([param('id').trim().notEmpty().withMessage('User ID is required')]),
+    async (req: Request, res: Response) => {
+        try {
+            const reviews = await getReviews(req.params.id);
+            res.json(reviews);
+        } catch {
+            res.status(500).json({ error: 'Failed to fetch reviews' });
+        }
     }
-});
+);

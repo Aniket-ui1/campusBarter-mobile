@@ -1,15 +1,13 @@
 // backend/src/routes/chats.ts
-// GET  /api/chats              — list my chats
-// POST /api/chats              — start a new chat on a listing
-// GET  /api/chats/:id/messages — get messages in a chat
-// POST /api/chats/:id/messages — send a message
 
 import { Router, Request, Response } from 'express';
+import { body, param } from 'express-validator';
+import { validate } from '../middleware/validate';
 import { getMessages, sendMessage, getChats, createChat } from '../db';
 
 export const chatsRouter = Router();
 
-// GET /api/chats — get all chats the current user is part of
+// GET /api/chats — list all chats for the current user
 chatsRouter.get('/', async (req: Request, res: Response) => {
     try {
         const chats = await getChats(req.user!.id);
@@ -20,22 +18,17 @@ chatsRouter.get('/', async (req: Request, res: Response) => {
 });
 
 // POST /api/chats — start a new chat on a listing
-chatsRouter.post('/', async (req: Request, res: Response) => {
+const createChatRules = [
+    body('listingId').trim().notEmpty().withMessage('listingId is required'),
+    body('listingTitle').trim().notEmpty().withMessage('listingTitle is required')
+        .isLength({ max: 200 }).withMessage('listingTitle max 200 characters'),
+];
+
+chatsRouter.post('/', validate(createChatRules), async (req: Request, res: Response) => {
     try {
-        const { listingId, listingTitle } = req.body;
-
-        if (!listingId?.trim()) {
-            res.status(400).json({ error: 'listingId is required' });
-            return;
-        }
-        if (!listingTitle?.trim() || listingTitle.length > 200) {
-            res.status(400).json({ error: 'listingTitle is required (max 200 chars)' });
-            return;
-        }
-
         const chatId = await createChat(
-            listingId.trim(),
-            listingTitle.trim(),
+            req.body.listingId.trim(),
+            req.body.listingTitle.trim(),
             req.user!.id
         );
         res.status(201).json({ id: chatId, message: 'Chat created' });
@@ -44,30 +37,29 @@ chatsRouter.post('/', async (req: Request, res: Response) => {
     }
 });
 
-// GET /api/chats/:chatId/messages — get messages in a specific chat
-chatsRouter.get('/:chatId/messages', async (req: Request, res: Response) => {
-    try {
-        const messages = await getMessages(req.params.chatId);
-        res.json(messages);
-    } catch {
-        res.status(500).json({ error: 'Failed to fetch messages' });
+// GET /api/chats/:chatId/messages
+chatsRouter.get('/:chatId/messages',
+    validate([param('chatId').trim().notEmpty().withMessage('chatId is required')]),
+    async (req: Request, res: Response) => {
+        try {
+            const messages = await getMessages(req.params.chatId);
+            res.json(messages);
+        } catch {
+            res.status(500).json({ error: 'Failed to fetch messages' });
+        }
     }
-});
+);
 
 // POST /api/chats/:chatId/messages — send a message
-chatsRouter.post('/:chatId/messages', async (req: Request, res: Response) => {
-    try {
-        const { text } = req.body;
-        if (!text?.trim()) {
-            res.status(400).json({ error: 'Message cannot be empty' });
-            return;
-        }
-        if (text.length > 4000) {
-            res.status(400).json({ error: 'Message too long (max 4000 chars)' });
-            return;
-        }
+const sendMessageRules = [
+    param('chatId').trim().notEmpty().withMessage('chatId is required'),
+    body('text').trim().notEmpty().withMessage('Message cannot be empty')
+        .isLength({ max: 4000 }).withMessage('Message max 4000 characters'),
+];
 
-        await sendMessage(req.params.chatId, req.user!.id, text);
+chatsRouter.post('/:chatId/messages', validate(sendMessageRules), async (req: Request, res: Response) => {
+    try {
+        await sendMessage(req.params.chatId, req.user!.id, req.body.text);
         res.status(201).json({ message: 'Sent' });
     } catch {
         res.status(500).json({ error: 'Failed to send message' });
