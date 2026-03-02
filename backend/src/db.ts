@@ -470,3 +470,42 @@ export async function getPushToken(userId: string): Promise<string | null> {
         .query(`SELECT pushToken FROM Users WHERE id = @userId`);
     return (result.recordset[0]?.pushToken as string) ?? null;
 }
+
+// ── Smart Matching ─────────────────────────────────────────────
+
+/**
+ * Find users whose open listings match a set of keywords and opposite type.
+ * Returns distinct user IDs (excluding the poster).
+ */
+export async function findMatchingUsers(params: {
+    keywords: string[];
+    oppositeType: 'OFFER' | 'REQUEST';
+    excludeUserId: string;
+}): Promise<Record<string, unknown>[]> {
+    const { keywords, oppositeType, excludeUserId } = params;
+    if (keywords.length === 0) return [];
+
+    const db = await getPool();
+    const req = db.request()
+        .input('type', sql.NVarChar(20), oppositeType)
+        .input('exclude', sql.NVarChar(128), excludeUserId);
+
+    // Build OR conditions dynamically — one LIKE per keyword
+    // This is safe: keywords are already sanitized (alphanumeric only from regex)
+    const likeConditions = keywords.map((kw, i) => {
+        const paramName = `kw${i}`;
+        req.input(paramName, sql.NVarChar(100), `%${kw}%`);
+        return `(l.title LIKE @${paramName} OR l.description LIKE @${paramName})`;
+    }).join(' OR ');
+
+    const result = await req.query(`
+        SELECT DISTINCT l.userId
+        FROM   Listings l
+        WHERE  l.type   = @type
+          AND  l.status = 'OPEN'
+          AND  l.userId != @exclude
+          AND  (${likeConditions})
+    `);
+
+    return result.recordset;
+}

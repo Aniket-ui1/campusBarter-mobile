@@ -6,6 +6,7 @@ import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
 import { requireRole } from '../middleware/auth';
 import { getOpenListings, createListing, closeListing, deleteListing } from '../db';
+import { runSmartMatching } from '../matcher';
 
 export const listingsRouter = Router();
 
@@ -32,6 +33,7 @@ const createListingRules = [
 listingsRouter.post('/', validate(createListingRules), async (req: Request, res: Response) => {
     try {
         const { type, title, description, credits } = req.body;
+
         const id = await createListing({
             type,
             title: title.trim(),
@@ -40,6 +42,19 @@ listingsRouter.post('/', validate(createListingRules), async (req: Request, res:
             userId: req.user!.id,
             userName: req.user!.displayName,
         });
+
+        // ── Smart Matching ──────────────────────────────────
+        // Fire-and-forget: runs in background, never blocks the response.
+        // If matching fails for any reason, the listing is still created.
+        void runSmartMatching({
+            newListingId: id,
+            type: type as 'OFFER' | 'REQUEST',
+            title: title.trim(),
+            description: description.trim(),
+            postedByUserId: req.user!.id,
+            postedByName: req.user!.displayName,
+        });
+
         res.status(201).json({ id, message: 'Listing created' });
     } catch {
         res.status(500).json({ error: 'Failed to create listing' });
@@ -64,7 +79,7 @@ listingsRouter.patch('/:id/close', validate(listingIdRule), async (req: Request,
 listingsRouter.delete('/:id', requireRole('Moderator', 'Admin'), validate(listingIdRule), async (req: Request, res: Response) => {
     try {
         await deleteListing(req.params.id, req.user!.id);
-        res.json({ message: 'Listing deleted' });
+        res.json({ message: 'Listing deleted' });;
     } catch {
         res.status(500).json({ error: 'Failed to delete listing' });
     }
