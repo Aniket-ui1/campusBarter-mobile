@@ -17,7 +17,7 @@ jobs:
       - name: Add Issue to Project
         uses: actions/add-to-project@v1.0.2
         with:
-          project-url: https://github.com/users/Aniket-ui1/projects/1
+          project-url: https://github.com/users/Aniket-ui1/projects/2
           github-token: ${{ secrets.PROJECT_TOKEN }}
 
   # ── Auto-add new PRs to the Kanban board ──────────────────────────
@@ -29,7 +29,7 @@ jobs:
       - name: Add PR to Project
         uses: actions/add-to-project@v1.0.2
         with:
-          project-url: https://github.com/users/Aniket-ui1/projects/1
+          project-url: https://github.com/users/Aniket-ui1/projects/2
           github-token: ${{ secrets.PROJECT_TOKEN }}
 
   # ── Auto-label Issues for better board organisation ───────────────

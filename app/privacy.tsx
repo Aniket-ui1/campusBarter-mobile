@@ -20,7 +20,7 @@ export default function PrivacyScreen() {
                 <Text style={styles.heading}>CampusBarter Privacy Policy</Text>
                 <Text style={styles.updated}>Last Updated: January 2025</Text>
                 <Text style={styles.body}>
-                    CampusBarter is committed to protecting your privacy in compliance with Canada's Personal Information Protection and Electronic Documents Act (PIPEDA).{'\n\n'}
+                    CampusBarter is committed to protecting your privacy in compliance with Canada&apos;s Personal Information Protection and Electronic Documents Act (PIPEDA).{'\n\n'}
                     <Text style={styles.subhead}>Information We Collect{'\n'}</Text>
                     We collect: your SAIT email, display name, program, semester, profile photo (optional), skill listings, messages, and reviews. We do not collect or store external passwords — authentication is handled by Azure AD / Microsoft Entra ID.{'\n\n'}
                     <Text style={styles.subhead}>How We Use Your Data{'\n'}</Text>
@@ -28,7 +28,7 @@ export default function PrivacyScreen() {
                     <Text style={styles.subhead}>Data Sharing{'\n'}</Text>
                     We do not sell or share your personal information with third parties. We use Firebase (Google Cloud) for data storage and authentication, which processes data under their own privacy policies and with appropriate data processing agreements.{'\n\n'}
                     <Text style={styles.subhead}>Your Rights{'\n'}</Text>
-                    Under PIPEDA, you have the right to: access your personal data, request correction of inaccurate data, withdraw consent and delete your account, and file a complaint with the Privacy Commissioner of Canada. To exercise these rights, use the 'Delete Account' option in Settings or contact us.{'\n\n'}
+                    Under PIPEDA, you have the right to: access your personal data, request correction of inaccurate data, withdraw consent and delete your account, and file a complaint with the Privacy Commissioner of Canada. To exercise these rights, use the &apos;Delete Account&apos; option in Settings or contact us.{'\n\n'}
                     <Text style={styles.subhead}>Data Retention{'\n'}</Text>
                     We retain your data while your account is active. Upon deletion, all personal data is removed within 30 days. Anonymized usage data may be retained for analytics.{'\n\n'}
                     <Text style={styles.subhead}>Security{'\n'}</Text>

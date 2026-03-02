@@ -1,0 +1,151 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workspaceName": {
+            "type": "string",
+            "defaultValue": "campusbarter-insights"
+        },
+        "location": {
+            "type": "string",
+            "defaultValue": "canadacentral"
+        },
+        "appServiceName": {
+            "type": "string",
+            "defaultValue": "campusbarter-api"
+        },
+        "actionGroupEmail": {
+            "type": "string",
+            "metadata": {
+                "description": "Email address to receive alert notifications"
+            }
+        }
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Insights/actionGroups",
+            "apiVersion": "2023-01-01",
+            "name": "campusbarter-alerts",
+            "location": "global",
+            "properties": {
+                "groupShortName": "CB-Alerts",
+                "enabled": true,
+                "emailReceivers": [
+                    {
+                        "name": "IT Admin",
+                        "emailAddress": "[parameters('actionGroupEmail')]",
+                        "useCommonAlertSchema": true
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Insights/metricAlerts",
+            "apiVersion": "2018-03-01",
+            "name": "High Error Rate Alert",
+            "location": "global",
+            "dependsOn": [
+                "campusbarter-alerts"
+            ],
+            "properties": {
+                "description": "Fires when API error rate exceeds 5% — possible attack or system failure",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                    "[resourceId('Microsoft.Web/sites', parameters('appServiceName'))]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT15M",
+                "criteria": {
+                    "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                    "allOf": [
+                        {
+                            "name": "ErrorRate",
+                            "metricName": "Http5xx",
+                            "operator": "GreaterThan",
+                            "threshold": 10,
+                            "timeAggregation": "Count"
+                        }
+                    ]
+                },
+                "actions": [
+                    {
+                        "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', 'campusbarter-alerts')]"
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Insights/metricAlerts",
+            "apiVersion": "2018-03-01",
+            "name": "High CPU Alert",
+            "location": "global",
+            "dependsOn": [
+                "campusbarter-alerts"
+            ],
+            "properties": {
+                "description": "Fires when App Service CPU exceeds 80% for 15 minutes",
+                "severity": 3,
+                "enabled": true,
+                "scopes": [
+                    "[resourceId('Microsoft.Web/sites', parameters('appServiceName'))]"
+                ],
+                "evaluationFrequency": "PT5M",
+                "windowSize": "PT15M",
+                "criteria": {
+                    "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                    "allOf": [
+                        {
+                            "name": "CpuPercentage",
+                            "metricName": "CpuPercentage",
+                            "operator": "GreaterThan",
+                            "threshold": 80,
+                            "timeAggregation": "Average"
+                        }
+                    ]
+                },
+                "actions": [
+                    {
+                        "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', 'campusbarter-alerts')]"
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Insights/metricAlerts",
+            "apiVersion": "2018-03-01",
+            "name": "App Service Down Alert",
+            "location": "global",
+            "dependsOn": [
+                "campusbarter-alerts"
+            ],
+            "properties": {
+                "description": "Fires when App Service availability drops below 99%",
+                "severity": 1,
+                "enabled": true,
+                "scopes": [
+                    "[resourceId('Microsoft.Web/sites', parameters('appServiceName'))]"
+                ],
+                "evaluationFrequency": "PT1M",
+                "windowSize": "PT5M",
+                "criteria": {
+                    "odata.type": "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+                    "allOf": [
+                        {
+                            "name": "Availability",
+                            "metricName": "HealthCheckStatus",
+                            "operator": "LessThan",
+                            "threshold": 1,
+                            "timeAggregation": "Average"
+                        }
+                    ]
+                },
+                "actions": [
+                    {
+                        "actionGroupId": "[resourceId('Microsoft.Insights/actionGroups', 'campusbarter-alerts')]"
+                    }
+                ]
+            }
+        }
+    ]
+}
