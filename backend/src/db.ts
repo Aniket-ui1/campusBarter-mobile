@@ -237,3 +237,218 @@ export async function updateUserProfile(
         `);
     await auditLog(userId, 'UPDATE_PROFILE', `User:${userId}`);
 }
+
+// ── Chats ─────────────────────────────────────────────────────
+
+export async function getChats(userId: string): Promise<Record<string, unknown>[]> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`
+            SELECT DISTINCT c.id, c.listingId, c.listingTitle, c.lastMessageAt, c.lastMessage
+            FROM   Chats c
+            INNER JOIN Messages m ON m.chatId = c.id
+            WHERE  m.senderId = @userId
+               OR  c.id IN (SELECT chatId FROM Messages WHERE senderId = @userId)
+            ORDER BY c.lastMessageAt DESC
+        `);
+    return result.recordset;
+}
+
+export async function createChat(
+    listingId: string,
+    listingTitle: string,
+    initiatorId: string
+): Promise<string> {
+    const db = await getPool();
+    const chatId = crypto.randomUUID();
+    await db.request()
+        .input('id', sql.NVarChar(128), chatId)
+        .input('listingId', sql.NVarChar(128), listingId)
+        .input('listingTitle', sql.NVarChar(200), listingTitle)
+        .query(`
+            INSERT INTO Chats (id, listingId, listingTitle)
+            VALUES (@id, @listingId, @listingTitle)
+        `);
+    await auditLog(initiatorId, 'CREATE_CHAT', `Chat:${chatId}`);
+    return chatId;
+}
+
+// ── Reviews ───────────────────────────────────────────────────
+
+export async function createReview(
+    reviewerId: string,
+    revieweeId: string,
+    rating: number,
+    comment: string
+): Promise<string> {
+    if (reviewerId === revieweeId) throw new Error('Cannot review yourself');
+    if (rating < 1 || rating > 5) throw new Error('Rating must be between 1 and 5');
+
+    const db = await getPool();
+    const reviewId = crypto.randomUUID();
+    await db.request()
+        .input('id', sql.NVarChar(128), reviewId)
+        .input('reviewerId', sql.NVarChar(128), reviewerId)
+        .input('revieweeId', sql.NVarChar(128), revieweeId)
+        .input('rating', sql.Int, rating)
+        .input('comment', sql.NVarChar(1000), comment.trim())
+        .query(`
+            INSERT INTO Reviews (id, reviewerId, revieweeId, rating, comment)
+            VALUES (@id, @reviewerId, @revieweeId, @rating, @comment)
+        `);
+    await auditLog(reviewerId, 'CREATE_REVIEW', `Review:${reviewId}`);
+    return reviewId;
+}
+
+export async function getReviews(userId: string): Promise<Record<string, unknown>[]> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`
+            SELECT r.id, r.rating, r.comment, r.createdAt,
+                   u.displayName AS reviewerName
+            FROM   Reviews r
+            JOIN   Users u ON u.id = r.reviewerId
+            WHERE  r.revieweeId = @userId
+            ORDER  BY r.createdAt DESC
+        `);
+    return result.recordset;
+}
+
+// ── Notifications ─────────────────────────────────────────────
+
+export async function getNotifications(userId: string): Promise<Record<string, unknown>[]> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`
+            SELECT id, type, title, body, [read], relatedId, createdAt
+            FROM   Notifications
+            WHERE  userId = @userId
+            ORDER  BY createdAt DESC
+        `);
+    return result.recordset;
+}
+
+export async function markNotificationRead(notificationId: string, userId: string): Promise<void> {
+    const db = await getPool();
+    await db.request()
+        .input('id', sql.NVarChar(128), notificationId)
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`UPDATE Notifications SET [read] = 1 WHERE id = @id AND userId = @userId`);
+}
+
+export async function markAllNotificationsRead(userId: string): Promise<void> {
+    const db = await getPool();
+    await db.request()
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`UPDATE Notifications SET [read] = 1 WHERE userId = @userId`);
+}
+
+export async function createNotification(
+    userId: string,
+    type: string,
+    title: string,
+    body: string,
+    relatedId?: string
+): Promise<void> {
+    const db = await getPool();
+    const id = crypto.randomUUID();
+    await db.request()
+        .input('id', sql.NVarChar(128), id)
+        .input('userId', sql.NVarChar(128), userId)
+        .input('type', sql.NVarChar(50), type)
+        .input('title', sql.NVarChar(200), title)
+        .input('body', sql.NVarChar(500), body)
+        .input('relatedId', sql.NVarChar(128), relatedId ?? null)
+        .query(`
+            INSERT INTO Notifications (id, userId, type, title, body, relatedId)
+            VALUES (@id, @userId, @type, @title, @body, @relatedId)
+        `);
+}
+
+// ── Time Credits ──────────────────────────────────────────────
+
+export async function getCreditsBalance(userId: string): Promise<number> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`SELECT creditsBalance FROM Users WHERE id = @userId`);
+    return (result.recordset[0]?.creditsBalance as number) ?? 0;
+}
+
+export async function getCreditsHistory(
+    userId: string,
+    page = 1,
+    pageSize = 20
+): Promise<Record<string, unknown>[]> {
+    const offset = (page - 1) * pageSize;
+    const db = await getPool();
+    const result = await db.request()
+        .input('userId', sql.NVarChar(128), userId)
+        .input('pageSize', sql.Int, pageSize)
+        .input('offset', sql.Int, offset)
+        .query(`
+            SELECT id, fromUserId, toUserId, amount, reason, createdAt
+            FROM   TimeCredits
+            WHERE  fromUserId = @userId OR toUserId = @userId
+            ORDER  BY createdAt DESC
+            OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
+        `);
+    return result.recordset;
+}
+
+export async function transferCredits(
+    fromUserId: string,
+    toUserId: string,
+    amount: number,
+    reason: string
+): Promise<void> {
+    if (fromUserId === toUserId) throw new Error('Cannot transfer credits to yourself');
+    if (amount < 1 || !Number.isInteger(amount)) throw new Error('Amount must be a positive integer');
+
+    const db = await getPool();
+    // Atomic SQL transaction — debit + credit + log happen together, or none at all
+    const txn = new sql.Transaction(db);
+    await txn.begin();
+    try {
+        // Check sender has enough balance
+        const balanceResult = await new sql.Request(txn)
+            .input('fromUserId', sql.NVarChar(128), fromUserId)
+            .query(`SELECT creditsBalance FROM Users WHERE id = @fromUserId`);
+        const currentBalance = (balanceResult.recordset[0]?.creditsBalance as number) ?? 0;
+        if (currentBalance < amount) throw new Error('Insufficient credits');
+
+        // Debit sender
+        await new sql.Request(txn)
+            .input('amount', sql.Int, amount)
+            .input('fromUserId', sql.NVarChar(128), fromUserId)
+            .query(`UPDATE Users SET creditsBalance = creditsBalance - @amount WHERE id = @fromUserId`);
+
+        // Credit receiver
+        await new sql.Request(txn)
+            .input('amount', sql.Int, amount)
+            .input('toUserId', sql.NVarChar(128), toUserId)
+            .query(`UPDATE Users SET creditsBalance = creditsBalance + @amount WHERE id = @toUserId`);
+
+        // Log the transaction
+        const txId = crypto.randomUUID();
+        await new sql.Request(txn)
+            .input('id', sql.NVarChar(128), txId)
+            .input('fromUserId', sql.NVarChar(128), fromUserId)
+            .input('toUserId', sql.NVarChar(128), toUserId)
+            .input('amount', sql.Int, amount)
+            .input('reason', sql.NVarChar(500), reason)
+            .query(`
+                INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason)
+                VALUES (@id, @fromUserId, @toUserId, @amount, @reason)
+            `);
+
+        await txn.commit();
+        await auditLog(fromUserId, 'TRANSFER_CREDITS', `${amount} credits to ${toUserId}`);
+    } catch (err) {
+        await txn.rollback();
+        throw err;
+    }
+}

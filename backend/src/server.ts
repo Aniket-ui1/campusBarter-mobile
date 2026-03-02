@@ -17,6 +17,10 @@ import { listingsRouter } from './routes/listings';
 import { chatsRouter } from './routes/chats';
 import { usersRouter } from './routes/users';
 import { healthRouter } from './routes/health';
+import { reviewsRouter } from './routes/reviews';
+import { notificationsRouter } from './routes/notifications';
+import { creditsRouter } from './routes/credits';
+import { uploadRouter } from './routes/upload';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -76,6 +80,10 @@ app.use('/api', verifyAzureAdToken);
 app.use('/api/listings', listingsRouter);
 app.use('/api/chats', chatsRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/reviews', reviewsRouter);
+app.use('/api/notifications', notificationsRouter);
+app.use('/api/credits', creditsRouter);
+app.use('/api/upload', uploadRouter);
 
 // Admin-only route example
 app.get('/api/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req, res) => {
