@@ -1,16 +1,17 @@
 // backend/src/server.ts
 // ─────────────────────────────────────────────────────────────
-// CampusBarter — Express REST API
-// Hosted on Azure App Service
-// Reads secrets from Azure Key Vault via Managed Identity
+// CampusBarter — Express REST API + Socket.io WebSocket server
+// Hosted on Azure App Service (Node 22, Linux)
 // ─────────────────────────────────────────────────────────────
 
+import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { verifyAzureAdToken, requireRole } from './middleware/auth';
 import { auditLog } from './db';
+import { initSocketServer } from './socket';
 
 // Route handlers
 import { listingsRouter } from './routes/listings';
@@ -21,6 +22,7 @@ import { reviewsRouter } from './routes/reviews';
 import { notificationsRouter } from './routes/notifications';
 import { creditsRouter } from './routes/credits';
 import { uploadRouter } from './routes/upload';
+import { tokensRouter } from './routes/tokens';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,10 +35,10 @@ app.use(helmet());
 // CORS — only allow requests from the app bundle
 app.use(cors({
     origin: [
-        'https://campusbarter.azurestaticapps.net',  // web app
-        'exp://*',                                    // Expo Go
+        'https://campusbarter.azurestaticapps.net',
+        'exp://*',
     ],
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Authorization', 'Content-Type'],
 }));
 
@@ -54,18 +56,10 @@ app.use(limiter);
 app.use(express.json({ limit: '1mb' }));
 
 // ── Audit Logging Middleware ──────────────────────────────────
-// Logs every incoming request to the AuditLog table
-
-app.use(async (req, res, next) => {
+app.use(async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     res.on('finish', async () => {
         const userId = req.user?.id ?? null;
-        await auditLog(
-            userId,
-            `${req.method} ${req.path}`,
-            undefined,
-            req.ip,
-            res.statusCode
-        );
+        await auditLog(userId, `${req.method} ${req.path}`, undefined, req.ip, res.statusCode);
     });
     next();
 });
@@ -84,9 +78,10 @@ app.use('/api/reviews', reviewsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/credits', creditsRouter);
 app.use('/api/upload', uploadRouter);
+app.use('/api/tokens', tokensRouter);
 
-// Admin-only route example
-app.get('/api/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req, res) => {
+// Admin-only audit log
+app.get('/api/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
     res.json({ message: 'Audit log endpoint — Phase 6 implementation' });
 });
 
@@ -97,10 +92,14 @@ app.use((err: Error, req: express.Request, res: express.Response, _next: express
     res.status(500).json({ error: 'Internal server error' });
 });
 
-// ── Start ────────────────────────────────────────────────────
+// ── HTTP + WebSocket Server ───────────────────────────────────
+// Use http.createServer so socket.io and Express share the same port.
 
-app.listen(PORT, () => {
-    console.log(`CampusBarter API running on port ${PORT}`);
+const httpServer = http.createServer(app);
+export const io = initSocketServer(httpServer);
+
+httpServer.listen(PORT, () => {
+    console.log(`CampusBarter API + WebSocket running on port ${PORT}`);
 });
 
 export default app;

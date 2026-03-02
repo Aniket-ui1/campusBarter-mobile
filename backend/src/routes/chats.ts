@@ -3,7 +3,9 @@
 import { Router, Request, Response } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
-import { getMessages, sendMessage, getChats, createChat } from '../db';
+import { getMessages, sendMessage, getChats, createChat, getUserProfile } from '../db';
+import { notifyNewMessage } from '../push';
+import { io } from '../server';
 
 export const chatsRouter = Router();
 
@@ -55,11 +57,38 @@ const sendMessageRules = [
     param('chatId').trim().notEmpty().withMessage('chatId is required'),
     body('text').trim().notEmpty().withMessage('Message cannot be empty')
         .isLength({ max: 4000 }).withMessage('Message max 4000 characters'),
+    // Optional: recipientId so we know who to notify
+    body('recipientId').optional().trim(),
 ];
 
 chatsRouter.post('/:chatId/messages', validate(sendMessageRules), async (req: Request, res: Response) => {
     try {
-        await sendMessage(req.params.chatId, req.user!.id, req.body.text);
+        const { text, recipientId } = req.body;
+        const chatId = req.params.chatId;
+
+        // 1. Save to database
+        await sendMessage(chatId, req.user!.id, text);
+
+        // 2. Broadcast to socket room in real time
+        const messagePayload = {
+            chatId,
+            senderId: req.user!.id,
+            senderName: req.user!.displayName,
+            text,
+            sentAt: new Date().toISOString(),
+        };
+        io.to(chatId).emit('new_message', messagePayload);
+
+        // 3. Send push notification to recipient (if offline / not in room)
+        if (recipientId) {
+            await notifyNewMessage(
+                recipientId,
+                req.user!.displayName,
+                chatId,
+                text
+            );
+        }
+
         res.status(201).json({ message: 'Sent' });
     } catch {
         res.status(500).json({ error: 'Failed to send message' });

@@ -452,3 +452,21 @@ export async function transferCredits(
         throw err;
     }
 }
+
+// ── Push Tokens ───────────────────────────────────────────────
+
+export async function savePushToken(userId: string, token: string): Promise<void> {
+    const db = await getPool();
+    await db.request()
+        .input('userId', sql.NVarChar(128), userId)
+        .input('token', sql.NVarChar(500), token)
+        .query(`UPDATE Users SET pushToken = @token WHERE id = @userId`);
+}
+
+export async function getPushToken(userId: string): Promise<string | null> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`SELECT pushToken FROM Users WHERE id = @userId`);
+    return (result.recordset[0]?.pushToken as string) ?? null;
+}
