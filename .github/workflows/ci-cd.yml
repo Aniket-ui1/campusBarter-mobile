@@ -70,11 +70,13 @@ jobs:
           node-version: "20"
           cache: "npm"
 
-      - name: Install Dependencies
-        run: npm ci --legacy-peer-deps
+      - name: Install Backend Dependencies
+        run: npm ci
+        working-directory: ./backend
 
-      - name: Type Check
+      - name: Type Check Backend
         run: npx tsc --noEmit
+        working-directory: ./backend
         # Checks TypeScript without outputting files — catches type errors
 
   # ── Step 4: Deploy (main branch only) ────────────────────────────

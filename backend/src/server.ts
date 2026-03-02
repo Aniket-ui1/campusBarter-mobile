@@ -12,6 +12,7 @@ import rateLimit from 'express-rate-limit';
 import { verifyAzureAdToken, requireRole } from './middleware/auth';
 import { auditLog } from './db';
 import { initSocketServer } from './socket';
+import { setIO } from './socketInstance';
 
 // Route handlers
 import { listingsRouter } from './routes/listings';
@@ -96,7 +97,8 @@ app.use((err: Error, req: express.Request, res: express.Response, _next: express
 // Use http.createServer so socket.io and Express share the same port.
 
 const httpServer = http.createServer(app);
-export const io = initSocketServer(httpServer);
+const io = initSocketServer(httpServer);
+setIO(io); // Register singleton so route files can emit without circular imports
 
 httpServer.listen(PORT, () => {
     console.log(`CampusBarter API + WebSocket running on port ${PORT}`);

@@ -3,9 +3,9 @@
 import { Router, Request, Response } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
-import { getMessages, sendMessage, getChats, createChat, getUserProfile } from '../db';
+import { getMessages, sendMessage, getChats, createChat } from '../db';
 import { notifyNewMessage } from '../push';
-import { io } from '../server';
+import { getIO } from '../socketInstance'; // ← singleton, no circular import
 
 export const chatsRouter = Router();
 
@@ -57,7 +57,6 @@ const sendMessageRules = [
     param('chatId').trim().notEmpty().withMessage('chatId is required'),
     body('text').trim().notEmpty().withMessage('Message cannot be empty')
         .isLength({ max: 4000 }).withMessage('Message max 4000 characters'),
-    // Optional: recipientId so we know who to notify
     body('recipientId').optional().trim(),
 ];
 
@@ -77,16 +76,15 @@ chatsRouter.post('/:chatId/messages', validate(sendMessageRules), async (req: Re
             text,
             sentAt: new Date().toISOString(),
         };
-        io.to(chatId).emit('new_message', messagePayload);
+        try {
+            getIO().to(chatId).emit('new_message', messagePayload);
+        } catch {
+            // Socket not yet initialised (e.g. in tests) — safe to skip
+        }
 
-        // 3. Send push notification to recipient (if offline / not in room)
+        // 3. Push notification to recipient if offline
         if (recipientId) {
-            await notifyNewMessage(
-                recipientId,
-                req.user!.displayName,
-                chatId,
-                text
-            );
+            await notifyNewMessage(recipientId, req.user!.displayName, chatId, text);
         }
 
         res.status(201).json({ message: 'Sent' });
