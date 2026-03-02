@@ -32,10 +32,14 @@ export default function ProfileScreen() {
     const MENU_ITEMS: MenuItem[] = [
         { icon: 'list-outline', label: 'My Listings', onPress: () => router.push('/my-listings') },
         { icon: 'git-pull-request-outline', label: 'My Requests', onPress: () => router.push('/my-requests') },
+        { icon: 'time-outline', label: 'Time Credits', onPress: () => router.push('/credits' as any) },
         { icon: 'bookmark-outline', label: 'Drafts', onPress: () => router.push('/drafts') },
         { icon: 'star-outline', label: 'Reviews', onPress: () => router.push({ pathname: '/reviews/[userId]', params: { userId: user?.id ?? 'u1' } }) },
         { icon: 'notifications-outline', label: 'Notifications', onPress: () => router.push('/notifications'), badge: unreadCount > 0 ? String(unreadCount) : undefined },
         { icon: 'settings-outline', label: 'Settings', onPress: () => router.push('/settings') },
+        ...((user as any)?.role === 'Admin' || (user as any)?.role === 'Moderator'
+            ? [{ icon: 'shield-checkmark-outline', label: 'Admin Dashboard', onPress: () => router.push('/admin' as any) }]
+            : []),
     ];
 
     return (
