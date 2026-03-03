@@ -7,9 +7,11 @@
 import {
     addDoc,
     collection,
+    deleteDoc,
     doc,
     DocumentData,
     getDoc,
+    getDocs,
     onSnapshot,
     orderBy,
     query,
@@ -47,6 +49,7 @@ export interface FSChat {
     listingTitle: string;
     participants: string[];
     lastMessageAt: string;
+    lastMessage?: string;
 }
 
 // ── Listings ─────────────────────────────────────────────────────
@@ -96,6 +99,13 @@ export async function createListing(
  */
 export async function closeListing(listingId: string): Promise<void> {
     await updateDoc(doc(db, "listings", listingId), { status: "CLOSED" });
+}
+
+/**
+ * Permanently delete a listing from Firestore.
+ */
+export async function deleteListing(listingId: string): Promise<void> {
+    await deleteDoc(doc(db, "listings", listingId));
 }
 
 // ── Chats ─────────────────────────────────────────────────────────
@@ -200,7 +210,7 @@ export async function sendMessage(
             text,
             timestamp: now,
         }),
-        updateDoc(doc(db, "chats", chatId), { lastMessageAt: now }),
+        updateDoc(doc(db, "chats", chatId), { lastMessageAt: now, lastMessage: text }),
     ]);
 }
 
@@ -224,4 +234,82 @@ export async function updateUserProfile(
     updates: Partial<{ displayName: string; bio: string }>
 ): Promise<void> {
     await updateDoc(doc(db, "users", userId), updates);
+}
+
+// ── Notifications ─────────────────────────────────────────────────
+
+export interface FSNotification {
+    id: string;
+    type: "request" | "accepted" | "message" | "review" | "match";
+    title: string;
+    body: string;
+    read: boolean;
+    relatedId?: string;
+    createdAt: string;
+}
+
+/**
+ * Subscribe to a user's notifications, sorted newest-first.
+ */
+export function subscribeToNotifications(
+    userId: string,
+    cb: (notifications: FSNotification[]) => void
+) {
+    const q = query(
+        collection(db, "notifications", userId, "items"),
+        orderBy("createdAt", "desc")
+    );
+    return onSnapshot(q, (snap) => {
+        cb(
+            snap.docs.map((d) => ({
+                id: d.id,
+                ...(d.data() as Omit<FSNotification, "id">),
+            }))
+        );
+    });
+}
+
+/**
+ * Create a notification for a user.
+ */
+export async function createNotification(
+    userId: string,
+    data: Omit<FSNotification, "id" | "createdAt" | "read">
+): Promise<void> {
+    await addDoc(collection(db, "notifications", userId, "items"), {
+        ...data,
+        read: false,
+        createdAt: new Date().toISOString(),
+    });
+}
+
+/**
+ * Mark a single notification as read.
+ */
+export async function markNotificationRead(
+    userId: string,
+    notifId: string
+): Promise<void> {
+    await updateDoc(
+        doc(db, "notifications", userId, "items", notifId),
+        { read: true }
+    );
+}
+
+/**
+ * Mark all of a user's notifications as read.
+ */
+export async function markAllNotificationsRead(
+    userId: string
+): Promise<void> {
+    const snap = await getDocs(
+        query(
+            collection(db, "notifications", userId, "items"),
+            where("read", "==", false)
+        )
+    );
+    const updates = snap.docs.map((d) =>
+        updateDoc(d.ref, { read: true })
+    );
+    await Promise.all(updates);
 }

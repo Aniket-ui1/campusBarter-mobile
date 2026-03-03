@@ -34,7 +34,7 @@ export default function ForgotPasswordScreen() {
                 {!sent ? (
                     <Animated.View entering={FadeInDown.duration(500)}>
                         <Text style={styles.title}>Reset password</Text>
-                        <Text style={styles.subtitle}>Enter your email and we'll send you a reset link.</Text>
+                        <Text style={styles.subtitle}>Enter your email and we&apos;ll send you a reset link.</Text>
 
                         <View style={styles.form}>
                             <Input
@@ -57,7 +57,7 @@ export default function ForgotPasswordScreen() {
                         </View>
                         <Text style={styles.title}>Check your email</Text>
                         <Text style={styles.subtitle}>
-                            We've sent a password reset link to {email}. Check your inbox.
+                            We&apos;ve sent a password reset link to {email}. Check your inbox.
                         </Text>
                         <Button title="Back to Sign In" onPress={() => router.replace('/(auth)/sign-in')} fullWidth />
                     </Animated.View>

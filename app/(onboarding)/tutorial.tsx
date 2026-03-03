@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Dimensions, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { useOnboarding } from '@/context/OnboardingContext';
 import { Button } from '@/components/ui/Button';
@@ -9,22 +9,40 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const SLIDES = [
     {
+        emoji: '👋',
+        title: 'Welcome to CampusBarter',
+        description: "Trade skills with students on campus — no money needed. Help each other grow using a time-credit system.",
+        color: AppColors.primary,
+    },
+    {
         emoji: '📋',
         title: 'Post Your Skills',
-        description: "Share what you are great at — coding, design, music, writing, or anything else. Help fellow students and earn time credits.",
-        color: AppColors.primary,
+        description: "Share what you're great at — coding, design, music, writing, or anything else. Other students can find and request your help.",
+        color: AppColors.secondary,
     },
     {
         emoji: '🔍',
         title: 'Find What You Need',
-        description: "Browse skills offered by students on campus. Filter by category, program, or rating to find the perfect match.",
-        color: AppColors.secondary,
+        description: "Browse skills offered by students. Filter by category, skill, or use Smart Matching to find someone whose strengths cover your weaknesses.",
+        color: AppColors.accent,
     },
     {
         emoji: '🤝',
         title: 'Exchange & Grow',
-        description: "Trade skills using time credits — 1 hour = 1 credit. No money needed. Build your reputation with ratings and reviews.",
-        color: AppColors.accent,
+        description: "Trade skills using time credits — 1 hour = 1 credit. Build your reputation with ratings and reviews from other students.",
+        color: '#FACC15',
+    },
+    {
+        emoji: '👤',
+        title: 'One-Time Profile Setup',
+        description: "After signing in, you'll be asked to complete your profile once — your program, skills, interests, and a photo. This only happens the first time!",
+        color: '#6B8F71',
+    },
+    {
+        emoji: '🚀',
+        title: "You're All Set!",
+        description: "Start posting your skills, find help from classmates, and grow together. Let's build a stronger campus community!",
+        color: AppColors.primary,
     },
 ];
 
@@ -35,9 +53,21 @@ export default function TutorialScreen() {
 
     const handleNext = () => {
         if (activeIndex < SLIDES.length - 1) {
-            flatListRef.current?.scrollToIndex({ index: activeIndex + 1 });
+            const nextIndex = activeIndex + 1;
+            flatListRef.current?.scrollToOffset({
+                offset: nextIndex * SCREEN_WIDTH,
+                animated: true,
+            });
+            setActiveIndex(nextIndex);
         } else {
             completeOnboarding();
+        }
+    };
+
+    const handleScroll = (e: any) => {
+        const i = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+        if (i >= 0 && i < SLIDES.length) {
+            setActiveIndex(i);
         }
     };
 
@@ -58,10 +88,8 @@ export default function TutorialScreen() {
                 horizontal
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
-                onMomentumScrollEnd={(e) => {
-                    const i = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-                    setActiveIndex(i);
-                }}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
                 keyExtractor={(_, i) => String(i)}
                 renderItem={({ item }) => (
                     <View style={[styles.slide, { width: SCREEN_WIDTH }]}>

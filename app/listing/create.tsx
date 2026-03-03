@@ -52,7 +52,7 @@ export default function CreateListing() {
                     style={[styles.typeButton, type === 'OFFER' && styles.activeType]}
                     onPress={() => setType('OFFER')}
                 >
-                    <Text style={[styles.typeText, type === 'OFFER' && styles.activeTypeText]}>I'm Offering Help</Text>
+                    <Text style={[styles.typeText, type === 'OFFER' && styles.activeTypeText]}>I&apos;m Offering Help</Text>
                 </Pressable>
                 <Pressable
                     style={[styles.typeButton, type === 'REQUEST' && styles.activeType]}
