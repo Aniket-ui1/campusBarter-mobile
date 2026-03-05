@@ -1,15 +1,17 @@
+import { Avatar } from '@/components/ui/Avatar';
+import { Radii, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
+import { useThemeColors } from '@/context/ThemeContext';
+import { triggerHaptic } from '@/hooks/useAnimations';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
-import { Avatar } from '@/components/ui/Avatar';
-import { StarRating } from '@/components/ui/StarRating';
 
 function ChipList({ items, color }: { items: string[]; color: string }) {
+    const colors = useThemeColors();
     if (!items || items.length === 0) return null;
     return (
         <View style={chipStyles.row}>
@@ -25,6 +27,7 @@ function ChipList({ items, color }: { items: string[]; color: string }) {
 export default function ProfileScreen() {
     const { user, signOut } = useAuth();
     const { unreadCount, listings } = useData();
+    const colors = useThemeColors();
     const router = useRouter();
     const myListings = listings.filter(l => l.userId === user?.id).length;
 
@@ -43,10 +46,10 @@ export default function ProfileScreen() {
     ];
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
 
             {/* Gradient header */}
-            <View style={styles.headerBg}>
+            <View style={[styles.headerBg, { backgroundColor: colors.primaryDark }]}>
                 <View style={styles.statusSpacer} />
                 <View style={styles.headerActions}>
                     <View style={{ flex: 1 }} />
@@ -89,49 +92,49 @@ export default function ProfileScreen() {
                 {(user?.program || user?.major) && (
                     <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.infoPills}>
                         {user?.program && (
-                            <View style={styles.infoPill}>
-                                <Ionicons name="school-outline" size={14} color={AppColors.primary} />
-                                <Text style={styles.infoPillText}>{user.program}</Text>
+                            <View style={[styles.infoPill, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '20' }]}>
+                                <Ionicons name="school-outline" size={14} color={colors.primary} />
+                                <Text style={[styles.infoPillText, { color: colors.primary }]}>{user.program}</Text>
                             </View>
                         )}
                         {user?.major && (
-                            <View style={styles.infoPill}>
-                                <Ionicons name="book-outline" size={14} color={AppColors.primary} />
-                                <Text style={styles.infoPillText}>{user.major}</Text>
+                            <View style={[styles.infoPill, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '20' }]}>
+                                <Ionicons name="book-outline" size={14} color={colors.primary} />
+                                <Text style={[styles.infoPillText, { color: colors.primary }]}>{user.major}</Text>
                             </View>
                         )}
-                        <View style={styles.infoPill}>
-                            <Ionicons name="calendar-outline" size={14} color={AppColors.primary} />
-                            <Text style={styles.infoPillText}>Semester {user?.semester ?? 1}</Text>
+                        <View style={[styles.infoPill, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '20' }]}>
+                            <Ionicons name="calendar-outline" size={14} color={colors.primary} />
+                            <Text style={[styles.infoPillText, { color: colors.primary }]}>Semester {user?.semester ?? 1}</Text>
                         </View>
                     </Animated.View>
                 )}
 
                 {/* Bio */}
                 {user?.bio ? (
-                    <Animated.View entering={FadeInDown.delay(150).duration(400)} style={styles.bioCard}>
-                        <Text style={styles.bioText}>{user.bio}</Text>
+                    <Animated.View entering={FadeInDown.delay(150).duration(400)} style={[styles.bioCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <Text style={[styles.bioText, { color: colors.textSecondary }]}>{user.bio}</Text>
                     </Animated.View>
                 ) : null}
 
                 {/* Skills, Interests, Weaknesses */}
                 {((user?.skills?.length ?? 0) > 0 || (user?.interests?.length ?? 0) > 0 || (user?.weaknesses?.length ?? 0) > 0) && (
-                    <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.detailsCard}>
+                    <Animated.View entering={FadeInDown.delay(200).duration(400)} style={[styles.detailsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         {(user?.skills?.length ?? 0) > 0 && (
                             <View style={styles.detailSection}>
-                                <Text style={styles.detailLabel}>💪 Skills I Offer</Text>
-                                <ChipList items={user!.skills!} color={AppColors.primary} />
+                                <Text style={[styles.detailLabel, { color: colors.text }]}>💪 Skills I Offer</Text>
+                                <ChipList items={user!.skills!} color={colors.primary} />
                             </View>
                         )}
                         {(user?.interests?.length ?? 0) > 0 && (
                             <View style={styles.detailSection}>
-                                <Text style={styles.detailLabel}>✨ My Interests</Text>
+                                <Text style={[styles.detailLabel, { color: colors.text }]}>✨ My Interests</Text>
                                 <ChipList items={user!.interests!} color="#6366F1" />
                             </View>
                         )}
                         {(user?.weaknesses?.length ?? 0) > 0 && (
                             <View style={styles.detailSection}>
-                                <Text style={styles.detailLabel}>📚 Want to Learn</Text>
+                                <Text style={[styles.detailLabel, { color: colors.text }]}>📚 Want to Learn</Text>
                                 <ChipList items={user!.weaknesses!} color="#F59E0B" />
                             </View>
                         )}
@@ -139,24 +142,25 @@ export default function ProfileScreen() {
                 )}
 
                 {/* Menu */}
-                <Animated.View entering={FadeInDown.delay(300).duration(400)} style={styles.menu}>
+                <Animated.View entering={FadeInDown.delay(300).duration(400)} style={[styles.menu, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     {MENU_ITEMS.map((item, i) => (
                         <Pressable key={i} style={({ pressed }) => [
                             styles.menuRow,
-                            pressed && { backgroundColor: AppColors.surface },
+                            { borderBottomColor: colors.border },
+                            pressed && { backgroundColor: colors.surface },
                             i === MENU_ITEMS.length - 1 && { borderBottomWidth: 0 },
-                        ]} onPress={item.onPress}>
-                            <View style={styles.menuIconWrap}>
-                                <Ionicons name={item.icon as any} size={18} color={AppColors.primary} />
+                        ]} onPress={() => { triggerHaptic('light'); item.onPress(); }}>
+                            <View style={[styles.menuIconWrap, { backgroundColor: colors.primary + '10' }]}>
+                                <Ionicons name={item.icon as any} size={18} color={colors.primary} />
                             </View>
-                            <Text style={styles.menuLabel}>{item.label}</Text>
+                            <Text style={[styles.menuLabel, { color: colors.text }]}>{item.label}</Text>
                             <View style={{ flex: 1 }} />
                             {item.badge && (
-                                <View style={styles.menuBadge}>
+                                <View style={[styles.menuBadge, { backgroundColor: colors.error }]}>
                                     <Text style={styles.menuBadgeText}>{item.badge}</Text>
                                 </View>
                             )}
-                            <Ionicons name="chevron-forward" size={16} color={AppColors.textLight} />
+                            <Ionicons name="chevron-forward" size={16} color={colors.textLight} />
                         </Pressable>
                     ))}
                 </Animated.View>
@@ -164,20 +168,20 @@ export default function ProfileScreen() {
                 {/* Sign out */}
                 <Animated.View entering={FadeInDown.delay(400).duration(400)}>
                     <Pressable style={styles.signOutBtn} onPress={signOut}>
-                        <Ionicons name="log-out-outline" size={18} color={AppColors.error} />
-                        <Text style={styles.signOutText}>Sign Out</Text>
+                        <Ionicons name="log-out-outline" size={18} color={colors.error} />
+                        <Text style={[styles.signOutText, { color: colors.error }]}>Sign Out</Text>
                     </Pressable>
                 </Animated.View>
 
                 {/* Footer */}
                 <View style={styles.footer}>
-                    <Text style={styles.footerText}>CampusBarter v1.0.0</Text>
+                    <Text style={[styles.footerText, { color: colors.textLight }]}>CampusBarter v1.0.0</Text>
                     <View style={styles.footerLinks}>
-                        <Pressable onPress={() => router.push('/terms')}><Text style={styles.footerLink}>Terms</Text></Pressable>
-                        <Text style={styles.footerDot}>·</Text>
-                        <Pressable onPress={() => router.push('/privacy')}><Text style={styles.footerLink}>Privacy</Text></Pressable>
-                        <Text style={styles.footerDot}>·</Text>
-                        <Pressable onPress={() => router.push('/about')}><Text style={styles.footerLink}>About</Text></Pressable>
+                        <Pressable onPress={() => router.push('/terms')}><Text style={[styles.footerLink, { color: colors.textLight }]}>Terms</Text></Pressable>
+                        <Text style={[styles.footerDot, { color: colors.textLight }]}>·</Text>
+                        <Pressable onPress={() => router.push('/privacy')}><Text style={[styles.footerLink, { color: colors.textLight }]}>Privacy</Text></Pressable>
+                        <Text style={[styles.footerDot, { color: colors.textLight }]}>·</Text>
+                        <Pressable onPress={() => router.push('/about')}><Text style={[styles.footerLink, { color: colors.textLight }]}>About</Text></Pressable>
                     </View>
                 </View>
             </ScrollView>
@@ -195,12 +199,11 @@ const chipStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: AppColors.background },
+    container: { flex: 1 },
     statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
 
     // Gradient header
     headerBg: {
-        backgroundColor: AppColors.primaryDark,
         paddingBottom: Spacing.lg,
     },
     headerActions: {
@@ -237,47 +240,46 @@ const styles = StyleSheet.create({
     infoPills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: Spacing.lg },
     infoPill: {
         flexDirection: 'row', alignItems: 'center', gap: 5,
-        backgroundColor: AppColors.primary + '10', paddingHorizontal: 12,
+        paddingHorizontal: 12,
         paddingVertical: 7, borderRadius: Radii.full,
-        borderWidth: 1, borderColor: AppColors.primary + '20',
+        borderWidth: 1,
     },
-    infoPillText: { fontSize: 12, fontWeight: '600', color: AppColors.primary },
+    infoPillText: { fontSize: 12, fontWeight: '600' },
 
     // Bio
     bioCard: {
-        backgroundColor: '#FFFFFF', borderRadius: Radii.md,
+        borderRadius: Radii.md,
         padding: Spacing.lg, marginBottom: Spacing.lg,
-        borderWidth: 1, borderColor: AppColors.border,
+        borderWidth: 1,
     },
-    bioText: { fontSize: 14, color: AppColors.textSecondary, lineHeight: 21 },
+    bioText: { fontSize: 14, lineHeight: 21 },
 
     // Details
     detailsCard: {
-        backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: AppColors.border,
+        borderWidth: 1,
         borderRadius: Radii.lg, padding: Spacing.lg, marginBottom: Spacing.lg, gap: Spacing.lg,
     },
     detailSection: { gap: 8 },
-    detailLabel: { fontSize: 14, fontWeight: '700', color: AppColors.text },
+    detailLabel: { fontSize: 14, fontWeight: '700' },
 
     // Menu
     menu: {
-        backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: AppColors.border,
+        borderWidth: 1,
         borderRadius: Radii.lg, overflow: 'hidden', marginBottom: Spacing.xl,
     },
     menuRow: {
         flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
         paddingHorizontal: Spacing.lg, paddingVertical: 15,
-        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: AppColors.border,
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
     menuIconWrap: {
         width: 32, height: 32, borderRadius: 8,
-        backgroundColor: AppColors.primary + '10',
         alignItems: 'center', justifyContent: 'center',
     },
-    menuLabel: { fontSize: 15, color: AppColors.text, fontWeight: '500' },
+    menuLabel: { fontSize: 15, fontWeight: '500' },
     menuBadge: {
         minWidth: 20, height: 20, borderRadius: 10,
-        backgroundColor: AppColors.error, alignItems: 'center', justifyContent: 'center',
+        alignItems: 'center', justifyContent: 'center',
         paddingHorizontal: 6, marginRight: 4,
     },
     menuBadgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
@@ -288,11 +290,11 @@ const styles = StyleSheet.create({
         borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
         backgroundColor: 'rgba(239,68,68,0.04)', marginBottom: Spacing.xl,
     },
-    signOutText: { color: AppColors.error, fontSize: 15, fontWeight: '600' },
+    signOutText: { fontSize: 15, fontWeight: '600' },
 
     footer: { alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.md },
-    footerText: { fontSize: 12, color: AppColors.textLight },
+    footerText: { fontSize: 12 },
     footerLinks: { flexDirection: 'row', gap: Spacing.sm },
-    footerLink: { fontSize: 12, color: AppColors.textLight },
-    footerDot: { fontSize: 12, color: AppColors.textLight },
+    footerLink: { fontSize: 12 },
+    footerDot: { fontSize: 12 },
 });

@@ -1,13 +1,14 @@
+import ProfileSetupOverlay from '@/components/ProfileSetupOverlay';
+import { useAuth } from '@/context/AuthContext';
+import { useThemeColors } from '@/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
-import { AppColors } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import ProfileSetupOverlay from '@/components/ProfileSetupOverlay';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
 export default function TabLayout() {
   const { user } = useAuth();
+  const colors = useThemeColors();
   if (!user) return <Redirect href="/(auth)/welcome" />;
 
   return (
@@ -16,12 +17,12 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: AppColors.primary,
-          tabBarInactiveTintColor: AppColors.textMuted,
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.textMuted,
           tabBarStyle: {
-            backgroundColor: AppColors.background,
+            backgroundColor: colors.background,
             borderTopWidth: 1,
-            borderTopColor: AppColors.border,
+            borderTopColor: colors.border,
             height: Platform.OS === 'ios' ? 88 : 64,
             paddingBottom: Platform.OS === 'ios' ? 28 : 8,
             paddingTop: 8,
@@ -37,7 +38,7 @@ export default function TabLayout() {
         <Tabs.Screen name="index" options={{
           title: 'Home',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.activeWrap : undefined}>
+            <View style={focused ? [styles.activeWrap, { backgroundColor: colors.primary + '20' }] : undefined}>
               <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
             </View>
           ),
@@ -45,23 +46,28 @@ export default function TabLayout() {
         <Tabs.Screen name="search" options={{
           title: 'Search',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.activeWrap : undefined}>
+            <View style={focused ? [styles.activeWrap, { backgroundColor: colors.primary + '20' }] : undefined}>
               <Ionicons name={focused ? 'search' : 'search-outline'} size={22} color={color} />
             </View>
           ),
         }} />
         <Tabs.Screen name="post" options={{
           title: 'Post',
+          tabBarShowLabel: false,
+          tabBarLabel: () => null,
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.postWrap, focused && styles.postWrapActive]}>
-              <Ionicons name="add" size={26} color={focused ? '#FFFFFF' : color} />
+            <View style={styles.postColumn}>
+              <View style={[styles.postWrap, { backgroundColor: focused ? colors.primary : colors.surface, borderColor: focused ? colors.primary : colors.border }]}>
+                <Ionicons name="add" size={26} color={focused ? '#FFFFFF' : color} />
+              </View>
+              <Text style={[styles.postLabel, { color: focused ? colors.primary : colors.textMuted }]}>Post</Text>
             </View>
           ),
         }} />
         <Tabs.Screen name="chats" options={{
           title: 'Chats',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.activeWrap : undefined}>
+            <View style={focused ? [styles.activeWrap, { backgroundColor: colors.primary + '20' }] : undefined}>
               <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={22} color={color} />
             </View>
           ),
@@ -69,7 +75,7 @@ export default function TabLayout() {
         <Tabs.Screen name="profile" options={{
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.activeWrap : undefined}>
+            <View style={focused ? [styles.activeWrap, { backgroundColor: colors.primary + '20' }] : undefined}>
               <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
             </View>
           ),
@@ -83,19 +89,21 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   activeWrap: {
-    backgroundColor: 'rgba(107,143,113,0.15)',
     borderRadius: 10,
     padding: 4,
   },
+  postColumn: {
+    alignItems: 'center', justifyContent: 'center',
+  },
   postWrap: {
     width: 44, height: 44, borderRadius: 14,
-    backgroundColor: AppColors.surface,
-    borderWidth: 1, borderColor: AppColors.border,
+    borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
-    marginBottom: 4,
   },
-  postWrapActive: {
-    backgroundColor: AppColors.primary,
-    borderColor: AppColors.primary,
+  postLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    marginTop: 2,
   },
 });

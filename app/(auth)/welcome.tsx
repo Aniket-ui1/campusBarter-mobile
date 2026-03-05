@@ -1,10 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Radii, Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/context/ThemeContext';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { Button } from '@/components/ui/Button';
 
 import { useAuth } from '@/context/AuthContext';
 
@@ -18,9 +17,10 @@ const FEATURES = [
 export default function WelcomeScreen() {
     const router = useRouter();
     const { loginWithMicrosoft, isLoading } = useAuth();
+    const colors = useThemeColors();
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             <View style={styles.statusSpacer} />
 
             {/* Glow blobs */}
@@ -29,22 +29,22 @@ export default function WelcomeScreen() {
 
             {/* Logo */}
             <Animated.View entering={FadeInDown.delay(100).duration(600)} style={styles.logoSection}>
-                <View style={styles.logoCircle}>
+                <View style={[styles.logoCircle, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                     <Text style={{ fontSize: 36 }}>🌐</Text>
                 </View>
-                <Text style={styles.appName}>CampusBarter</Text>
-                <Text style={styles.tagline}>Trade skills, not cash</Text>
+                <Text style={[styles.appName, { color: colors.text }]}>CampusBarter</Text>
+                <Text style={[styles.tagline, { color: colors.textSecondary }]}>Trade skills, not cash</Text>
             </Animated.View>
 
             {/* Features grid */}
             <Animated.View entering={FadeInDown.delay(300).duration(500)} style={styles.featuresGrid}>
                 {FEATURES.map((f, i) => (
-                    <View key={i} style={styles.featureItem}>
-                        <View style={styles.featureIconWrap}>
+                    <View key={i} style={[styles.featureItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <View style={[styles.featureIconWrap, { backgroundColor: colors.surfaceLight }]}>
                             <Text style={{ fontSize: 20 }}>{f.icon}</Text>
                         </View>
-                        <Text style={styles.featureTitle}>{f.title}</Text>
-                        <Text style={styles.featureDesc}>{f.desc}</Text>
+                        <Text style={[styles.featureTitle, { color: colors.text }]}>{f.title}</Text>
+                        <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>{f.desc}</Text>
                     </View>
                 ))}
             </Animated.View>
@@ -71,15 +71,15 @@ export default function WelcomeScreen() {
             {/* Links */}
             <Animated.View entering={FadeInDown.delay(650).duration(400)} style={styles.links}>
                 <Pressable onPress={() => router.push('/terms')}>
-                    <Text style={styles.linkText}>Terms</Text>
+                    <Text style={[styles.linkText, { color: colors.textMuted }]}>Terms</Text>
                 </Pressable>
-                <Text style={styles.linkDot}>·</Text>
+                <Text style={[styles.linkDot, { color: colors.textMuted }]}>·</Text>
                 <Pressable onPress={() => router.push('/privacy')}>
-                    <Text style={styles.linkText}>Privacy</Text>
+                    <Text style={[styles.linkText, { color: colors.textMuted }]}>Privacy</Text>
                 </Pressable>
-                <Text style={styles.linkDot}>·</Text>
+                <Text style={[styles.linkDot, { color: colors.textMuted }]}>·</Text>
                 <Pressable onPress={() => router.push('/about')}>
-                    <Text style={styles.linkText}>About</Text>
+                    <Text style={[styles.linkText, { color: colors.textMuted }]}>About</Text>
                 </Pressable>
             </Animated.View>
         </View>
@@ -89,7 +89,6 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: AppColors.background,
         paddingHorizontal: Spacing.xl,
     },
     statusSpacer: { height: Platform.OS === 'ios' ? 60 : 40 },
@@ -112,22 +111,18 @@ const styles = StyleSheet.create({
     },
     logoCircle: {
         width: 80, height: 80, borderRadius: 40,
-        backgroundColor: AppColors.surface,
         borderWidth: 1.5,
-        borderColor: AppColors.border,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: Spacing.lg,
     },
     appName: {
         fontSize: 32, fontWeight: '900',
-        color: AppColors.text,
         letterSpacing: -1,
         marginBottom: Spacing.xs,
     },
     tagline: {
         fontSize: 16,
-        color: AppColors.textSecondary,
         fontWeight: '400',
     },
 
@@ -138,25 +133,22 @@ const styles = StyleSheet.create({
     },
     featureItem: {
         width: '47%' as any,
-        backgroundColor: AppColors.surface,
         borderWidth: 1,
-        borderColor: AppColors.border,
         borderRadius: Radii.lg,
         padding: Spacing.lg,
         gap: Spacing.xs,
     },
     featureIconWrap: {
         width: 40, height: 40, borderRadius: 12,
-        backgroundColor: AppColors.surfaceLight,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: Spacing.xs,
     },
     featureTitle: {
-        fontSize: 14, fontWeight: '700', color: AppColors.text,
+        fontSize: 14, fontWeight: '700',
     },
     featureDesc: {
-        fontSize: 12, color: AppColors.textSecondary, lineHeight: 18,
+        fontSize: 12, lineHeight: 18,
     },
 
     ctaSection: {
@@ -198,9 +190,9 @@ const styles = StyleSheet.create({
         gap: Spacing.sm,
     },
     linkText: {
-        fontSize: 13, color: AppColors.textMuted, fontWeight: '500',
+        fontSize: 13, fontWeight: '500',
     },
     linkDot: {
-        color: AppColors.textMuted, fontSize: 13,
+        fontSize: 13,
     },
 });

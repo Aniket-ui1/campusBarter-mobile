@@ -1,6 +1,5 @@
 import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import { AppColors } from '@/constants/theme';
 
 type Props = {
     name: string;

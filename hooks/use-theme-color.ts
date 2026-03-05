@@ -10,7 +10,7 @@ export function useThemeColor(
   colorName: keyof typeof Colors.light & keyof typeof Colors.dark
 ) {
   // Always use dark forest theme
-  const theme = useColorScheme() ?? 'dark';
+  const theme = (useColorScheme() ?? 'dark') as 'light' | 'dark';
   const colorFromProps = props[theme];
 
   if (colorFromProps) {

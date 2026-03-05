@@ -1,7 +1,10 @@
+import { CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
+import { useThemeColors } from '@/context/ThemeContext';
+import { triggerHaptic, usePressAnimation } from '@/hooks/useAnimations';
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { AppColors, CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
+import Animated from 'react-native-reanimated';
 import { Avatar } from './Avatar';
 
 type Props = {
@@ -32,28 +35,32 @@ function timeAgo(dateStr?: string): string {
     return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-const AVAIL_DOT: Record<string, string> = {
-    available: AppColors.success,
-    busy: AppColors.warning,
-    offline: AppColors.error,
-};
-
 export function Card({
     title, userName, userAvatar, category, description,
     credits, rating, availability, createdAt, onPress, onConnect, style,
 }: Props) {
-    const catColor = CATEGORY_COLORS[category ?? ''] ?? AppColors.primary;
+    const colors = useThemeColors();
+    const AVAIL_DOT: Record<string, string> = {
+        available: colors.success,
+        busy: colors.warning,
+        offline: colors.error,
+    };
+    const { animStyle, onPressIn, onPressOut } = usePressAnimation(0.97);
+    const catColor = CATEGORY_COLORS[category ?? ''] ?? colors.primary;
     const catEmoji = CATEGORY_EMOJIS[category ?? ''] ?? '✨';
 
     return (
-        <Pressable
-            onPress={onPress}
-            style={({ pressed }) => [
-                styles.card,
-                pressed && { opacity: 0.92, transform: [{ scale: 0.985 }] },
-                style,
-            ]}
-        >
+        <Animated.View style={animStyle}>
+            <Pressable
+                onPress={() => { triggerHaptic('light'); onPress?.(); }}
+                onPressIn={onPressIn}
+                onPressOut={onPressOut}
+                style={[
+                    styles.card,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                    style,
+                ]}
+            >
             {/* Category accent strip */}
             <View style={[styles.accentStrip, { backgroundColor: catColor }]} />
 
@@ -64,29 +71,29 @@ export function Card({
                     <Avatar name={userName} uri={userAvatar} size={40} />
                     <View style={{ flex: 1 }}>
                         <View style={styles.nameRow}>
-                            <Text style={styles.userName}>{userName}</Text>
+                            <Text style={[styles.userName, { color: colors.textSecondary }]}>{userName}</Text>
                             {availability && (
                                 <View style={[styles.availDot, { backgroundColor: AVAIL_DOT[availability] }]} />
                             )}
                         </View>
                         {createdAt ? (
-                            <Text style={styles.timeText}>{timeAgo(createdAt)}</Text>
+                            <Text style={[styles.timeText, { color: colors.textMuted }]}>{timeAgo(createdAt)}</Text>
                         ) : null}
                     </View>
                     {/* Credit pill */}
-                    <View style={styles.creditPill}>
+                    <View style={[styles.creditPill, { backgroundColor: colors.primary + '12', borderColor: colors.primary + '25' }]}>
                         <Text style={styles.creditIcon}>🪙</Text>
-                        <Text style={styles.creditText}>{credits}</Text>
+                        <Text style={[styles.creditText, { color: colors.primary }]}>{credits}</Text>
                     </View>
                 </View>
 
                 {/* Title */}
-                <Text style={styles.title} numberOfLines={2}>
+                <Text style={[styles.title, { color: colors.text }]} numberOfLines={2}>
                     {catEmoji} {title}
                 </Text>
 
                 {/* Description */}
-                <Text style={styles.description} numberOfLines={2}>{description}</Text>
+                <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={2}>{description}</Text>
 
                 {/* Footer */}
                 <View style={styles.footer}>
@@ -99,15 +106,15 @@ export function Card({
                         {(rating ?? 0) > 0 && (
                             <View style={styles.ratingRow}>
                                 <Ionicons name="star" size={12} color="#F59E0B" />
-                                <Text style={styles.ratingText}>{rating?.toFixed(1)}</Text>
+                                <Text style={[styles.ratingText, { color: colors.text }]}>{rating?.toFixed(1)}</Text>
                             </View>
                         )}
                     </View>
 
                     {onConnect && (
                         <Pressable
-                            style={({ pressed }) => [styles.connectBtn, pressed && { opacity: 0.85 }]}
-                            onPress={onConnect}
+                            style={({ pressed }) => [styles.connectBtn, { backgroundColor: colors.primary }, pressed && { opacity: 0.85 }]}
+                            onPress={() => { triggerHaptic('light'); onConnect(); }}
                         >
                             <Text style={styles.connectText}>View</Text>
                             <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
@@ -116,16 +123,15 @@ export function Card({
                 </View>
             </View>
         </Pressable>
+        </Animated.View>
     );
 }
 
 const styles = StyleSheet.create({
     card: {
-        backgroundColor: '#FFFFFF',
         borderRadius: Radii.lg,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: AppColors.border,
         ...Shadows.md,
     } as any,
     accentStrip: {
@@ -149,43 +155,36 @@ const styles = StyleSheet.create({
     userName: {
         fontSize: 14,
         fontWeight: '600',
-        color: AppColors.textSecondary,
     },
     availDot: {
         width: 7, height: 7, borderRadius: 4,
     },
     timeText: {
         fontSize: 11,
-        color: AppColors.textMuted,
         marginTop: 1,
     },
     creditPill: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        backgroundColor: AppColors.primary + '12',
         paddingHorizontal: 10,
         paddingVertical: 5,
         borderRadius: Radii.full,
         borderWidth: 1,
-        borderColor: AppColors.primary + '25',
     },
     creditIcon: { fontSize: 13 },
     creditText: {
         fontSize: 14,
         fontWeight: '800',
-        color: AppColors.primary,
     },
     title: {
         fontSize: 17,
         fontWeight: '800',
-        color: AppColors.text,
         letterSpacing: -0.3,
         lineHeight: 23,
     },
     description: {
         fontSize: 13,
-        color: AppColors.textSecondary,
         lineHeight: 19,
     },
     footer: {
@@ -218,13 +217,11 @@ const styles = StyleSheet.create({
     ratingText: {
         fontSize: 12,
         fontWeight: '700',
-        color: AppColors.text,
     },
     connectBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        backgroundColor: AppColors.primary,
         paddingHorizontal: 14,
         paddingVertical: 8,
         borderRadius: Radii.sm,

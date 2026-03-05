@@ -1,17 +1,18 @@
-import { ActivityIndicator, View } from 'react-native';
-import { Redirect } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { useOnboarding } from '@/context/OnboardingContext';
-import { AppColors } from '@/constants/theme';
+import { useThemeColors } from '@/context/ThemeContext';
+import { Redirect } from 'expo-router';
+import { ActivityIndicator, View } from 'react-native';
 
 export default function Index() {
     const { user, isLoading } = useAuth();
     const { hasSeenOnboarding, isReady } = useOnboarding();
+    const colors = useThemeColors();
 
     if (isLoading || !isReady) {
         return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: AppColors.background }}>
-                <ActivityIndicator size="large" color={AppColors.primary} />
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }

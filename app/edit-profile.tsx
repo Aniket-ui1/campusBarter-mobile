@@ -1,18 +1,20 @@
+import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { PROGRAMS, SEMESTERS, SKILLS_OPTIONS } from '@/constants/categories';
+import { Radii, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { useThemeColors } from '@/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Avatar } from '@/components/ui/Avatar';
-import { useAuth } from '@/context/AuthContext';
-import { PROGRAMS, SEMESTERS, SKILLS_OPTIONS } from '@/constants/categories';
-import * as ImagePicker from 'expo-image-picker';
 
 export default function EditProfileScreen() {
     const router = useRouter();
     const { user, updateProfile } = useAuth();
+    const colors = useThemeColors();
     const [displayName, setDisplayName] = useState(user?.displayName || '');
     const [bio, setBio] = useState(user?.bio || '');
     const [program, setProgram] = useState(user?.program || '');
@@ -68,13 +70,13 @@ export default function EditProfileScreen() {
     };
 
     return (
-        <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={[styles.container, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
             <View style={styles.statusSpacer} />
             <View style={styles.header}>
-                <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={22} color={AppColors.text} />
+                <Pressable style={[styles.backBtn, { backgroundColor: colors.surface }]} onPress={() => router.back()}>
+                    <Ionicons name="arrow-back" size={22} color={colors.text} />
                 </Pressable>
-                <Text style={styles.headerTitle}>Edit Profile</Text>
+                <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Profile</Text>
                 <View style={{ width: 40 }} />
             </View>
 
@@ -82,30 +84,30 @@ export default function EditProfileScreen() {
                 {/* Avatar + Photo Picker */}
                 <View style={styles.avatarSection}>
                     <Avatar name={displayName} uri={avatarUrl || undefined} size={80} />
-                    <Pressable style={styles.changePhotoBtn} onPress={pickImage}>
-                        <Ionicons name="camera-outline" size={16} color={AppColors.primary} />
-                        <Text style={styles.changePhotoText}>Change Photo</Text>
+                    <Pressable style={[styles.changePhotoBtn, { borderColor: colors.primary }]} onPress={pickImage}>
+                        <Ionicons name="camera-outline" size={16} color={colors.primary} />
+                        <Text style={[styles.changePhotoText, { color: colors.primary }]}>Change Photo</Text>
                     </Pressable>
                 </View>
 
                 <View style={styles.form}>
                     {/* Basic Info */}
                     <Input label="Display Name" value={displayName} onChangeText={setDisplayName}
-                        icon={<Ionicons name="person-outline" size={18} color={AppColors.textMuted} />} />
+                        icon={<Ionicons name="person-outline" size={18} color={colors.textMuted} />} />
                     <Input label="Bio" value={bio} onChangeText={setBio} multiline numberOfLines={3}
                         style={{ minHeight: 80, textAlignVertical: 'top' }}
-                        icon={<Ionicons name="document-text-outline" size={18} color={AppColors.textMuted} />} />
+                        icon={<Ionicons name="document-text-outline" size={18} color={colors.textMuted} />} />
                     <Input label="Major / Focus Area" value={major} onChangeText={setMajor}
-                        icon={<Ionicons name="school-outline" size={18} color={AppColors.textMuted} />} />
+                        icon={<Ionicons name="school-outline" size={18} color={colors.textMuted} />} />
 
                     {/* Program */}
                     <View style={styles.section}>
-                        <Text style={styles.label}>Program</Text>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Program</Text>
                         <View style={styles.chipGrid}>
                             {PROGRAMS.map((p) => (
-                                <Pressable key={p} style={[styles.chip, program === p && styles.chipActive]}
+                                <Pressable key={p} style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.surface }, program === p && { backgroundColor: colors.primary, borderColor: colors.primary }]}
                                     onPress={() => setProgram(p)}>
-                                    <Text style={[styles.chipText, program === p && styles.chipTextActive]}>{p}</Text>
+                                    <Text style={[styles.chipText, { color: colors.textSecondary }, program === p && styles.chipTextActive]}>{p}</Text>
                                 </Pressable>
                             ))}
                         </View>
@@ -113,28 +115,28 @@ export default function EditProfileScreen() {
 
                     {/* Semester */}
                     <View style={styles.section}>
-                        <Text style={styles.label}>Semester</Text>
+                        <Text style={[styles.label, { color: colors.textSecondary }]}>Semester</Text>
                         <View style={styles.semRow}>
                             {SEMESTERS.map((s) => (
-                                <Pressable key={s} style={[styles.semBtn, semester === String(s) && styles.semBtnActive]}
+                                <Pressable key={s} style={[styles.semBtn, { borderColor: colors.border, backgroundColor: colors.surface }, semester === String(s) && { backgroundColor: colors.primary, borderColor: colors.primary }]}
                                     onPress={() => setSemester(String(s))}>
-                                    <Text style={[styles.semText, semester === String(s) && styles.semTextActive]}>{s}</Text>
+                                    <Text style={[styles.semText, { color: colors.textSecondary }, semester === String(s) && styles.semTextActive]}>{s}</Text>
                                 </Pressable>
                             ))}
                         </View>
                     </View>
 
                     {/* Divider */}
-                    <View style={styles.divider} />
+                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
                     {/* Skills */}
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>💪 Skills</Text>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>💪 Skills</Text>
                         <View style={styles.chipGrid}>
                             {SKILLS_OPTIONS.map((s) => (
-                                <Pressable key={s} style={[styles.chip, skills.includes(s) && styles.chipActive]}
+                                <Pressable key={s} style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.surface }, skills.includes(s) && { backgroundColor: colors.primary, borderColor: colors.primary }]}
                                     onPress={() => toggleItem(skills, setSkills, s)}>
-                                    <Text style={[styles.chipText, skills.includes(s) && styles.chipTextActive]}>{s}</Text>
+                                    <Text style={[styles.chipText, { color: colors.textSecondary }, skills.includes(s) && styles.chipTextActive]}>{s}</Text>
                                 </Pressable>
                             ))}
                         </View>
@@ -142,12 +144,12 @@ export default function EditProfileScreen() {
 
                     {/* Areas to Improve */}
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>📚 Areas to Improve</Text>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>📚 Areas to Improve</Text>
                         <View style={styles.chipGrid}>
                             {SKILLS_OPTIONS.map((s) => (
-                                <Pressable key={s} style={[styles.chip, weaknesses.includes(s) && styles.chipActive]}
+                                <Pressable key={s} style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.surface }, weaknesses.includes(s) && { backgroundColor: colors.primary, borderColor: colors.primary }]}
                                     onPress={() => toggleItem(weaknesses, setWeaknesses, s)}>
-                                    <Text style={[styles.chipText, weaknesses.includes(s) && styles.chipTextActive]}>{s}</Text>
+                                    <Text style={[styles.chipText, { color: colors.textSecondary }, weaknesses.includes(s) && styles.chipTextActive]}>{s}</Text>
                                 </Pressable>
                             ))}
                         </View>
@@ -155,12 +157,12 @@ export default function EditProfileScreen() {
 
                     {/* Interests */}
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>✨ Interests</Text>
+                        <Text style={[styles.sectionTitle, { color: colors.text }]}>✨ Interests</Text>
                         <View style={styles.chipGrid}>
                             {SKILLS_OPTIONS.map((s) => (
-                                <Pressable key={s} style={[styles.chip, interests.includes(s) && styles.chipActiveAlt]}
+                                <Pressable key={s} style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.surface }, interests.includes(s) && styles.chipActiveAlt]}
                                     onPress={() => toggleItem(interests, setInterests, s)}>
-                                    <Text style={[styles.chipText, interests.includes(s) && styles.chipTextActive]}>{s}</Text>
+                                    <Text style={[styles.chipText, { color: colors.textSecondary }, interests.includes(s) && styles.chipTextActive]}>{s}</Text>
                                 </Pressable>
                             ))}
                         </View>
@@ -175,7 +177,7 @@ export default function EditProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: AppColors.background },
+    container: { flex: 1 },
     statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
     header: {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -183,41 +185,41 @@ const styles = StyleSheet.create({
     },
     backBtn: {
         width: 40, height: 40, borderRadius: 12,
-        backgroundColor: AppColors.surface, alignItems: 'center', justifyContent: 'center',
+        alignItems: 'center', justifyContent: 'center',
     },
-    headerTitle: { fontSize: 17, fontWeight: '700', color: AppColors.text },
+    headerTitle: { fontSize: 17, fontWeight: '700' },
     scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 60 },
     avatarSection: { alignItems: 'center', gap: Spacing.md, marginBottom: Spacing['2xl'] },
     changePhotoBtn: {
         flexDirection: 'row', alignItems: 'center', gap: 6,
         paddingHorizontal: 14, paddingVertical: 8,
-        borderRadius: 8, borderWidth: 1, borderColor: AppColors.primary,
+        borderRadius: 8, borderWidth: 1,
     },
-    changePhotoText: { color: AppColors.primary, fontSize: 13, fontWeight: '600' },
+    changePhotoText: { fontSize: 13, fontWeight: '600' },
     form: { gap: Spacing.xl },
 
     section: { gap: 8 },
-    sectionTitle: { fontSize: 15, fontWeight: '700', color: AppColors.text },
-    label: { color: AppColors.textSecondary, fontSize: 13, fontWeight: '500', marginLeft: 2 },
-    divider: { height: 1, backgroundColor: AppColors.border, marginVertical: Spacing.xs },
+    sectionTitle: { fontSize: 15, fontWeight: '700' },
+    label: { fontSize: 13, fontWeight: '500', marginLeft: 2 },
+    divider: { height: 1, marginVertical: Spacing.xs },
 
     chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     chip: {
         paddingHorizontal: 12, paddingVertical: 7, borderRadius: Radii.sm,
-        borderWidth: 1, borderColor: AppColors.border, backgroundColor: AppColors.surface,
+        borderWidth: 1,
     },
-    chipActive: { backgroundColor: AppColors.primary, borderColor: AppColors.primary },
+    chipActive: {},
     chipActiveAlt: { backgroundColor: '#6B8F71', borderColor: '#6B8F71' },
-    chipText: { color: AppColors.textSecondary, fontSize: 12, fontWeight: '500' },
+    chipText: { fontSize: 12, fontWeight: '500' },
     chipTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
     semRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
     semBtn: {
         width: 40, height: 40, borderRadius: 10,
-        borderWidth: 1, borderColor: AppColors.border, backgroundColor: AppColors.surface,
+        borderWidth: 1,
         alignItems: 'center', justifyContent: 'center',
     },
-    semBtnActive: { backgroundColor: AppColors.primary, borderColor: AppColors.primary },
-    semText: { color: AppColors.textSecondary, fontSize: 14, fontWeight: '600' },
+    semBtnActive: {},
+    semText: { fontSize: 14, fontWeight: '600' },
     semTextActive: { color: '#FFFFFF' },
 });

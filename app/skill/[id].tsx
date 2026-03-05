@@ -1,36 +1,37 @@
+import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
+import { CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
+import { useThemeColors } from '@/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
-import { Avatar } from '@/components/ui/Avatar';
-import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
-import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
 
 export default function SkillDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
     const { user } = useAuth();
     const { getListingById, startChat, addNotification } = useData();
+    const colors = useThemeColors();
     const listing = getListingById(id);
 
     if (!listing) {
         return (
-            <View style={styles.container}><View style={styles.statusSpacer} />
+            <View style={[styles.container, { backgroundColor: colors.background }]}><View style={styles.statusSpacer} />
                 <View style={styles.header}>
-                    <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                        <Ionicons name="arrow-back" size={22} color={AppColors.text} />
+                    <Pressable style={[styles.backBtn, { backgroundColor: colors.surface }]} onPress={() => router.back()}>
+                        <Ionicons name="arrow-back" size={22} color={colors.text} />
                     </Pressable>
-                    <Text style={styles.headerTitle}>Skill Detail</Text>
+                    <Text style={[styles.headerTitle, { color: colors.text }]}>Skill Detail</Text>
                     <View style={{ width: 40 }} />
                 </View>
                 <View style={styles.emptyContainer}>
                     <Text style={styles.emptyEmoji}>🔍</Text>
-                    <Text style={styles.emptyTitle}>Listing not found</Text>
-                    <Text style={styles.emptyDesc}>This listing may have been deleted or closed.</Text>
+                    <Text style={[styles.emptyTitle, { color: colors.text }]}>Listing not found</Text>
+                    <Text style={[styles.emptyDesc, { color: colors.textSecondary }]}>This listing may have been deleted or closed.</Text>
                     <Button title="Go Back" onPress={() => router.back()} variant="secondary" />
                 </View>
             </View>
@@ -38,18 +39,13 @@ export default function SkillDetailScreen() {
     }
 
     const isOwner = listing.userId === user?.id;
-    const catColor = CATEGORY_COLORS[(listing as any).category ?? ''] ?? AppColors.primary;
+    const catColor = CATEGORY_COLORS[(listing as any).category ?? ''] ?? colors.primary;
     const catEmoji = CATEGORY_EMOJIS[(listing as any).category ?? ''] ?? '✨';
 
     const handleRequest = async () => {
         if (!user) return;
         try {
-            await addNotification(listing.userId, {
-                type: 'request',
-                title: 'New Skill Request',
-                body: `${user.displayName} wants to learn "${listing.title}"`,
-                relatedId: listing.id,
-            });
+            await addNotification();
             const chatId = await startChat(listing.id, listing.title, [user.id, listing.userId]);
             Alert.alert(
                 'Request Sent! 🎉',
@@ -75,7 +71,7 @@ export default function SkillDetailScreen() {
     };
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Colored accent header */}
             <View style={[styles.accentHeader, { backgroundColor: catColor }]}>
                 <View style={styles.statusSpacer} />
@@ -96,45 +92,45 @@ export default function SkillDetailScreen() {
 
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
                 {/* Quick info */}
-                <Animated.View entering={FadeInDown.delay(80).duration(350)} style={styles.quickRow}>
+                <Animated.View entering={FadeInDown.delay(80).duration(350)} style={[styles.quickRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.quickItem}>
                         <Text style={styles.quickIcon}>🪙</Text>
-                        <Text style={styles.quickLabel}>{listing.credits} credit{listing.credits !== 1 ? 's' : ''}</Text>
+                        <Text style={[styles.quickLabel, { color: colors.textSecondary }]}>{listing.credits} credit{listing.credits !== 1 ? 's' : ''}</Text>
                     </View>
-                    <View style={styles.quickDivider} />
+                    <View style={[styles.quickDivider, { backgroundColor: colors.border }]} />
                     <View style={styles.quickItem}>
-                        <Ionicons name="time-outline" size={16} color={AppColors.textMuted} />
-                        <Text style={styles.quickLabel}>
+                        <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+                        <Text style={[styles.quickLabel, { color: colors.textSecondary }]}>
                             {new Date(listing.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </Text>
                     </View>
-                    <View style={styles.quickDivider} />
+                    <View style={[styles.quickDivider, { backgroundColor: colors.border }]} />
                     <View style={styles.quickItem}>
-                        <View style={[styles.statusDot, { backgroundColor: listing.status === 'OPEN' ? AppColors.success : AppColors.textMuted }]} />
-                        <Text style={styles.quickLabel}>{listing.status}</Text>
+                        <View style={[styles.statusDot, { backgroundColor: listing.status === 'OPEN' ? colors.success : colors.textMuted }]} />
+                        <Text style={[styles.quickLabel, { color: colors.textSecondary }]}>{listing.status}</Text>
                     </View>
                 </Animated.View>
 
                 {/* Description */}
-                <Animated.View entering={FadeInDown.delay(150).duration(350)} style={styles.card}>
-                    <Text style={styles.cardTitle}>📝 Description</Text>
-                    <Text style={styles.description}>{listing.description}</Text>
+                <Animated.View entering={FadeInDown.delay(150).duration(350)} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[styles.cardTitle, { color: colors.text }]}>📝 Description</Text>
+                    <Text style={[styles.description, { color: colors.textSecondary }]}>{listing.description}</Text>
                 </Animated.View>
 
                 {/* About the Tutor */}
-                <Animated.View entering={FadeInDown.delay(250).duration(350)} style={styles.card}>
-                    <Text style={styles.cardTitle}>👤 About the Tutor</Text>
+                <Animated.View entering={FadeInDown.delay(250).duration(350)} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={[styles.cardTitle, { color: colors.text }]}>👤 About the Tutor</Text>
                     <Pressable
                         style={styles.tutorRow}
                         onPress={() => router.push({ pathname: '/user/[id]' as any, params: { id: listing.userId } })}
                     >
                         <Avatar name={listing.userName} size={50} />
                         <View style={{ flex: 1 }}>
-                            <Text style={styles.tutorName}>{listing.userName}</Text>
-                            <Text style={styles.tutorSub}>Tap to view full profile</Text>
+                            <Text style={[styles.tutorName, { color: colors.text }]}>{listing.userName}</Text>
+                            <Text style={[styles.tutorSub, { color: colors.primary }]}>Tap to view full profile</Text>
                         </View>
-                        <View style={styles.profileArrow}>
-                            <Ionicons name="chevron-forward" size={18} color={AppColors.primary} />
+                        <View style={[styles.profileArrow, { backgroundColor: colors.primary + '12' }]}>
+                            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
                         </View>
                     </Pressable>
                 </Animated.View>
@@ -146,17 +142,17 @@ export default function SkillDetailScreen() {
                             <Ionicons name="hand-left-outline" size={20} color="#FFFFFF" />
                             <Text style={styles.ctaBtnText}>Request This Skill</Text>
                         </Pressable>
-                        <Pressable style={styles.msgBtn} onPress={handleMessage}>
-                            <Ionicons name="chatbubble-outline" size={18} color={AppColors.primary} />
-                            <Text style={styles.msgBtnText}>Send a Message</Text>
+                        <Pressable style={[styles.msgBtn, { borderColor: colors.primary, backgroundColor: colors.card }]} onPress={handleMessage}>
+                            <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
+                            <Text style={[styles.msgBtnText, { color: colors.primary }]}>Send a Message</Text>
                         </Pressable>
                     </Animated.View>
                 )}
 
                 {isOwner && (
-                    <Animated.View entering={FadeInDown.delay(350).duration(350)} style={styles.ownerBanner}>
-                        <Ionicons name="information-circle-outline" size={18} color={AppColors.primary} />
-                        <Text style={styles.ownerText}>This is your listing</Text>
+                    <Animated.View entering={FadeInDown.delay(350).duration(350)} style={[styles.ownerBanner, { backgroundColor: colors.primary + '10' }]}>
+                        <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
+                        <Text style={[styles.ownerText, { color: colors.primary }]}>This is your listing</Text>
                     </Animated.View>
                 )}
             </ScrollView>
@@ -165,7 +161,7 @@ export default function SkillDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: AppColors.background },
+    container: { flex: 1 },
     statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
 
     // Accent header
@@ -176,13 +172,13 @@ const styles = StyleSheet.create({
     },
     backBtn: {
         width: 40, height: 40, borderRadius: 12,
-        backgroundColor: AppColors.surface, alignItems: 'center', justifyContent: 'center',
+        alignItems: 'center', justifyContent: 'center',
     },
     backBtnLight: {
         width: 40, height: 40, borderRadius: 12,
         backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center',
     },
-    headerTitle: { fontSize: 17, fontWeight: '700', color: AppColors.text },
+    headerTitle: { fontSize: 17, fontWeight: '700' },
     headerTitleLight: { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
     heroStrip: {
         paddingHorizontal: Spacing.xl, paddingTop: Spacing.sm, paddingBottom: Spacing.sm,
@@ -196,36 +192,35 @@ const styles = StyleSheet.create({
     // Quick info row
     quickRow: {
         flexDirection: 'row', alignItems: 'center',
-        backgroundColor: '#FFFFFF', borderRadius: Radii.lg,
+        borderRadius: Radii.lg,
         padding: Spacing.lg, marginBottom: Spacing.lg,
-        borderWidth: 1, borderColor: AppColors.border,
+        borderWidth: 1,
         ...Shadows.sm,
     } as any,
     quickItem: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
     quickIcon: { fontSize: 16 },
-    quickLabel: { fontSize: 13, fontWeight: '600', color: AppColors.textSecondary },
-    quickDivider: { width: 1, height: 20, backgroundColor: AppColors.border },
+    quickLabel: { fontSize: 13, fontWeight: '600' },
+    quickDivider: { width: 1, height: 20 },
     statusDot: { width: 8, height: 8, borderRadius: 4 },
 
     // Cards
     card: {
-        backgroundColor: '#FFFFFF', borderRadius: Radii.lg,
+        borderRadius: Radii.lg,
         padding: Spacing.lg, marginBottom: Spacing.lg,
-        borderWidth: 1, borderColor: AppColors.border,
+        borderWidth: 1,
         gap: Spacing.md,
     },
-    cardTitle: { fontSize: 15, fontWeight: '700', color: AppColors.text },
-    description: { fontSize: 15, color: AppColors.textSecondary, lineHeight: 23 },
+    cardTitle: { fontSize: 15, fontWeight: '700' },
+    description: { fontSize: 15, lineHeight: 23 },
 
     // Tutor
     tutorRow: {
         flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
     },
-    tutorName: { fontSize: 16, fontWeight: '700', color: AppColors.text },
-    tutorSub: { fontSize: 12, color: AppColors.primary, fontWeight: '500', marginTop: 2 },
+    tutorName: { fontSize: 16, fontWeight: '700' },
+    tutorSub: { fontSize: 12, fontWeight: '500', marginTop: 2 },
     profileArrow: {
         width: 32, height: 32, borderRadius: 16,
-        backgroundColor: AppColors.primary + '12',
         alignItems: 'center', justifyContent: 'center',
     },
 
@@ -240,22 +235,21 @@ const styles = StyleSheet.create({
     msgBtn: {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
         paddingVertical: 14, borderRadius: Radii.md,
-        borderWidth: 1.5, borderColor: AppColors.primary,
-        backgroundColor: '#FFFFFF',
+        borderWidth: 1.5,
     },
-    msgBtnText: { color: AppColors.primary, fontSize: 15, fontWeight: '700' },
+    msgBtnText: { fontSize: 15, fontWeight: '700' },
 
     // Owner
     ownerBanner: {
         flexDirection: 'row', alignItems: 'center', gap: 8,
-        backgroundColor: AppColors.primary + '10', paddingHorizontal: Spacing.lg,
+        paddingHorizontal: Spacing.lg,
         paddingVertical: Spacing.md, borderRadius: Radii.md,
     },
-    ownerText: { fontSize: 14, color: AppColors.primary, fontWeight: '600' },
+    ownerText: { fontSize: 14, fontWeight: '600' },
 
     // Empty
     emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: Spacing.md },
     emptyEmoji: { fontSize: 48 },
-    emptyTitle: { fontSize: 20, fontWeight: '700', color: AppColors.text },
-    emptyDesc: { fontSize: 14, color: AppColors.textSecondary, textAlign: 'center' },
+    emptyTitle: { fontSize: 20, fontWeight: '700' },
+    emptyDesc: { fontSize: 14, textAlign: 'center' },
 });

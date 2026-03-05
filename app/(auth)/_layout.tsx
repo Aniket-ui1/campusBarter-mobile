@@ -1,9 +1,10 @@
-import { Redirect, Stack } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
-import { AppColors } from '@/constants/theme';
+import { useThemeColors } from '@/context/ThemeContext';
+import { Redirect, Stack } from 'expo-router';
 
 export default function AuthLayout() {
     const { user } = useAuth();
+    const colors = useThemeColors();
 
     if (user) {
         return <Redirect href="/(tabs)" />;
@@ -13,7 +14,7 @@ export default function AuthLayout() {
         <Stack
             screenOptions={{
                 headerShown: false,
-                contentStyle: { backgroundColor: AppColors.background },
+                contentStyle: { backgroundColor: colors.background },
                 animation: 'slide_from_right',
             }}
         >

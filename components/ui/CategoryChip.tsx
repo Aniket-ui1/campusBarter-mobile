@@ -1,6 +1,7 @@
+import { Radii } from '@/constants/theme';
+import { useThemeColors } from '@/context/ThemeContext';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { Pressable, StyleSheet, Text } from 'react-native';
 
 type Props = {
     label: string;
@@ -10,13 +11,18 @@ type Props = {
 };
 
 export function CategoryChip({ label, icon, active, onPress }: Props) {
+    const colors = useThemeColors();
     return (
         <Pressable
             onPress={onPress}
-            style={[styles.chip, active && styles.chipActive]}
+            style={[
+                styles.chip,
+                { borderColor: colors.border, backgroundColor: colors.surface },
+                active && { backgroundColor: colors.primary, borderColor: colors.primary },
+            ]}
         >
             {icon && <Text style={{ fontSize: 14 }}>{icon}</Text>}
-            <Text style={[styles.text, active && styles.textActive]}>{label}</Text>
+            <Text style={[styles.text, { color: colors.textSecondary }, active && { color: '#FFFFFF', fontWeight: '700' }]}>{label}</Text>
         </Pressable>
     );
 }
@@ -30,20 +36,9 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         borderRadius: Radii.full,
         borderWidth: 1,
-        borderColor: AppColors.border,
-        backgroundColor: AppColors.surface,
-    },
-    chipActive: {
-        backgroundColor: AppColors.primary,
-        borderColor: AppColors.primary,
     },
     text: {
-        color: AppColors.textSecondary,
         fontSize: 13,
         fontWeight: '500',
-    },
-    textActive: {
-        color: '#FFFFFF',
-        fontWeight: '700',
     },
 });

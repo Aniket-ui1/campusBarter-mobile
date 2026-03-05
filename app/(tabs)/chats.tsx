@@ -1,12 +1,15 @@
+import { Avatar } from '@/components/ui/Avatar';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
+import { useThemeColors } from '@/context/ThemeContext';
+import { triggerHaptic } from '@/hooks/useAnimations';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { Avatar } from '@/components/ui/Avatar';
-import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
 
 function formatTime(dateStr?: string): string {
     if (!dateStr) return '';
@@ -23,25 +26,26 @@ export default function ChatsScreen() {
     const { user } = useAuth();
     const router = useRouter();
     const { chats } = useData();
+    const colors = useThemeColors();
 
     const renderItem = ({ item, index }: { item: typeof chats[0]; index: number }) => (
         <Animated.View entering={FadeInDown.delay(index * 40).duration(300)}>
             <Pressable
-                style={({ pressed }) => [styles.chatItem, pressed && { backgroundColor: AppColors.surface }]}
-                onPress={() => router.push({ pathname: '/chat/[id]' as any, params: { id: item.id } })}
+                style={({ pressed }) => [styles.chatItem, { borderBottomColor: colors.border }, pressed && { backgroundColor: colors.surface }]}
+                onPress={() => { triggerHaptic('light'); router.push({ pathname: '/chat/[id]' as any, params: { id: item.id } }); }}
             >
                 <View style={styles.avatarWrap}>
                     <Avatar name={item.listingTitle ?? 'Chat'} size={52} />
                 </View>
                 <View style={styles.chatInfo}>
                     <View style={styles.chatTopRow}>
-                        <Text style={styles.chatName} numberOfLines={1}>
+                        <Text style={[styles.chatName, { color: colors.text }]} numberOfLines={1}>
                             {item.listingTitle ?? 'Conversation'}
                         </Text>
-                        <Text style={styles.chatTime}>{formatTime(item.lastMessageAt)}</Text>
+                        <Text style={[styles.chatTime, { color: colors.textMuted }]}>{formatTime(item.lastMessageAt)}</Text>
                     </View>
                     <View style={styles.chatBottomRow}>
-                        <Text style={styles.chatPreview} numberOfLines={1}>
+                        <Text style={[styles.chatPreview, { color: colors.textMuted }]} numberOfLines={1}>
                             {item.lastMessage || `💬 New conversation`}
                         </Text>
                     </View>
@@ -51,11 +55,11 @@ export default function ChatsScreen() {
     );
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             <View style={styles.statusSpacer} />
 
             {/* WhatsApp-style header */}
-            <View style={styles.headerBar}>
+            <View style={[styles.headerBar, { backgroundColor: colors.primaryDark }]}>
                 <Text style={styles.headerTitle}>Chats</Text>
                 <View style={styles.headerActions}>
                     <Pressable style={styles.headerBtn}>
@@ -65,14 +69,13 @@ export default function ChatsScreen() {
             </View>
 
             {chats.length === 0 ? (
-                <View style={styles.emptyWrap}>
-                    <Text style={styles.emptyEmoji}>💬</Text>
-                    <Text style={styles.emptyTitle}>No conversations yet</Text>
-                    <Text style={styles.emptyDesc}>Find a skill and start chatting!</Text>
-                    <Pressable style={styles.emptyBtn} onPress={() => router.push('/(tabs)/search')}>
-                        <Text style={styles.emptyBtnText}>Browse Skills</Text>
-                    </Pressable>
-                </View>
+                <EmptyState
+                    icon="💬"
+                    title="No conversations yet"
+                    description="Find a skill and start chatting!"
+                    actionLabel="Browse Skills"
+                    onAction={() => router.push('/(tabs)/search')}
+                />
             ) : (
                 <FlatList
                     data={chats}
@@ -87,12 +90,11 @@ export default function ChatsScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: AppColors.background },
+    container: { flex: 1 },
     statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
 
     // WhatsApp-style header
     headerBar: {
-        backgroundColor: AppColors.primaryDark,
         paddingHorizontal: Spacing.xl,
         paddingVertical: Spacing.lg,
         flexDirection: 'row',
@@ -116,23 +118,13 @@ const styles = StyleSheet.create({
         paddingVertical: Spacing.md,
         gap: Spacing.md,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: AppColors.border,
     },
     avatarWrap: { position: 'relative' },
     chatInfo: { flex: 1, gap: 4 },
     chatTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    chatName: { fontSize: 16, fontWeight: '700', color: AppColors.text, flex: 1, marginRight: 8 },
-    chatTime: { fontSize: 12, color: AppColors.textMuted, fontWeight: '500' },
+    chatName: { fontSize: 16, fontWeight: '700', flex: 1, marginRight: 8 },
+    chatTime: { fontSize: 12, fontWeight: '500' },
     chatBottomRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    chatPreview: { fontSize: 14, color: AppColors.textMuted, flex: 1, lineHeight: 20 },
+    chatPreview: { fontSize: 14, flex: 1, lineHeight: 20 },
 
-    emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, paddingBottom: 80 },
-    emptyEmoji: { fontSize: 56 },
-    emptyTitle: { fontSize: 18, fontWeight: '700', color: AppColors.text },
-    emptyDesc: { fontSize: 14, color: AppColors.textMuted },
-    emptyBtn: {
-        backgroundColor: AppColors.primary, paddingHorizontal: 24, paddingVertical: 12,
-        borderRadius: Radii.sm, marginTop: Spacing.md,
-    },
-    emptyBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
 });

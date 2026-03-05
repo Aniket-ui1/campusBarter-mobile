@@ -1,30 +1,36 @@
+import { Button } from '@/components/ui/Button';
+import { Spacing } from '@/constants/theme';
+import { useOnboarding } from '@/context/OnboardingContext';
+import { useThemeColors } from '@/context/ThemeContext';
 import React, { useRef, useState } from 'react';
 import { Dimensions, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { useOnboarding } from '@/context/OnboardingContext';
-import { Button } from '@/components/ui/Button';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const SLIDES = [
+export default function TutorialScreen() {
+    const { completeOnboarding } = useOnboarding();
+    const colors = useThemeColors();
+    const [activeIndex, setActiveIndex] = useState(0);
+    const flatListRef = useRef<FlatList>(null);
+
+    const SLIDES = [
     {
         emoji: '👋',
         title: 'Welcome to CampusBarter',
         description: "Trade skills with students on campus — no money needed. Help each other grow using a time-credit system.",
-        color: AppColors.primary,
+        color: colors.primary,
     },
     {
         emoji: '📋',
         title: 'Post Your Skills',
-        description: "Share what you're great at — coding, design, music, writing, or anything else. Other students can find and request your help.",
-        color: AppColors.secondary,
+        description: "Share what you're great at \u2014 coding, design, music, writing, or anything else. Other students can find and request your help.",
+        color: colors.secondary,
     },
     {
         emoji: '🔍',
         title: 'Find What You Need',
         description: "Browse skills offered by students. Filter by category, skill, or use Smart Matching to find someone whose strengths cover your weaknesses.",
-        color: AppColors.accent,
+        color: colors.accent,
     },
     {
         emoji: '🤝',
@@ -42,14 +48,9 @@ const SLIDES = [
         emoji: '🚀',
         title: "You're All Set!",
         description: "Start posting your skills, find help from classmates, and grow together. Let's build a stronger campus community!",
-        color: AppColors.primary,
+        color: colors.primary,
     },
 ];
-
-export default function TutorialScreen() {
-    const { completeOnboarding } = useOnboarding();
-    const [activeIndex, setActiveIndex] = useState(0);
-    const flatListRef = useRef<FlatList>(null);
 
     const handleNext = () => {
         if (activeIndex < SLIDES.length - 1) {
@@ -72,13 +73,13 @@ export default function TutorialScreen() {
     };
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             <View style={styles.statusSpacer} />
 
             {/* Skip button */}
             <View style={styles.topRow}>
                 <Pressable onPress={completeOnboarding}>
-                    <Text style={styles.skipText}>Skip</Text>
+                    <Text style={[styles.skipText, { color: colors.textMuted }]}>Skip</Text>
                 </Pressable>
             </View>
 
@@ -93,11 +94,11 @@ export default function TutorialScreen() {
                 keyExtractor={(_, i) => String(i)}
                 renderItem={({ item }) => (
                     <View style={[styles.slide, { width: SCREEN_WIDTH }]}>
-                        <View style={[styles.emojiCircle, { borderColor: item.color + '40' }]}>
+                        <View style={[styles.emojiCircle, { backgroundColor: colors.surface, borderColor: item.color + '40' }]}>
                             <Text style={{ fontSize: 56 }}>{item.emoji}</Text>
                         </View>
-                        <Text style={styles.slideTitle}>{item.title}</Text>
-                        <Text style={styles.slideDesc}>{item.description}</Text>
+                        <Text style={[styles.slideTitle, { color: colors.text }]}>{item.title}</Text>
+                        <Text style={[styles.slideDesc, { color: colors.textSecondary }]}>{item.description}</Text>
                     </View>
                 )}
             />
@@ -110,6 +111,7 @@ export default function TutorialScreen() {
                             key={i}
                             style={[
                                 styles.dot,
+                                { backgroundColor: colors.border },
                                 activeIndex === i && { width: 24, backgroundColor: s.color },
                             ]}
                         />
@@ -128,7 +130,7 @@ export default function TutorialScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: AppColors.background },
+    container: { flex: 1 },
     statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
     topRow: {
         alignItems: 'flex-end',
@@ -136,7 +138,6 @@ const styles = StyleSheet.create({
         marginBottom: Spacing.xl,
     },
     skipText: {
-        color: AppColors.textMuted,
         fontSize: 15,
         fontWeight: '600',
     },
@@ -148,7 +149,6 @@ const styles = StyleSheet.create({
     },
     emojiCircle: {
         width: 120, height: 120, borderRadius: 60,
-        backgroundColor: AppColors.surface,
         borderWidth: 2,
         alignItems: 'center',
         justifyContent: 'center',
@@ -156,14 +156,12 @@ const styles = StyleSheet.create({
     },
     slideTitle: {
         fontSize: 28, fontWeight: '900',
-        color: AppColors.text,
         letterSpacing: -0.5,
         textAlign: 'center',
         marginBottom: Spacing.md,
     },
     slideDesc: {
         fontSize: 15,
-        color: AppColors.textSecondary,
         textAlign: 'center',
         lineHeight: 24,
     },
@@ -180,6 +178,5 @@ const styles = StyleSheet.create({
     },
     dot: {
         width: 8, height: 8, borderRadius: 4,
-        backgroundColor: AppColors.border,
     },
 });

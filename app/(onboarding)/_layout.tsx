@@ -1,11 +1,12 @@
-import { Redirect, Stack } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 import { useOnboarding } from '@/context/OnboardingContext';
-import { AppColors } from '@/constants/theme';
+import { useThemeColors } from '@/context/ThemeContext';
+import { Redirect, Stack } from 'expo-router';
 
 export default function OnboardingLayout() {
     const { user } = useAuth();
     const { hasSeenOnboarding } = useOnboarding();
+    const colors = useThemeColors();
 
     if (!user) {
         return <Redirect href="/(auth)/welcome" />;
@@ -16,7 +17,7 @@ export default function OnboardingLayout() {
     }
 
     return (
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: AppColors.background } }}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
             <Stack.Screen name="tutorial" />
         </Stack>
     );

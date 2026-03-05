@@ -2,32 +2,34 @@ import { Ionicons } from '@expo/vector-icons';
 import { Link } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { AppColors } from '@/constants/theme';
+import { useThemeColors } from '@/context/ThemeContext';
 
 export default function ModalScreen() {
+  const colors = useThemeColors();
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.dark }]}>
       {/* Glow blob */}
       <View style={styles.glowBlob} />
 
       <View style={styles.card}>
-        <View style={styles.iconWrap}>
+        <View style={[styles.iconWrap, { backgroundColor: colors.forest }]}>
           <Text style={{ fontSize: 28 }}>🌿</Text>
         </View>
-        <Text style={styles.title}>Campus Barter</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: colors.cream }]}>Campus Barter</Text>
+        <Text style={[styles.subtitle, { color: colors.mist }]}>
           This modal can be used for additional content, settings, or notifications.
         </Text>
 
         <Link href="/" dismissTo asChild>
-          <Pressable style={styles.button}>
-            <Ionicons name="home-outline" size={18} color={AppColors.dark} />
-            <Text style={styles.buttonText}>Go to home screen</Text>
+          <Pressable style={[styles.button, { backgroundColor: colors.sage, shadowColor: colors.sage }]}>
+            <Ionicons name="home-outline" size={18} color={colors.dark} />
+            <Text style={[styles.buttonText, { color: colors.dark }]}>Go to home screen</Text>
           </Pressable>
         </Link>
       </View>
 
-      <Text style={styles.footer}>© 2026 Campus Barter — SAIT Student Project</Text>
+      <Text style={[styles.footer, { color: colors.forest }]}>© 2026 Campus Barter — SAIT Student Project</Text>
     </View>
   );
 }
@@ -38,7 +40,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
-    backgroundColor: AppColors.dark,
   },
   glowBlob: {
     position: 'absolute',
@@ -62,7 +63,6 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 18,
-    backgroundColor: AppColors.forest,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 20,
@@ -70,12 +70,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '900',
-    color: AppColors.cream,
     letterSpacing: -0.5,
     marginBottom: 8,
   },
   subtitle: {
-    color: AppColors.mist,
     fontSize: 14,
     lineHeight: 22,
     textAlign: 'center',
@@ -87,26 +85,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: AppColors.sage,
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 14,
     width: '100%',
-    shadowColor: AppColors.sage,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 16,
     elevation: 6,
   },
   buttonText: {
-    color: AppColors.dark,
     fontSize: 15,
     fontWeight: '600',
   },
   footer: {
     position: 'absolute',
     bottom: 40,
-    color: AppColors.forest,
     fontSize: 10,
   },
 });
