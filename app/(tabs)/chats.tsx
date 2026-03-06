@@ -29,6 +29,8 @@ export default function ChatsScreen() {
             <Pressable
                 style={({ pressed }) => [styles.chatItem, pressed && { backgroundColor: AppColors.surface }]}
                 onPress={() => router.push({ pathname: '/chat/[id]' as any, params: { id: item.id } })}
+                accessibilityRole="button"
+                accessibilityLabel={`Chat about ${item.listingTitle || 'conversation'}${item.lastMessage ? `, last message: ${item.lastMessage}` : ''}`}
             >
                 <View style={styles.avatarWrap}>
                     <Avatar name={item.listingTitle ?? 'Chat'} size={52} />
@@ -58,7 +60,7 @@ export default function ChatsScreen() {
             <View style={styles.headerBar}>
                 <Text style={styles.headerTitle}>Chats</Text>
                 <View style={styles.headerActions}>
-                    <Pressable style={styles.headerBtn}>
+                    <Pressable style={styles.headerBtn} accessibilityRole="button" accessibilityLabel="Search chats">
                         <Ionicons name="search-outline" size={20} color="#FFFFFF" />
                     </Pressable>
                 </View>
@@ -69,7 +71,8 @@ export default function ChatsScreen() {
                     <Text style={styles.emptyEmoji}>💬</Text>
                     <Text style={styles.emptyTitle}>No conversations yet</Text>
                     <Text style={styles.emptyDesc}>Find a skill and start chatting!</Text>
-                    <Pressable style={styles.emptyBtn} onPress={() => router.push('/(tabs)/search')}>
+                    <Pressable style={styles.emptyBtn} onPress={() => router.push('/(tabs)/search')}
+                        accessibilityRole="button" accessibilityLabel="Browse skills to start a conversation">
                         <Text style={styles.emptyBtnText}>Browse Skills</Text>
                     </Pressable>
                 </View>

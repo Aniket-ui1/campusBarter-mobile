@@ -11,6 +11,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { useData } from '@/context/DataContext';
 import { getRecommendedUsers, MatchedUser } from '@/lib/matching';
 import { CATEGORIES } from '@/constants/categories';
+import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
 
 export default function HomeScreen() {
   const { user } = useAuth();
@@ -18,9 +19,18 @@ export default function HomeScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
   const [matches, setMatches] = useState<MatchedUser[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const activeListings = listings.filter((l) => l.status === 'OPEN');
   const myListingsCount = listings.filter((l) => l.userId === user?.id).length;
+
+  // Mark loading done once listings arrive (DataContext loads them)
+  useEffect(() => {
+    if (listings.length > 0 || !isLoading) {
+      const timer = setTimeout(() => setIsLoading(false), 600);
+      return () => clearTimeout(timer);
+    }
+  }, [listings]);
 
   useEffect(() => {
     if (!user?.id || !user.profileComplete) return;
@@ -46,7 +56,8 @@ export default function HomeScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Pressable style={styles.headerLeft} onPress={() => router.push('/(tabs)/profile')}>
+        <Pressable style={styles.headerLeft} onPress={() => router.push('/(tabs)/profile')}
+          accessibilityRole="button" accessibilityLabel="View your profile">
           <Avatar name={user?.displayName || 'User'} uri={user?.avatarUrl} size={42} />
           <View>
             <Text style={styles.greeting}>Welcome back 👋</Text>
@@ -54,7 +65,8 @@ export default function HomeScreen() {
           </View>
         </Pressable>
         <View style={styles.headerRight}>
-          <Pressable style={styles.iconBtn} onPress={() => router.push('/notifications')}>
+          <Pressable style={styles.iconBtn} onPress={() => router.push('/notifications')}
+            accessibilityRole="button" accessibilityLabel={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}>
             <Ionicons name="notifications-outline" size={21} color={AppColors.text} />
             {unreadCount > 0 && (
               <View style={styles.notifBadge}>
@@ -76,7 +88,8 @@ export default function HomeScreen() {
           <View style={styles.heroContent}>
             <Text style={styles.heroTitle}>Trade skills{'\n'}with students 🎓</Text>
             <Text style={styles.heroSubtitle}>Teach what you know, learn what you don&apos;t</Text>
-            <Pressable style={styles.heroBtn} onPress={() => router.push('/(tabs)/search')}>
+            <Pressable style={styles.heroBtn} onPress={() => router.push('/(tabs)/search')}
+              accessibilityRole="button" accessibilityLabel="Explore skills">
               <Text style={styles.heroBtnText}>Explore Skills</Text>
               <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
             </Pressable>
@@ -150,33 +163,37 @@ export default function HomeScreen() {
         {/* Feed */}
         <Animated.View entering={FadeInDown.delay(250).duration(400)} style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>🔥 Trending Skills</Text>
-          <Pressable style={styles.seeAllPill} onPress={() => router.push('/(tabs)/search')}>
+          <Pressable style={styles.seeAllPill} onPress={() => router.push('/(tabs)/search')}
+            accessibilityRole="button" accessibilityLabel="See all skills">
             <Text style={styles.seeAllText}>See all</Text>
             <Ionicons name="arrow-forward" size={12} color={AppColors.primary} />
           </Pressable>
         </Animated.View>
 
-        {activeListings.map((listing, i) => (
-          <Animated.View key={listing.id} entering={FadeInDown.delay(300 + i * 50).duration(400)}>
-            <Card
-              title={listing.title}
-              userName={listing.userName}
-              description={listing.description}
-              credits={listing.credits}
-              createdAt={listing.createdAt}
-              onPress={() => router.push({ pathname: '/skill/[id]', params: { id: listing.id } })}
-              onConnect={() => router.push({ pathname: '/skill/[id]', params: { id: listing.id } })}
-              style={{ marginBottom: Spacing.md }}
-            />
-          </Animated.View>
-        ))}
-
-        {activeListings.length === 0 && (
+        {isLoading ? (
+          <SkeletonLoader variant="card" count={3} />
+        ) : activeListings.length > 0 ? (
+          activeListings.map((listing, i) => (
+            <Animated.View key={listing.id} entering={FadeInDown.delay(300 + i * 50).duration(400)}>
+              <Card
+                title={listing.title}
+                userName={listing.userName}
+                description={listing.description}
+                credits={listing.credits}
+                createdAt={listing.createdAt}
+                onPress={() => router.push({ pathname: '/skill/[id]', params: { id: listing.id } })}
+                onConnect={() => router.push({ pathname: '/skill/[id]', params: { id: listing.id } })}
+                style={{ marginBottom: Spacing.md }}
+              />
+            </Animated.View>
+          ))
+        ) : (
           <View style={styles.emptyFeed}>
             <Text style={styles.emptyEmoji}>🌱</Text>
             <Text style={styles.emptyTitle}>No skills posted yet</Text>
             <Text style={styles.emptyDesc}>Be the first to share your talent!</Text>
-            <Pressable style={styles.heroBtn} onPress={() => router.push('/(tabs)/post')}>
+            <Pressable style={styles.heroBtn} onPress={() => router.push('/(tabs)/post')}
+              accessibilityRole="button" accessibilityLabel="Post a skill">
               <Ionicons name="add" size={18} color="#FFFFFF" />
               <Text style={styles.heroBtnText}>Post a Skill</Text>
             </Pressable>
