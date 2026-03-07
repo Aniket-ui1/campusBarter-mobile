@@ -22,6 +22,7 @@ const storage = {
 };
 
 const THEME_KEY = 'campusbarter_theme';
+const MOBILE_VIEW_KEY = 'campusbarter_mobileview';
 
 interface ThemeContextType {
   mode: ThemeMode;
@@ -29,18 +30,24 @@ interface ThemeContextType {
   setMode: (mode: ThemeMode) => void;
   isDark: boolean;
   isSait: boolean;
+  mobileView: boolean;
+  setMobileView: (v: boolean) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>('light');
+  const [mobileView, setMobileViewState] = useState(false);
 
   useEffect(() => {
     storage.getItem(THEME_KEY).then((saved) => {
       if (saved === 'dark' || saved === 'sait' || saved === 'light') {
         setModeState(saved);
       }
+    });
+    storage.getItem(MOBILE_VIEW_KEY).then((saved) => {
+      if (saved === 'true') setMobileViewState(true);
     });
   }, []);
 
@@ -49,10 +56,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     storage.setItem(THEME_KEY, newMode);
   };
 
+  const setMobileView = (v: boolean) => {
+    setMobileViewState(v);
+    storage.setItem(MOBILE_VIEW_KEY, v ? 'true' : 'false');
+  };
+
   const colors = getThemePalette(mode);
 
   return (
-    <ThemeContext.Provider value={{ mode, colors, setMode, isDark: mode === 'dark', isSait: mode === 'sait' }}>
+    <ThemeContext.Provider value={{ mode, colors, setMode, isDark: mode === 'dark', isSait: mode === 'sait', mobileView, setMobileView }}>
       {children}
     </ThemeContext.Provider>
   );

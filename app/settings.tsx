@@ -12,7 +12,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 export default function SettingsScreen() {
     const router = useRouter();
     const { signOut } = useAuth();
-    const { mode, setMode, colors } = useTheme();
+    const { mode, setMode, colors, mobileView, setMobileView } = useTheme();
     const { showToast } = useToast();
 
     const toggleDark = (v: boolean) => {
@@ -60,6 +60,7 @@ export default function SettingsScreen() {
     const APPEARANCE: { icon: string; label: string; key: string; description: string; value: boolean; onToggle: (v: boolean) => void }[] = [
         { icon: 'moon-outline', label: 'Dark Mode', key: 'dark', description: 'Easy on the eyes at night', value: mode === 'dark', onToggle: toggleDark },
         { icon: 'school-outline', label: 'SAIT Mode', key: 'sait', description: 'Red & blue SAIT theme', value: mode === 'sait', onToggle: toggleSait },
+        ...(Platform.OS === 'web' ? [{ icon: 'phone-portrait-outline', label: 'Mobile View', key: 'mobileView', description: 'Simulate mobile layout on web', value: mobileView, onToggle: setMobileView }] : []),
     ];
 
     const NAV_ITEMS: { icon: string; label: string; key: string }[] = [

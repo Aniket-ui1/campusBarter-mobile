@@ -6,10 +6,11 @@ import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { DefaultTheme, ThemeProvider as NavThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { Platform, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
 
 function AppInner() {
-  const { colors, mode } = useTheme();
+  const { colors, mode, mobileView } = useTheme();
 
   const navTheme = {
     ...DefaultTheme,
@@ -24,7 +25,9 @@ function AppInner() {
     },
   };
 
-  return (
+  const useMobileFrame = Platform.OS === 'web' && mobileView;
+
+  const content = (
     <NavThemeProvider value={navTheme}>
       <AuthProvider>
         <DataProvider>
@@ -64,7 +67,35 @@ function AppInner() {
       </AuthProvider>
     </NavThemeProvider>
   );
+
+  if (!useMobileFrame) return content;
+
+  return (
+    <View style={mobileFrameStyles.outer}>
+      <View style={[mobileFrameStyles.phone, { backgroundColor: colors.background, borderColor: colors.border }]}>
+        {content}
+      </View>
+    </View>
+  );
 }
+
+const mobileFrameStyles = StyleSheet.create({
+  outer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a1a2e',
+  },
+  phone: {
+    width: 390,
+    height: '95%',
+    maxHeight: 844,
+    borderRadius: 40,
+    overflow: 'hidden',
+    borderWidth: 3,
+    ...Platform.select({ web: { boxShadow: '0 25px 60px rgba(0,0,0,0.5)' } as any }),
+  },
+});
 
 export default function RootLayout() {
   return (
