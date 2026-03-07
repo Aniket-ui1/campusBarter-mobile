@@ -5,6 +5,7 @@ import { useData } from '@/context/DataContext';
 import { useThemeColors } from '@/context/ThemeContext';
 import { triggerHaptic } from '@/hooks/useAnimations';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -49,7 +50,12 @@ export default function ProfileScreen() {
         <View style={[styles.container, { backgroundColor: colors.background }]}>
 
             {/* Gradient header */}
-            <View style={[styles.headerBg, { backgroundColor: colors.primaryDark }]}>
+            <LinearGradient
+                colors={[colors.gradientFrom, colors.gradientTo]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.headerBg}
+            >
                 <View style={styles.statusSpacer} />
                 <View style={styles.headerActions}>
                     <View style={{ flex: 1 }} />
@@ -85,27 +91,27 @@ export default function ProfileScreen() {
                         <Text style={styles.statLabel}>Reviews</Text>
                     </View>
                 </View>
-            </View>
+            </LinearGradient>
 
             <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
                 {/* Info badges */}
                 {(user?.program || user?.major) && (
                     <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.infoPills}>
                         {user?.program && (
-                            <View style={[styles.infoPill, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '20' }]}>
-                                <Ionicons name="school-outline" size={14} color={colors.primary} />
-                                <Text style={[styles.infoPillText, { color: colors.primary }]}>{user.program}</Text>
+                            <View style={[styles.infoPill, { backgroundColor: colors.secondary + '10', borderColor: colors.secondary + '20' }]}>
+                                <Ionicons name="school-outline" size={14} color={colors.secondary} />
+                                <Text style={[styles.infoPillText, { color: colors.secondary }]}>{user.program}</Text>
                             </View>
                         )}
                         {user?.major && (
-                            <View style={[styles.infoPill, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '20' }]}>
-                                <Ionicons name="book-outline" size={14} color={colors.primary} />
-                                <Text style={[styles.infoPillText, { color: colors.primary }]}>{user.major}</Text>
+                            <View style={[styles.infoPill, { backgroundColor: colors.secondary + '10', borderColor: colors.secondary + '20' }]}>
+                                <Ionicons name="book-outline" size={14} color={colors.secondary} />
+                                <Text style={[styles.infoPillText, { color: colors.secondary }]}>{user.major}</Text>
                             </View>
                         )}
-                        <View style={[styles.infoPill, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '20' }]}>
-                            <Ionicons name="calendar-outline" size={14} color={colors.primary} />
-                            <Text style={[styles.infoPillText, { color: colors.primary }]}>Semester {user?.semester ?? 1}</Text>
+                        <View style={[styles.infoPill, { backgroundColor: colors.secondary + '10', borderColor: colors.secondary + '20' }]}>
+                            <Ionicons name="calendar-outline" size={14} color={colors.secondary} />
+                            <Text style={[styles.infoPillText, { color: colors.secondary }]}>Semester {user?.semester ?? 1}</Text>
                         </View>
                     </Animated.View>
                 )}
@@ -129,7 +135,7 @@ export default function ProfileScreen() {
                         {(user?.interests?.length ?? 0) > 0 && (
                             <View style={styles.detailSection}>
                                 <Text style={[styles.detailLabel, { color: colors.text }]}>✨ My Interests</Text>
-                                <ChipList items={user!.interests!} color="#6366F1" />
+                                <ChipList items={user!.interests!} color={colors.secondary} />
                             </View>
                         )}
                         {(user?.weaknesses?.length ?? 0) > 0 && (
@@ -150,8 +156,8 @@ export default function ProfileScreen() {
                             pressed && { backgroundColor: colors.surface },
                             i === MENU_ITEMS.length - 1 && { borderBottomWidth: 0 },
                         ]} onPress={() => { triggerHaptic('light'); item.onPress(); }}>
-                            <View style={[styles.menuIconWrap, { backgroundColor: colors.primary + '10' }]}>
-                                <Ionicons name={item.icon as any} size={18} color={colors.primary} />
+                            <View style={[styles.menuIconWrap, { backgroundColor: colors.secondary + '10' }]}>
+                                <Ionicons name={item.icon as any} size={18} color={colors.secondary} />
                             </View>
                             <Text style={[styles.menuLabel, { color: colors.text }]}>{item.label}</Text>
                             <View style={{ flex: 1 }} />

@@ -1,5 +1,6 @@
 import { Radii } from '@/constants/theme';
 import { useThemeColors } from '@/context/ThemeContext';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import Animated, {
@@ -57,9 +58,15 @@ export function EmptyState({ icon = '🔍', title, description, actionLabel, onA
                     onPress={onAction}
                     style={({ pressed }) => [
                         styles.actionBtn,
-                        { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
+                        { overflow: 'hidden', opacity: pressed ? 0.85 : 1 },
                     ]}
                 >
+                    <LinearGradient
+                        colors={[colors.gradientFrom, colors.gradientTo]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={StyleSheet.absoluteFill}
+                    />
                     <Text style={styles.actionText}>{actionLabel}</Text>
                 </Pressable>
             )}

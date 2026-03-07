@@ -1,13 +1,16 @@
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
+import { useThemeColors } from "../../context/ThemeContext";
 
 export default function CreateListing() {
     const router = useRouter();
     const { addListing } = useData();
     const { user } = useAuth();
+    const colors = useThemeColors();
 
     const [type, setType] = useState<'OFFER' | 'REQUEST'>('OFFER');
     const [title, setTitle] = useState("");
@@ -96,7 +99,13 @@ export default function CreateListing() {
                 <Text style={styles.helper}>Typically 1 credit = 1 hour of help</Text>
             </View>
 
-            <Pressable style={styles.submitButton} onPress={handleSubmit}>
+            <Pressable style={[styles.submitButton, { overflow: 'hidden' }]} onPress={handleSubmit}>
+                <LinearGradient
+                    colors={[colors.gradientFrom, colors.gradientTo]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={StyleSheet.absoluteFill}
+                />
                 <Text style={styles.submitButtonText}>Post Listing</Text>
             </Pressable>
         </ScrollView>
@@ -165,7 +174,6 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
     submitButton: {
-        backgroundColor: "#d32f2f",
         padding: 16,
         borderRadius: 12,
         alignItems: "center",

@@ -1,6 +1,7 @@
 import { Radii, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/context/ThemeContext';
 import { triggerHaptic, usePressAnimation } from '@/hooks/useAnimations';
+import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, type ViewStyle } from 'react-native';
 import Animated from 'react-native-reanimated';
@@ -33,9 +34,10 @@ export function Button({
     const colors = useThemeColors();
     const { animStyle, onPressIn, onPressOut } = usePressAnimation(0.97);
     const s = SIZE_STYLES[size];
+    const useGrad = variant === 'primary';
 
     const VARIANT_STYLES: Record<ButtonVariant, { bg: string; text: string; border?: string }> = {
-        primary: { bg: colors.primary, text: '#FFFFFF' },
+        primary: { bg: 'transparent', text: '#FFFFFF' },
         secondary: { bg: 'transparent', text: colors.primary, border: colors.primary },
         ghost: { bg: 'transparent', text: colors.textSecondary },
         danger: { bg: colors.error, text: '#FFFFFF' },
@@ -59,11 +61,20 @@ export function Button({
                         borderWidth: v.border ? 1.5 : 0,
                         borderColor: v.border,
                         opacity: disabled ? 0.5 : 1,
+                        overflow: useGrad ? 'hidden' : undefined,
                     },
                     fullWidth && { width: '100%' as any },
                     style,
                 ]}
             >
+                {useGrad && (
+                    <LinearGradient
+                        colors={[colors.gradientFrom, colors.gradientTo]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={StyleSheet.absoluteFill}
+                    />
+                )}
                 {loading ? (
                     <ActivityIndicator size="small" color={v.text} />
                 ) : (

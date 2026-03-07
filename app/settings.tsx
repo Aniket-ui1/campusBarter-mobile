@@ -1,42 +1,44 @@
 import { useToast } from '@/components/ui/Toast';
+import type { ThemeFamily } from '@/constants/theme';
 import { Radii, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { triggerHaptic, triggerSuccessHaptic } from '@/hooks/useAnimations';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+
+const THEME_OPTIONS: { key: ThemeFamily; label: string; emoji: string; description: string }[] = [
+    { key: 'default', label: 'Default', emoji: '🌿', description: 'Clean green tones' },
+    { key: 'sait', label: 'SAIT', emoji: '🏫', description: 'Red & blue SAIT colors' },
+];
 
 export default function SettingsScreen() {
     const router = useRouter();
     const { signOut } = useAuth();
-    const { mode, setMode, colors, mobileView, setMobileView } = useTheme();
+    const { themeFamily, setThemeFamily, darkMode, setDarkMode, colors, mobileView, setMobileView } = useTheme();
     const { showToast } = useToast();
+    const [themePickerOpen, setThemePickerOpen] = useState(false);
 
     const toggleDark = (v: boolean) => {
+        setDarkMode(v);
         if (v) {
-            setMode('dark');
             triggerSuccessHaptic();
             showToast('Dark mode enabled 🌙', 'success');
-        } else if (mode === 'dark') {
-            setMode('light');
+        } else {
             triggerHaptic('light');
             showToast('Light mode enabled ☀️', 'info');
         }
     };
 
-    const toggleSait = (v: boolean) => {
-        if (v) {
-            setMode('sait');
-            triggerSuccessHaptic();
-            showToast('SAIT Mode activated! 🔴🔵', 'success');
-        } else if (mode === 'sait') {
-            setMode('light');
-            triggerHaptic('light');
-            showToast('Default theme restored 🌿', 'info');
-        }
+    const selectTheme = (family: ThemeFamily) => {
+        setThemeFamily(family);
+        setThemePickerOpen(false);
+        triggerSuccessHaptic();
+        const opt = THEME_OPTIONS.find((t) => t.key === family);
+        showToast(`${opt?.label} theme activated! ${opt?.emoji}`, 'success');
     };
 
     const handleNav = (key: string) => {
@@ -57,11 +59,7 @@ export default function SettingsScreen() {
         { icon: 'chatbubble-outline', label: 'Message Notifications', type: 'toggle', key: 'chat' },
     ];
 
-    const APPEARANCE: { icon: string; label: string; key: string; description: string; value: boolean; onToggle: (v: boolean) => void }[] = [
-        { icon: 'moon-outline', label: 'Dark Mode', key: 'dark', description: 'Easy on the eyes at night', value: mode === 'dark', onToggle: toggleDark },
-        { icon: 'school-outline', label: 'SAIT Mode', key: 'sait', description: 'Red & blue SAIT theme', value: mode === 'sait', onToggle: toggleSait },
-        ...(Platform.OS === 'web' ? [{ icon: 'phone-portrait-outline', label: 'Mobile View', key: 'mobileView', description: 'Simulate mobile layout on web', value: mobileView, onToggle: setMobileView }] : []),
-    ];
+    const currentTheme = THEME_OPTIONS.find((t) => t.key === themeFamily) ?? THEME_OPTIONS[0];
 
     const NAV_ITEMS: { icon: string; label: string; key: string }[] = [
         { icon: 'shield-checkmark-outline', label: 'Privacy Policy', key: 'privacy' },
@@ -85,23 +83,54 @@ export default function SettingsScreen() {
                 <Animated.View entering={FadeInDown.delay(80).duration(400)}>
                     <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>APPEARANCE</Text>
                     <View style={[styles.section, { backgroundColor: colors.surfaceLight, borderColor: colors.border }]}>
-                        {APPEARANCE.map((item, i) => (
-                            <View key={item.key} style={[styles.row, { borderBottomColor: colors.border }, i === APPEARANCE.length - 1 && { borderBottomWidth: 0 }]}>
+                        {/* Theme Selector */}
+                        <Pressable
+                            style={[styles.row, { borderBottomColor: colors.border }]}
+                            onPress={() => setThemePickerOpen(true)}
+                        >
+                            <View style={[styles.iconWrap, { backgroundColor: colors.primary + '12' }]}>
+                                <Ionicons name="color-palette-outline" size={18} color={colors.primary} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.rowLabel, { color: colors.text }]}>Theme</Text>
+                                <Text style={[styles.rowDesc, { color: colors.textMuted }]}>{currentTheme.emoji} {currentTheme.label}</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                        </Pressable>
+                        {/* Dark Mode Toggle */}
+                        <View style={[styles.row, { borderBottomColor: colors.border }, Platform.OS !== 'web' && { borderBottomWidth: 0 }]}>
+                            <View style={[styles.iconWrap, { backgroundColor: colors.primary + '12' }]}>
+                                <Ionicons name="moon-outline" size={18} color={colors.primary} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={[styles.rowLabel, { color: colors.text }]}>Dark Mode</Text>
+                                <Text style={[styles.rowDesc, { color: colors.textMuted }]}>Easy on the eyes at night</Text>
+                            </View>
+                            <Switch
+                                value={darkMode}
+                                onValueChange={toggleDark}
+                                trackColor={{ true: colors.primary, false: colors.border }}
+                                thumbColor="#FFFFFF"
+                            />
+                        </View>
+                        {/* Mobile View (web only) */}
+                        {Platform.OS === 'web' && (
+                            <View style={[styles.row, { borderBottomColor: colors.border, borderBottomWidth: 0 }]}>
                                 <View style={[styles.iconWrap, { backgroundColor: colors.primary + '12' }]}>
-                                    <Ionicons name={item.icon as any} size={18} color={colors.primary} />
+                                    <Ionicons name="phone-portrait-outline" size={18} color={colors.primary} />
                                 </View>
                                 <View style={{ flex: 1 }}>
-                                    <Text style={[styles.rowLabel, { color: colors.text }]}>{item.label}</Text>
-                                    <Text style={[styles.rowDesc, { color: colors.textMuted }]}>{item.description}</Text>
+                                    <Text style={[styles.rowLabel, { color: colors.text }]}>Mobile View</Text>
+                                    <Text style={[styles.rowDesc, { color: colors.textMuted }]}>Simulate mobile layout on web</Text>
                                 </View>
                                 <Switch
-                                    value={item.value}
-                                    onValueChange={item.onToggle}
+                                    value={mobileView}
+                                    onValueChange={setMobileView}
                                     trackColor={{ true: colors.primary, false: colors.border }}
                                     thumbColor="#FFFFFF"
                                 />
                             </View>
-                        ))}
+                        )}
                     </View>
                 </Animated.View>
 
@@ -150,11 +179,11 @@ export default function SettingsScreen() {
                 <Animated.View entering={FadeInDown.delay(320).duration(400)}>
                     <View style={[styles.themeIndicator, { backgroundColor: colors.primary + '10', borderColor: colors.primary + '25' }]}>
                         <Text style={{ fontSize: 20 }}>
-                            {mode === 'dark' ? '🌙' : mode === 'sait' ? '🏫' : '🌿'}
+                            {currentTheme.emoji}{darkMode ? '🌙' : ''}
                         </Text>
                         <View>
                             <Text style={[styles.themeLabel, { color: colors.primary }]}>
-                                {mode === 'dark' ? 'Dark Mode' : mode === 'sait' ? 'SAIT Mode' : 'Forest Green'}
+                                {currentTheme.label}{darkMode ? ' (Dark)' : ''}
                             </Text>
                             <Text style={[styles.themeDesc, { color: colors.textMuted }]}>Current theme</Text>
                         </View>
@@ -168,6 +197,35 @@ export default function SettingsScreen() {
                     </Pressable>
                 </Animated.View>
             </ScrollView>
+
+            {/* Theme Picker Modal */}
+            <Modal visible={themePickerOpen} transparent animationType="fade" onRequestClose={() => setThemePickerOpen(false)}>
+                <Pressable style={styles.modalOverlay} onPress={() => setThemePickerOpen(false)}>
+                    <Pressable style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]} onPress={() => {}}>
+                        <Text style={[styles.modalTitle, { color: colors.text }]}>Choose Theme</Text>
+                        {THEME_OPTIONS.map((opt) => {
+                            const isActive = themeFamily === opt.key;
+                            return (
+                                <Pressable
+                                    key={opt.key}
+                                    style={[
+                                        styles.themeOption,
+                                        { borderColor: isActive ? colors.primary : colors.border, backgroundColor: isActive ? colors.primary + '12' : colors.surfaceLight },
+                                    ]}
+                                    onPress={() => selectTheme(opt.key)}
+                                >
+                                    <Text style={{ fontSize: 24 }}>{opt.emoji}</Text>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.themeOptionLabel, { color: colors.text }]}>{opt.label}</Text>
+                                        <Text style={[styles.themeOptionDesc, { color: colors.textMuted }]}>{opt.description}</Text>
+                                    </View>
+                                    {isActive && <Ionicons name="checkmark-circle" size={22} color={colors.primary} />}
+                                </Pressable>
+                            );
+                        })}
+                    </Pressable>
+                </Pressable>
+            </Modal>
         </View>
     );
 }
@@ -197,4 +255,20 @@ const styles = StyleSheet.create({
         padding: Spacing.lg, borderRadius: Radii.md, borderWidth: 1,
     },
     dangerText: { fontSize: 15, fontWeight: '600' },
+    modalOverlay: {
+        flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center', alignItems: 'center', padding: Spacing.xl,
+    },
+    modalContent: {
+        width: '100%', maxWidth: 340, borderRadius: Radii.xl, borderWidth: 1,
+        padding: Spacing.xl,
+    },
+    modalTitle: { fontSize: 18, fontWeight: '700', marginBottom: Spacing.lg, textAlign: 'center' },
+    themeOption: {
+        flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+        padding: Spacing.lg, borderRadius: Radii.md, borderWidth: 1.5,
+        marginBottom: Spacing.sm,
+    },
+    themeOptionLabel: { fontSize: 15, fontWeight: '600' },
+    themeOptionDesc: { fontSize: 12, marginTop: 2 },
 });

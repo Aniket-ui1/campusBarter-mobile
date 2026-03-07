@@ -7,6 +7,7 @@ import { useData } from '@/context/DataContext';
 import { useThemeColors } from '@/context/ThemeContext';
 import { triggerHaptic } from '@/hooks/useAnimations';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
@@ -86,7 +87,12 @@ export default function PostScreen() {
             {/* Progress bar */}
             <Animated.View entering={FadeInDown.duration(300)} style={styles.progressWrap}>
                 <View style={[styles.progressBar, { backgroundColor: colors.surface }]}>
-                    <View style={[styles.progressFill, { width: `${(progress / 3) * 100}%`, backgroundColor: colors.primary }]} />
+                    <LinearGradient
+                        colors={[colors.gradientFrom, colors.gradientTo]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={[styles.progressFill, { width: `${(progress / 3) * 100}%` }]}
+                    />
                 </View>
                 <Text style={[styles.progressText, { color: colors.textMuted }]}>{progress}/3 completed</Text>
             </Animated.View>
@@ -107,8 +113,16 @@ export default function PostScreen() {
                         <View style={styles.chipGrid}>
                             {SKILL_CATEGORIES.map((c) => (
                                 <Pressable key={c.key}
-                                    style={[styles.catChip, { borderColor: colors.border, backgroundColor: colors.card }, category === c.key && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                                    style={[styles.catChip, { borderColor: colors.border, backgroundColor: colors.card, overflow: 'hidden' }, category === c.key && { borderColor: 'transparent' }]}
                                     onPress={() => { setCategory(c.key); triggerHaptic('light'); }}>
+                                    {category === c.key && (
+                                        <LinearGradient
+                                            colors={[colors.gradientFrom, colors.gradientTo]}
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 1, y: 0 }}
+                                            style={StyleSheet.absoluteFill}
+                                        />
+                                    )}
                                     <Text style={styles.catChipEmoji}>{CATEGORY_EMOJIS[c.key] ?? '✨'}</Text>
                                     <Text style={[styles.catChipText, { color: colors.textSecondary }, category === c.key && { color: '#FFFFFF' }]}>
                                         {c.label}
@@ -124,8 +138,16 @@ export default function PostScreen() {
                         <Text style={[styles.label, { color: colors.textSecondary }]}>Location</Text>
                         <View style={styles.locRow}>
                             {LOCATION_OPTIONS.map((loc) => (
-                                <Pressable key={loc.key} style={[styles.locBtn, { borderColor: colors.border, backgroundColor: colors.card }, location === loc.key && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                                <Pressable key={loc.key} style={[styles.locBtn, { borderColor: colors.border, backgroundColor: colors.card, overflow: 'hidden' }, location === loc.key && { borderColor: 'transparent' }]}
                                     onPress={() => { setLocation(loc.key); triggerHaptic('light'); }}>
+                                    {location === loc.key && (
+                                        <LinearGradient
+                                            colors={[colors.gradientFrom, colors.gradientTo]}
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 1, y: 0 }}
+                                            style={StyleSheet.absoluteFill}
+                                        />
+                                    )}
                                     <Text style={[styles.locText, { color: colors.textSecondary }, location === loc.key && { color: '#FFFFFF' }]}>{loc.label}</Text>
                                 </Pressable>
                             ))}

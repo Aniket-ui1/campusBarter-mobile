@@ -8,7 +8,7 @@ import { triggerHaptic } from '@/hooks/useAnimations';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Dimensions, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Dimensions, NativeScrollEvent, NativeSyntheticEvent, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function SearchScreen() {
@@ -22,7 +22,35 @@ export default function SearchScreen() {
     const [showSkillFilter, setShowSkillFilter] = useState(false);
     const [viewMode, setViewMode] = useState<'list' | 'grid'>(params.category ? 'grid' : 'list');
     const catScrollRef = useRef<ScrollView>(null);
+    const catScrollOffset = useRef(0);
+    const catDragStartX = useRef(0);
+    const catDidDrag = useRef(false);
     const screenWidth = Dimensions.get('window').width;
+
+    const handleCatScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+        catScrollOffset.current = e.nativeEvent.contentOffset.x;
+    };
+
+    const catPanResponder = useRef(
+        PanResponder.create({
+            onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 5,
+            onPanResponderGrant: () => {
+                catDragStartX.current = catScrollOffset.current;
+                catDidDrag.current = false;
+            },
+            onPanResponderMove: (_, gs) => {
+                catDidDrag.current = true;
+                catScrollRef.current?.scrollTo({ x: catDragStartX.current - gs.dx, animated: false });
+            },
+        })
+    ).current;
+
+    const handleCatPress = (key: string) => {
+        if (catDidDrag.current) { catDidDrag.current = false; return; }
+        triggerHaptic('light');
+        setActiveCategory(key);
+        if (key === 'all') setViewMode('list');
+    };
 
     // When navigated with a category param, auto-select it
     useEffect(() => {
@@ -103,35 +131,44 @@ export default function SearchScreen() {
             </View>
 
             {/* Categories — swipeable pills */}
+            <View {...catPanResponder.panHandlers}>
             <ScrollView
                 ref={catScrollRef}
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                snapToInterval={180}
                 decelerationRate="fast"
+                onScroll={handleCatScroll}
+                scrollEventThrottle={16}
                 style={styles.catScroll}
                 contentContainerStyle={styles.catContent}
             >
                 <Pressable
-                    style={[styles.catPill, { borderColor: colors.border, backgroundColor: colors.card }, activeCategory === 'all' && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                    onPress={() => { setActiveCategory('all'); setViewMode('list'); triggerHaptic('light'); }}>
-                    <Text style={[styles.catPillText, { color: colors.textSecondary }, activeCategory === 'all' && { color: '#FFFFFF' }]}>
-                        🔥 All
-                    </Text>
+                    style={[styles.catPill, activeCategory === 'all' ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
+                    onPress={() => handleCatPress('all')}>
+                    <View style={[styles.catIconWrap, { backgroundColor: activeCategory === 'all' ? 'rgba(255,255,255,0.25)' : colors.primary + '15' }]}>
+                        <Text style={styles.catEmoji}>🔥</Text>
+                    </View>
+                    <Text style={[styles.catPillText, { color: activeCategory === 'all' ? '#FFFFFF' : colors.textSecondary }]}>All</Text>
                 </Pressable>
                 {CATEGORIES.filter(c => c.key !== 'all').map((cat) => {
                     const catColor = CATEGORY_COLORS[cat.key] ?? colors.primary;
                     const isActive = activeCategory === cat.key;
                     return (
                         <Pressable key={cat.key}
-                            style={[styles.catPill, { borderColor: colors.border, backgroundColor: colors.card }, isActive && { backgroundColor: catColor, borderColor: catColor }]}
-                            onPress={() => { setActiveCategory(cat.key); triggerHaptic('light'); }}>
-                            <Text style={[styles.catPillText, { color: colors.textSecondary }, isActive && { color: '#FFFFFF' }]}>
-                                {CATEGORY_EMOJIS[cat.key] ?? '✨'} {cat.label}
+                            style={[styles.catPill, isActive ? { backgroundColor: catColor } : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
+                            onPress={() => handleCatPress(cat.key)}>
+                            <View style={[styles.catIconWrap, { backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : catColor + '15' }]}>
+                                <Text style={styles.catEmoji}>{CATEGORY_EMOJIS[cat.key] ?? '✨'}</Text>
+                            </View>
+                            <Text style={[styles.catPillText, { color: isActive ? '#FFFFFF' : colors.textSecondary }]}>
+                                {cat.label}
                             </Text>
                         </Pressable>
                     );
                 })}
             </ScrollView>
+            </View>
 
             {/* Active category header with count */}
             {activeCategory !== 'all' && (
@@ -261,13 +298,20 @@ const styles = StyleSheet.create({
     } as any,
     searchInput: { flex: 1, fontSize: 15 },
 
-    catScroll: { maxHeight: 48, marginBottom: Spacing.md },
-    catContent: { paddingHorizontal: Spacing.xl, gap: Spacing.sm },
+    catScroll: { maxHeight: 52, marginBottom: Spacing.md },
+    catContent: { paddingHorizontal: Spacing.xl, gap: 10 },
     catPill: {
-        paddingHorizontal: 16, paddingVertical: 10,
-        borderRadius: Radii.full, borderWidth: 1,
+        width: 170, flexDirection: 'row', alignItems: 'center', gap: 10,
+        paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+        borderRadius: Radii.full,
+        ...Platform.select({ web: { userSelect: 'none' as any } }),
     },
-    catPillText: { fontSize: 13, fontWeight: '600' },
+    catIconWrap: {
+        width: 36, height: 36, borderRadius: 12,
+        alignItems: 'center', justifyContent: 'center',
+    },
+    catEmoji: { fontSize: 18 },
+    catPillText: { fontSize: 14, fontWeight: '700' },
 
     catDetailHeader: {
         flexDirection: 'row', alignItems: 'center', gap: 8,

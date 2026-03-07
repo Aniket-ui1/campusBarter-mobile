@@ -5,8 +5,9 @@
 
 import { Platform } from 'react-native';
 
-// ── Theme mode type ──────────────────────────────────────────────
-export type ThemeMode = 'light' | 'dark' | 'sait';
+// ── Theme types ──────────────────────────────────────────────────
+export type ThemeFamily = 'default' | 'sait';
+export type ThemeMode = 'light' | 'dark' | 'sait'; // legacy compat
 
 // ── Light palette (forest green — default) ───────────────────────
 const LightPalette = {
@@ -112,58 +113,119 @@ const SaitPalette = {
   primaryLight: '#E04050',
   primaryDark: '#8B0A1E',
   secondary: '#003B6F',
-  accent: '#C8102E',
+  accent: '#003B6F',
 
-  chatGreen: '#FFE0E6',
+  chatGreen: '#E0E8F5',
   chatWhite: '#FFFFFF',
-  chatBg: '#F0E8E8',
+  chatBg: '#EAE8F0',
 
   gradientFrom: '#C8102E',
   gradientTo: '#003B6F',
   gradientHero: '#002550',
 
-  background: '#FDF8F8',
-  surface: '#F5ECEC',
-  surfaceLight: '#FAEAEA',
-  elevated: '#E8D4D4',
+  background: '#F8F9FC',
+  surface: '#EEF1F7',
+  surfaceLight: '#E8ECF5',
+  elevated: '#D8DDE8',
   card: '#FFFFFF',
 
-  border: 'rgba(200,16,46,0.18)',
-  borderLight: 'rgba(200,16,46,0.08)',
-  borderMedium: 'rgba(200,16,46,0.30)',
+  border: 'rgba(0,59,111,0.18)',
+  borderLight: 'rgba(0,59,111,0.08)',
+  borderMedium: 'rgba(0,59,111,0.30)',
 
-  text: '#1A0A0F',
-  textSecondary: '#5A2D38',
-  textMuted: '#9A7A82',
-  textLight: '#C4A8AE',
+  text: '#0F1A2E',
+  textSecondary: '#2D3E5A',
+  textMuted: '#6A7B96',
+  textLight: '#9AABBF',
 
   success: '#22C55E',
   warning: '#F59E0B',
   error: '#EF4444',
   info: '#003B6F',
 
-  dark: '#1A0A0F',
-  forest: '#8B0A1E',
-  sage: '#E04050',
-  mist: '#C4A8AE',
-  cream: '#FAEAEA',
-  white: '#FDF8F8',
+  dark: '#0F1A2E',
+  forest: '#003B6F',
+  sage: '#3070A8',
+  mist: '#9AABBF',
+  cream: '#E8ECF5',
+  white: '#F8F9FC',
 
-  overlay: 'rgba(26,10,15,0.5)',
-  overlayLight: 'rgba(26,10,15,0.08)',
+  overlay: 'rgba(15,26,46,0.5)',
+  overlayLight: 'rgba(15,26,46,0.08)',
 
   statusBar: 'dark' as const,
 };
 
+// ── SAIT Dark palette ────────────────────────────────────────────
+const SaitDarkPalette = {
+  primary: '#E04050',
+  primaryLight: '#F06070',
+  primaryDark: '#C8102E',
+  secondary: '#3070A8',
+  accent: '#3070A8',
+
+  chatGreen: '#1A2040',
+  chatWhite: '#1A1F30',
+  chatBg: '#0D1220',
+
+  gradientFrom: '#C8102E',
+  gradientTo: '#003B6F',
+  gradientHero: '#001A3A',
+
+  background: '#0D1220',
+  surface: '#141B2E',
+  surfaceLight: '#1A2240',
+  elevated: '#243050',
+  card: '#1A2240',
+
+  border: 'rgba(48,112,168,0.25)',
+  borderLight: 'rgba(48,112,168,0.12)',
+  borderMedium: 'rgba(48,112,168,0.40)',
+
+  text: '#E8ECF5',
+  textSecondary: '#9AABBF',
+  textMuted: '#6A7B96',
+  textLight: '#4A6080',
+
+  success: '#34D67A',
+  warning: '#FBBF24',
+  error: '#F87171',
+  info: '#3070A8',
+
+  dark: '#E8ECF5',
+  forest: '#3070A8',
+  sage: '#5090C8',
+  mist: '#4A6080',
+  cream: '#1A2240',
+  white: '#0D1220',
+
+  overlay: 'rgba(0,0,0,0.6)',
+  overlayLight: 'rgba(0,0,0,0.15)',
+
+  statusBar: 'light' as const,
+};
+
 // ── Palette map ──────────────────────────────────────────────────
 type Palette = Omit<typeof LightPalette, 'statusBar'> & { statusBar: 'dark' | 'light' };
+
+const FAMILY_PALETTES: Record<ThemeFamily, { light: Palette; dark: Palette }> = {
+  default: { light: LightPalette, dark: DarkPalette },
+  sait: { light: SaitPalette, dark: SaitDarkPalette },
+};
+
+// Legacy single-key map (backward compat)
 const PALETTES: Record<ThemeMode, Palette> = {
   light: LightPalette,
   dark: DarkPalette,
   sait: SaitPalette,
 };
 
-/** Get the full color palette for a given theme mode */
+/** Get palette for theme family + dark mode */
+export function getThemePaletteByFamily(family: ThemeFamily, dark: boolean) {
+  return FAMILY_PALETTES[family][dark ? 'dark' : 'light'];
+}
+
+/** Legacy: Get the full color palette for a given theme mode */
 export function getThemePalette(mode: ThemeMode) {
   return PALETTES[mode];
 }

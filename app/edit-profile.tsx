@@ -130,11 +130,12 @@ export default function EditProfileScreen() {
                     <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
                     {/* Skills */}
-                    <View style={styles.section}>
+                    <View style={[styles.groupCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <Text style={[styles.sectionTitle, { color: colors.text }]}>💪 Skills</Text>
+                        <Text style={[styles.sectionHint, { color: colors.textMuted }]}>What you're good at</Text>
                         <View style={styles.chipGrid}>
                             {SKILLS_OPTIONS.map((s) => (
-                                <Pressable key={s} style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.surface }, skills.includes(s) && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                                <Pressable key={s} style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.card }, skills.includes(s) && { backgroundColor: colors.primary, borderColor: colors.primary }]}
                                     onPress={() => toggleItem(skills, setSkills, s)}>
                                     <Text style={[styles.chipText, { color: colors.textSecondary }, skills.includes(s) && styles.chipTextActive]}>{s}</Text>
                                 </Pressable>
@@ -143,11 +144,12 @@ export default function EditProfileScreen() {
                     </View>
 
                     {/* Areas to Improve */}
-                    <View style={styles.section}>
+                    <View style={[styles.groupCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <Text style={[styles.sectionTitle, { color: colors.text }]}>📚 Areas to Improve</Text>
+                        <Text style={[styles.sectionHint, { color: colors.textMuted }]}>What you want to learn</Text>
                         <View style={styles.chipGrid}>
                             {SKILLS_OPTIONS.map((s) => (
-                                <Pressable key={s} style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.surface }, weaknesses.includes(s) && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                                <Pressable key={s} style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.card }, weaknesses.includes(s) && { backgroundColor: colors.primary, borderColor: colors.primary }]}
                                     onPress={() => toggleItem(weaknesses, setWeaknesses, s)}>
                                     <Text style={[styles.chipText, { color: colors.textSecondary }, weaknesses.includes(s) && styles.chipTextActive]}>{s}</Text>
                                 </Pressable>
@@ -156,11 +158,12 @@ export default function EditProfileScreen() {
                     </View>
 
                     {/* Interests */}
-                    <View style={styles.section}>
+                    <View style={[styles.groupCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                         <Text style={[styles.sectionTitle, { color: colors.text }]}>✨ Interests</Text>
+                        <Text style={[styles.sectionHint, { color: colors.textMuted }]}>Topics you enjoy</Text>
                         <View style={styles.chipGrid}>
                             {SKILLS_OPTIONS.map((s) => (
-                                <Pressable key={s} style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.surface }, interests.includes(s) && styles.chipActiveAlt]}
+                                <Pressable key={s} style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.card }, interests.includes(s) && { backgroundColor: colors.primary, borderColor: colors.primary }]}
                                     onPress={() => toggleItem(interests, setInterests, s)}>
                                     <Text style={[styles.chipText, { color: colors.textSecondary }, interests.includes(s) && styles.chipTextActive]}>{s}</Text>
                                 </Pressable>
@@ -200,8 +203,15 @@ const styles = StyleSheet.create({
 
     section: { gap: 8 },
     sectionTitle: { fontSize: 15, fontWeight: '700' },
+    sectionHint: { fontSize: 12, marginTop: -2 },
     label: { fontSize: 13, fontWeight: '500', marginLeft: 2 },
     divider: { height: 1, marginVertical: Spacing.xs },
+    groupCard: {
+        gap: 8,
+        padding: Spacing.md,
+        borderRadius: Radii.md,
+        borderWidth: 1,
+    },
 
     chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     chip: {
@@ -209,7 +219,6 @@ const styles = StyleSheet.create({
         borderWidth: 1,
     },
     chipActive: {},
-    chipActiveAlt: { backgroundColor: '#6B8F71', borderColor: '#6B8F71' },
     chipText: { fontSize: 12, fontWeight: '500' },
     chipTextActive: { color: '#FFFFFF', fontWeight: '700' },
 

@@ -1,15 +1,19 @@
 import ProfileSetupOverlay from '@/components/ProfileSetupOverlay';
 import { useAuth } from '@/context/AuthContext';
-import { useThemeColors } from '@/context/ThemeContext';
+import { useTheme } from '@/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Redirect, Tabs } from 'expo-router';
 import React from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
 export default function TabLayout() {
   const { user } = useAuth();
-  const colors = useThemeColors();
+  const { colors, isSait } = useTheme();
   if (!user) return <Redirect href="/(auth)/welcome" />;
+
+  // In SAIT mode, use blue for tab bar accents so it's not all red
+  const tabAccent = isSait ? colors.secondary : colors.primary;
 
   return (
     <>
@@ -17,7 +21,7 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: colors.primary,
+          tabBarActiveTintColor: tabAccent,
           tabBarInactiveTintColor: colors.textMuted,
           tabBarStyle: {
             backgroundColor: colors.background,
@@ -38,7 +42,7 @@ export default function TabLayout() {
         <Tabs.Screen name="index" options={{
           title: 'Home',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? [styles.activeWrap, { backgroundColor: colors.primary + '20' }] : undefined}>
+            <View style={focused ? [styles.activeWrap, { backgroundColor: tabAccent + '20' }] : undefined}>
               <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
             </View>
           ),
@@ -46,7 +50,7 @@ export default function TabLayout() {
         <Tabs.Screen name="search" options={{
           title: 'Search',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? [styles.activeWrap, { backgroundColor: colors.primary + '20' }] : undefined}>
+            <View style={focused ? [styles.activeWrap, { backgroundColor: tabAccent + '20' }] : undefined}>
               <Ionicons name={focused ? 'search' : 'search-outline'} size={22} color={color} />
             </View>
           ),
@@ -57,9 +61,20 @@ export default function TabLayout() {
           tabBarLabel: () => null,
           tabBarIcon: ({ color, focused }) => (
             <View style={styles.postColumn}>
-              <View style={[styles.postWrap, { backgroundColor: focused ? colors.primary : colors.surface, borderColor: focused ? colors.primary : colors.border }]}>
-                <Ionicons name="add" size={26} color={focused ? '#FFFFFF' : color} />
-              </View>
+              {focused ? (
+                <LinearGradient
+                  colors={[colors.gradientFrom, colors.gradientTo]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[styles.postWrap, { borderWidth: 0 }]}
+                >
+                  <Ionicons name="add" size={26} color="#FFFFFF" />
+                </LinearGradient>
+              ) : (
+                <View style={[styles.postWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Ionicons name="add" size={26} color={color} />
+                </View>
+              )}
               <Text style={[styles.postLabel, { color: focused ? colors.primary : colors.textMuted }]}>Post</Text>
             </View>
           ),
@@ -67,7 +82,7 @@ export default function TabLayout() {
         <Tabs.Screen name="chats" options={{
           title: 'Chats',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? [styles.activeWrap, { backgroundColor: colors.primary + '20' }] : undefined}>
+            <View style={focused ? [styles.activeWrap, { backgroundColor: tabAccent + '20' }] : undefined}>
               <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={22} color={color} />
             </View>
           ),
@@ -75,7 +90,7 @@ export default function TabLayout() {
         <Tabs.Screen name="profile" options={{
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? [styles.activeWrap, { backgroundColor: colors.primary + '20' }] : undefined}>
+            <View style={focused ? [styles.activeWrap, { backgroundColor: tabAccent + '20' }] : undefined}>
               <Ionicons name={focused ? 'person' : 'person-outline'} size={22} color={color} />
             </View>
           ),

@@ -2,6 +2,7 @@ import { CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/con
 import { useThemeColors } from '@/context/ThemeContext';
 import { triggerHaptic, usePressAnimation } from '@/hooks/useAnimations';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import Animated from 'react-native-reanimated';
@@ -113,9 +114,15 @@ export function Card({
 
                     {onConnect && (
                         <Pressable
-                            style={({ pressed }) => [styles.connectBtn, { backgroundColor: colors.primary }, pressed && { opacity: 0.85 }]}
+                            style={({ pressed }) => [styles.connectBtn, { overflow: 'hidden' }, pressed && { opacity: 0.85 }]}
                             onPress={() => { triggerHaptic('light'); onConnect(); }}
                         >
+                            <LinearGradient
+                                colors={[colors.gradientFrom, colors.gradientTo]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={StyleSheet.absoluteFill}
+                            />
                             <Text style={styles.connectText}>View</Text>
                             <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
                         </Pressable>
