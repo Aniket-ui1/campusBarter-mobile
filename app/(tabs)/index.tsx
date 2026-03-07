@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { CardSkeletonList } from '@/components/ui/Skeleton';
 import { CATEGORIES } from '@/constants/categories';
-import { CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
+import { CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -13,8 +13,8 @@ import { getRecommendedUsers, MatchedUser } from '@/lib/matching';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Dimensions, NativeScrollEvent, NativeSyntheticEvent, PanResponder, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 
 export default function HomeScreen() {
@@ -50,6 +50,46 @@ export default function HomeScreen() {
     await new Promise((r) => setTimeout(r, 400));
     setRefreshing(false);
   };
+
+  const activeCats = CATEGORIES.filter(c => c.key !== 'all');
+  const CARD_WIDTH = 170;
+  const CARD_GAP = 10;
+  const catScrollRef = useRef<ScrollView>(null);
+  const [catScrollIndex, setCatScrollIndex] = useState(0);
+  const screenWidth = Dimensions.get('window').width;
+  const visibleCards = Math.floor((screenWidth - Spacing.xl * 2) / (CARD_WIDTH + CARD_GAP));
+  const maxScrollIndex = Math.max(0, activeCats.length - visibleCards);
+
+  const catScrollOffset = useRef(0);
+  const catDragStartX = useRef(0);
+  const catDidDrag = useRef(false);
+
+  const handleCatScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const x = e.nativeEvent.contentOffset.x;
+    catScrollOffset.current = x;
+    const idx = Math.round(x / (CARD_WIDTH + CARD_GAP));
+    setCatScrollIndex(Math.min(idx, maxScrollIndex));
+  };
+
+  const handleCatPress = (catKey: string) => {
+    if (catDidDrag.current) { catDidDrag.current = false; return; }
+    triggerHaptic('light');
+    router.push({ pathname: '/(tabs)/search', params: { category: catKey } });
+  };
+
+  const catPanResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 5,
+      onPanResponderGrant: () => {
+        catDragStartX.current = catScrollOffset.current;
+        catDidDrag.current = false;
+      },
+      onPanResponderMove: (_, gs) => {
+        catDidDrag.current = true;
+        catScrollRef.current?.scrollTo({ x: catDragStartX.current - gs.dx, animated: false });
+      },
+    })
+  ).current;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -118,19 +158,54 @@ export default function HomeScreen() {
           </LinearGradient>
         </Animated.View>
 
-        {/* Categories */}
+        {/* Categories — swipeable big cards */}
         <Animated.View entering={FadeInDown.delay(150).duration(400)}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Browse Categories</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}
-            style={styles.catScroll} contentContainerStyle={styles.catContent}>
-            {CATEGORIES.filter(c => c.key !== 'all').map((cat, i) => (
-              <Pressable key={cat.key} style={[styles.catCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                onPress={() => { triggerHaptic('light'); router.push('/(tabs)/search'); }}>
-                <Text style={styles.catEmoji}>{CATEGORY_EMOJIS[cat.key] ?? '✨'}</Text>
-                <Text style={[styles.catLabel, { color: colors.textSecondary }]}>{cat.label}</Text>
-              </Pressable>
-            ))}
+          <View style={styles.catSectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Browse Categories</Text>
+            {/* Dot indicators */}
+            <View style={styles.catDots}>
+              {Array.from({ length: Math.min(Math.ceil(activeCats.length / visibleCards), 6) }).map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.catDot,
+                    { backgroundColor: colors.textMuted },
+                    Math.floor(catScrollIndex / Math.max(visibleCards, 1)) === i && { backgroundColor: colors.primary, width: 16 },
+                  ]}
+                />
+              ))}
+            </View>
+          </View>
+          <View {...catPanResponder.panHandlers}>
+          <ScrollView
+            ref={catScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={CARD_WIDTH + CARD_GAP}
+            decelerationRate="fast"
+            onScroll={handleCatScroll}
+            scrollEventThrottle={16}
+            style={styles.catScroll}
+            contentContainerStyle={styles.catContent}
+          >
+            {activeCats.map((cat) => {
+              const catColor = CATEGORY_COLORS[cat.key] ?? colors.primary;
+              const catEmoji = CATEGORY_EMOJIS[cat.key] ?? '✨';
+              return (
+                <Pressable
+                  key={cat.key}
+                  style={[styles.catCard, { backgroundColor: catColor, borderColor: catColor }]}
+                  onPress={() => handleCatPress(cat.key)}
+                >
+                  <View style={[styles.catIconWrap, { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
+                    <Text style={styles.catEmoji}>{catEmoji}</Text>
+                  </View>
+                  <Text style={styles.catLabel}>{cat.label}</Text>
+                </Pressable>
+              );
+            })}
           </ScrollView>
+          </View>
         </Animated.View>
 
         {/* Recommended */}
@@ -263,17 +338,27 @@ const styles = StyleSheet.create({
   heroPillDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.15)', marginVertical: 4 },
 
   // Categories
+  catSectionHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  catDots: { flexDirection: 'row', gap: 4, alignItems: 'center' },
+  catDot: { width: 6, height: 6, borderRadius: 3, opacity: 0.4 },
   catScroll: { marginBottom: Spacing['2xl'], marginHorizontal: -Spacing.xl },
-  catContent: { paddingHorizontal: Spacing.xl, gap: Spacing.md },
+  catContent: { paddingHorizontal: Spacing.xl, gap: 10 },
   catCard: {
-    width: 80, paddingVertical: Spacing.lg,
-    borderRadius: Radii.lg,
-    alignItems: 'center', gap: 6,
-    borderWidth: 1,
-    ...Shadows.sm,
-  } as any,
-  catEmoji: { fontSize: 24 },
-  catLabel: { fontSize: 11, fontWeight: '600', textAlign: 'center' },
+    width: 170, flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+    borderRadius: Radii.full,
+    borderWidth: 0,
+    ...Platform.select({ web: { userSelect: 'none' as any } }),
+  },
+  catIconWrap: {
+    width: 36, height: 36, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  catEmoji: { fontSize: 18 },
+  catLabel: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
 
   // Section
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.lg },

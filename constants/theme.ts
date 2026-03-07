@@ -276,27 +276,39 @@ export const Shadows = {
 
 // ── Category metadata ────────────────────────────────────────────
 export const CATEGORY_COLORS: Record<string, string> = {
-  tutoring: '#4A7C59',
+  coding: '#3B82F6',
   design: '#8B5CF6',
-  tech: '#3B82F6',
-  writing: '#F59E0B',
+  math: '#F59E0B',
+  writing: '#F97316',
   music: '#EC4899',
+  languages: '#06B6D4',
+  science: '#10B981',
+  business: '#6366F1',
   fitness: '#EF4444',
+  photography: '#A855F7',
+  other: '#6B7280',
+  // Legacy aliases
+  tutoring: '#4A7C59',
+  tech: '#3B82F6',
   cooking: '#F97316',
   language: '#06B6D4',
-  business: '#6366F1',
-  other: '#6B7280',
 };
 
 export const CATEGORY_EMOJIS: Record<string, string> = {
-  tutoring: '📚',
+  coding: '💻',
   design: '🎨',
-  tech: '💻',
+  math: '📐',
   writing: '✍️',
   music: '🎵',
+  languages: '🗣️',
+  science: '🔬',
+  business: '📊',
   fitness: '💪',
+  photography: '📷',
+  other: '🔧',
+  // Legacy aliases
+  tutoring: '📚',
+  tech: '💻',
   cooking: '🍳',
   language: '🌍',
-  business: '📈',
-  other: '✨',
 };
