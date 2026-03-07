@@ -104,7 +104,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <View style={styles.container} pointerEvents="box-none">
+      <View style={[styles.container, { pointerEvents: 'box-none' }]}>
         {toasts.map((t) => (
           <ToastItem key={t.id} toast={t} onDismiss={dismiss} />
         ))}
