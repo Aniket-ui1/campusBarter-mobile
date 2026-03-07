@@ -1,7 +1,7 @@
 import { Radii, Spacing } from '@/constants/theme';
 import { useThemeColors } from '@/context/ThemeContext';
 import React, { useState } from 'react';
-import { StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle } from 'react-native';
 
 type Props = TextInputProps & {
     label?: string;
@@ -60,6 +60,7 @@ const styles = StyleSheet.create({
         flex: 1,
         fontSize: 15,
         paddingVertical: 14,
+        ...Platform.select({ web: { outlineStyle: 'none' } as any }),
     },
     error: {
         fontSize: 12,
