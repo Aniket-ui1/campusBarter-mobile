@@ -10,7 +10,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
-import { getUserProfile } from '@/lib/firestore';
+import { getUserById } from '@/lib/api';
 
 export default function UserProfileScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -22,7 +22,7 @@ export default function UserProfileScreen() {
 
     useEffect(() => {
         if (!id) return;
-        getUserProfile(id).then((p) => {
+        getUserById(id).then((p) => {
             setProfile(p);
             setLoading(false);
         }).catch(() => setLoading(false));

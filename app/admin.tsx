@@ -12,16 +12,13 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import { getApiToken } from '@/lib/api';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL
-    ?? 'https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net';
+import { getApiToken, getApiBase } from '@/lib/api';
 
 type Tab = 'listings' | 'users' | 'audit';
 
 async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
     const token = getApiToken();
-    const res = await fetch(`${API_BASE}${path}`, {
+    const res = await fetch(`${getApiBase()}${path}`, {
         ...options,
         headers: {
             'Content-Type': 'application/json',

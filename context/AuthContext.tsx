@@ -267,8 +267,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (!isSaitEmail(email)) { alert("Only SAIT student emails (@sait.ca / @edu.sait.ca) are allowed."); return; }
             const userId = "mock-" + email.toLowerCase().trim().replace(/[^a-z0-9]/g, "-");
 
-            // Generate mock token and set it BEFORE any API calls
-            const mockToken = btoa(JSON.stringify({ sub: userId, email: email.toLowerCase().trim(), name: "SAIT Student" }));
+            // Generate mock token with "mock-" prefix so backend dev bypass accepts it
+            const mockToken = `mock-${userId}`;
             setApiToken(mockToken);
 
             // Restore existing profile from Azure API if it exists
@@ -314,7 +314,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     ? crypto.randomUUID()
                     : Math.random().toString(36).slice(2);
             const u = makeUser(id, name, email.toLowerCase().trim());
-            const mockToken = btoa(JSON.stringify({ sub: id, email: u.email, name: u.displayName }));
+            const mockToken = `mock-${id}`;
             await persistUser(u, mockToken);
             router.replace("/(tabs)");
         } finally {
@@ -353,7 +353,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 major: data.major,
                 semester: data.semester,
             });
-            const mockToken = btoa(JSON.stringify({ sub: id, email: u.email, name: u.displayName }));
+            const mockToken = `mock-${id}`;
             await persistUser(u, mockToken);
             router.replace("/(tabs)");
         } finally {

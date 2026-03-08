@@ -5,7 +5,7 @@ import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from '
 import { AppColors, Spacing } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { getUserProfile } from '@/lib/firestore';
+import { getUserById } from '@/lib/api';
 
 export default function RateScreen() {
     const { userId } = useLocalSearchParams<{ userId: string }>();
@@ -16,7 +16,7 @@ export default function RateScreen() {
 
     useEffect(() => {
         if (!userId) return;
-        getUserProfile(userId).then((p) => {
+        getUserById(userId).then((p) => {
             if (p) setUserName(p.displayName || 'User');
         });
     }, [userId]);

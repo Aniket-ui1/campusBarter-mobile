@@ -5,10 +5,8 @@
 // ─────────────────────────────────────────────────────────────
 
 import { io, Socket } from 'socket.io-client';
-import { getApiToken } from './api';
+import { getApiToken, getApiBase } from './api';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL
-    ?? 'https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net';
 
 let _socket: Socket | null = null;
 
@@ -16,7 +14,7 @@ let _socket: Socket | null = null;
 export function connectSocket(): Socket {
     if (_socket?.connected) return _socket;
 
-    _socket = io(API_BASE, {
+    _socket = io(getApiBase(), {
         auth: { token: getApiToken() },
         transports: ['websocket'],
         reconnectionAttempts: 5,

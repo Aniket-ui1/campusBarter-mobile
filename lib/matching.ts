@@ -5,8 +5,7 @@
 // (and vice versa), then returns the top matches.
 // ─────────────────────────────────────────────────────────────────
 
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "./firebase";
+import { getAllUsers, ApiUserProfile } from "./api";
 
 export interface MatchedUser {
     id: string;
@@ -24,7 +23,7 @@ export interface MatchedUser {
 }
 
 /**
- * Fetch all users from Firestore and rank them by how well their
+ * Fetch all users from Azure API and rank them by how well their
  * skills/weaknesses complement the current user's profile.
  *
  * Scoring:
@@ -39,16 +38,15 @@ export async function getRecommendedUsers(
     myInterests: string[],
     limit = 10
 ): Promise<MatchedUser[]> {
-    const snap = await getDocs(collection(db, "users"));
+    const users = await getAllUsers();
     const matches: MatchedUser[] = [];
 
-    snap.forEach((doc) => {
-        if (doc.id === currentUserId) return; // skip self
+    users.forEach((u) => {
+        if (u.id === currentUserId) return; // skip self
 
-        const data = doc.data();
-        const theirSkills: string[] = data.skills ?? [];
-        const theirWeaknesses: string[] = data.weaknesses ?? [];
-        const theirInterests: string[] = data.interests ?? [];
+        const theirSkills: string[] = u.skills ?? [];
+        const theirWeaknesses: string[] = u.weaknesses ?? [];
+        const theirInterests: string[] = u.interests ?? [];
 
         // Their skills that match my weaknesses → they can help me
         const matchingSkills = theirSkills.filter((s) =>
@@ -77,12 +75,12 @@ export async function getRecommendedUsers(
         const score = maxPossible > 0 ? Math.round((rawScore / maxPossible) * 100) : 0;
 
         matches.push({
-            id: doc.id,
-            displayName: data.displayName ?? "Student",
-            avatarUrl: data.avatarUrl,
-            program: data.program,
-            semester: data.semester,
-            rating: data.rating,
+            id: u.id,
+            displayName: u.displayName ?? "Student",
+            avatarUrl: u.avatarUrl,
+            program: u.program,
+            semester: u.semester,
+            rating: u.rating,
             matchingSkills,
             theyNeed,
             score,

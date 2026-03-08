@@ -10,8 +10,6 @@ import { Animated, Platform, StyleSheet, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppColors, Spacing } from '@/constants/theme';
 
-const PING_URL = 'https://clients3.google.com/generate_204';
-const POLL_INTERVAL_MS = 10_000; // check every 10 seconds
 
 export function OfflineBanner() {
     const [isOffline, setIsOffline] = useState(false);
@@ -20,11 +18,25 @@ export function OfflineBanner() {
     useEffect(() => {
         let mounted = true;
 
+        if (Platform.OS === 'web') {
+            // Web: use the native browser connectivity API (no CORS issues)
+            const update = () => { if (mounted) setIsOffline(!navigator.onLine); };
+            update();
+            window.addEventListener('online', update);
+            window.addEventListener('offline', update);
+            return () => {
+                mounted = false;
+                window.removeEventListener('online', update);
+                window.removeEventListener('offline', update);
+            };
+        }
+
+        // Native: ping Google (works fine without CORS)
         const checkConnectivity = async () => {
             try {
                 const controller = new AbortController();
                 const timeout = setTimeout(() => controller.abort(), 5_000);
-                await fetch(PING_URL, {
+                await fetch('https://clients3.google.com/generate_204', {
                     method: 'HEAD',
                     cache: 'no-store',
                     signal: controller.signal,
@@ -37,7 +49,7 @@ export function OfflineBanner() {
         };
 
         checkConnectivity();
-        const interval = setInterval(checkConnectivity, POLL_INTERVAL_MS);
+        const interval = setInterval(checkConnectivity, 15_000);
 
         return () => {
             mounted = false;

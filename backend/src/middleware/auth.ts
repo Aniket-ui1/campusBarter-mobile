@@ -47,6 +47,48 @@ export async function verifyAzureAdToken(
     next: NextFunction
 ): Promise<void> {
     const authHeader = req.headers.authorization;
+
+    // ── Development bypass ────────────────────────────────────
+    // In non-production, allow x-dev-user-id header to skip JWT.
+    // Also allow "Bearer dev-<userId>" format for mock tokens.
+    if (process.env.NODE_ENV !== 'production') {
+        const devUserId = req.headers['x-dev-user-id'] as string | undefined;
+        if (devUserId) {
+            req.user = {
+                id: devUserId,
+                email: (req.headers['x-dev-email'] as string) || `${devUserId}@edu.sait.ca`,
+                displayName: (req.headers['x-dev-name'] as string) || 'Dev User',
+                role: ((req.headers['x-dev-role'] as string) || 'Student') as 'Student' | 'Moderator' | 'Admin',
+            };
+            return next();
+        }
+
+        // Allow "Bearer dev-<id>" mock tokens
+        if (authHeader?.startsWith('Bearer dev-')) {
+            const mockId = authHeader.slice(11); // after "Bearer dev-"
+            req.user = {
+                id: mockId,
+                email: `${mockId}@edu.sait.ca`,
+                displayName: 'Dev User',
+                role: 'Student',
+            };
+            return next();
+        }
+
+        // Allow "Bearer mock-<...>" tokens from mock login
+        if (authHeader?.startsWith('Bearer mock-')) {
+            const mockId = authHeader.slice(12);
+            req.user = {
+                id: mockId || 'mock-user-001',
+                email: 'dev@edu.sait.ca',
+                displayName: 'Mock User',
+                role: 'Student',
+            };
+            return next();
+        }
+    }
+
+    // ── Production: strict Azure AD JWT verification ──────────
     if (!authHeader?.startsWith('Bearer ')) {
         res.status(401).json({ error: 'Missing or invalid Authorization header' });
         return;

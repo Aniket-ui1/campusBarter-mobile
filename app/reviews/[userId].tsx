@@ -13,11 +13,9 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import { getApiToken } from '@/lib/api';
+import { getApiToken, getApiBase } from '@/lib/api';
 import { EmptyState } from '@/components/ui/EmptyState';
 
-const API_BASE = process.env.EXPO_PUBLIC_API_URL
-    ?? 'https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net';
 
 interface Review {
     id: string;
@@ -65,7 +63,7 @@ export default function ReviewsScreen() {
     const loadReviews = async () => {
         try {
             const token = getApiToken();
-            const res = await fetch(`${API_BASE}/api/reviews/${userId}`, {
+            const res = await fetch(`${getApiBase()}/api/reviews/${userId}`, {
                 headers: token ? { Authorization: `Bearer ${token}` } : {},
             });
             if (!res.ok) return;
@@ -85,7 +83,7 @@ export default function ReviewsScreen() {
         setSubmitting(true);
         try {
             const token = getApiToken();
-            const res = await fetch(`${API_BASE}/api/reviews`, {
+            const res = await fetch(`${getApiBase()}/api/reviews`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
