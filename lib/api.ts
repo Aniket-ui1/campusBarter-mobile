@@ -6,9 +6,13 @@
 // Auth: every call attaches the Azure AD ID token stored in SecureStore.
 // Token is injected by AuthContext after login via setApiToken().
 // ─────────────────────────────────────────────────────────────
+import { Platform } from 'react-native';
 
+// On web development, use local CORS proxy (dev-proxy.js on port 3999).
+// On native or when EXPO_PUBLIC_API_URL is explicitly set, use that.
+const AZURE_URL = 'https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net';
 const API_BASE = process.env.EXPO_PUBLIC_API_URL
-    ?? 'https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net';
+    ?? (Platform.OS === 'web' && __DEV__ ? 'http://localhost:3999' : AZURE_URL);
 
 // ── Token store ───────────────────────────────────────────────
 // AuthContext calls setApiToken(idToken) after login and
@@ -19,6 +23,7 @@ let _token: string | null = null;
 export function setApiToken(token: string) { _token = token; }
 export function clearApiToken() { _token = null; }
 export function getApiToken() { return _token; }
+export function getApiBase() { return API_BASE; }
 
 // ── Core fetch wrapper ────────────────────────────────────────
 
@@ -95,7 +100,7 @@ export interface ApiNotification {
 // ── Listings ──────────────────────────────────────────────────
 
 export async function getListings(): Promise<ApiListing[]> {
-    return apiFetch<ApiListing[]>('/api/listings');
+    return apiFetch<ApiListing[]>('/api/v1/listings');
 }
 
 export async function createListing(data: {
@@ -104,7 +109,7 @@ export async function createListing(data: {
     description: string;
     credits: number;
 }): Promise<string> {
-    const res = await apiFetch<{ id: string }>('/api/listings', {
+    const res = await apiFetch<{ id: string }>('/api/v1/listings', {
         method: 'POST',
         body: JSON.stringify(data),
     });
@@ -112,21 +117,21 @@ export async function createListing(data: {
 }
 
 export async function closeListing(id: string): Promise<void> {
-    await apiFetch(`/api/listings/${id}/close`, { method: 'PATCH' });
+    await apiFetch(`/api/v1/listings/${id}/close`, { method: 'PATCH' });
 }
 
 export async function deleteListing(id: string): Promise<void> {
-    await apiFetch(`/api/listings/${id}`, { method: 'DELETE' });
+    await apiFetch(`/api/v1/listings/${id}`, { method: 'DELETE' });
 }
 
 // ── Chats ─────────────────────────────────────────────────────
 
 export async function getChats(): Promise<ApiChat[]> {
-    return apiFetch<ApiChat[]>('/api/chats');
+    return apiFetch<ApiChat[]>('/api/v1/chats');
 }
 
 export async function startChat(listingId: string, listingTitle: string): Promise<string> {
-    const res = await apiFetch<{ id: string }>('/api/chats', {
+    const res = await apiFetch<{ id: string }>('/api/v1/chats', {
         method: 'POST',
         body: JSON.stringify({ listingId, listingTitle }),
     });
@@ -134,7 +139,7 @@ export async function startChat(listingId: string, listingTitle: string): Promis
 }
 
 export async function getMessages(chatId: string): Promise<ApiMessage[]> {
-    return apiFetch<ApiMessage[]>(`/api/chats/${chatId}/messages`);
+    return apiFetch<ApiMessage[]>(`/api/v1/chats/${chatId}/messages`);
 }
 
 export async function sendMessage(
@@ -142,7 +147,7 @@ export async function sendMessage(
     text: string,
     recipientId?: string
 ): Promise<void> {
-    await apiFetch(`/api/chats/${chatId}/messages`, {
+    await apiFetch(`/api/v1/chats/${chatId}/messages`, {
         method: 'POST',
         body: JSON.stringify({ text, recipientId }),
     });
@@ -151,21 +156,21 @@ export async function sendMessage(
 // ── Notifications ─────────────────────────────────────────────
 
 export async function getNotifications(): Promise<ApiNotification[]> {
-    return apiFetch<ApiNotification[]>('/api/notifications');
+    return apiFetch<ApiNotification[]>('/api/v1/notifications');
 }
 
 export async function markNotificationRead(notifId: string): Promise<void> {
-    await apiFetch(`/api/notifications/${notifId}/read`, { method: 'PUT' });
+    await apiFetch(`/api/v1/notifications/${notifId}/read`, { method: 'PUT' });
 }
 
 export async function markAllNotificationsRead(): Promise<void> {
-    await apiFetch('/api/notifications/read-all', { method: 'PUT' });
+    await apiFetch('/api/v1/notifications/read-all', { method: 'PUT' });
 }
 
 // ── Credits ───────────────────────────────────────────────────
 
 export async function getCreditsBalance(): Promise<number> {
-    const res = await apiFetch<{ balance: number }>('/api/credits/balance');
+    const res = await apiFetch<{ balance: number }>('/api/v1/credits/balance');
     return res.balance;
 }
 
@@ -174,7 +179,7 @@ export async function transferCredits(
     amount: number,
     reason: string
 ): Promise<void> {
-    await apiFetch('/api/credits/transfer', {
+    await apiFetch('/api/v1/credits/transfer', {
         method: 'POST',
         body: JSON.stringify({ toUserId, amount, reason }),
     });
@@ -182,18 +187,63 @@ export async function transferCredits(
 
 // ── User Profile ─────────────────────────────────────────────
 
-export async function getMyProfile(): Promise<Record<string, unknown>> {
-    return apiFetch('/api/users/me');
+export interface ApiUserProfile {
+    id: string;
+    displayName: string;
+    email: string;
+    bio?: string;
+    credits: number;
+    program?: string;
+    major?: string;
+    semester?: number;
+    rating?: number;
+    reviewCount?: number;
+    skills?: string[];
+    weaknesses?: string[];
+    interests?: string[];
+    profileComplete?: boolean;
+    avatarUrl?: string;
+    role?: string;
 }
 
-export async function updateMyProfile(data: {
-    displayName?: string;
-    bio?: string;
-}): Promise<void> {
-    await apiFetch('/api/users/me', {
+export async function getMyProfile(): Promise<ApiUserProfile> {
+    return apiFetch<ApiUserProfile>('/api/v1/users/me');
+}
+
+export async function getUserById(userId: string): Promise<ApiUserProfile | null> {
+    try {
+        return await apiFetch<ApiUserProfile>(`/api/v1/users/${userId}`);
+    } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+    }
+}
+
+export async function getAllUsers(): Promise<ApiUserProfile[]> {
+    try {
+        return await apiFetch<ApiUserProfile[]>('/api/v1/users');
+    } catch {
+        return [];
+    }
+}
+
+export async function updateMyProfile(data: Partial<Omit<ApiUserProfile, 'id' | 'email' | 'credits'>>): Promise<void> {
+    await apiFetch('/api/v1/users/me', {
         method: 'PATCH',
         body: JSON.stringify(data),
     });
+}
+
+export async function upsertUserProfile(data: Partial<ApiUserProfile>): Promise<void> {
+    try {
+        await apiFetch('/api/v1/users/me', {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    } catch {
+        // Best-effort — profile sync to backend may fail for mock login
+        console.warn('[API] upsertUserProfile failed (expected for mock login)');
+    }
 }
 
 // ── Image Upload ─────────────────────────────────────────────
@@ -208,7 +258,7 @@ export async function uploadImage(
     const headers: Record<string, string> = {};
     if (_token) headers['Authorization'] = `Bearer ${_token}`;
 
-    const res = await fetch(`${API_BASE}/api/upload`, {
+    const res = await fetch(`${API_BASE}/api/v1/upload`, {
         method: 'POST',
         headers,
         body: formData,
@@ -221,7 +271,7 @@ export async function uploadImage(
 // ── Push Token Registration ───────────────────────────────────
 
 export async function registerPushToken(token: string): Promise<void> {
-    await apiFetch('/api/tokens/push', {
+    await apiFetch('/api/v1/tokens/push', {
         method: 'POST',
         body: JSON.stringify({ token }),
     });

@@ -30,8 +30,34 @@ const PORT = process.env.PORT || 3000;
 
 // ── Security Middleware ───────────────────────────────────────
 
-// Sets secure HTTP headers (XSS protection, HSTS, etc.)
-app.use(helmet());
+// Strict security headers (CSP, HSTS, X-Frame-Options, etc.)
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", 'data:', 'https://campusbarterstg.blob.core.windows.net'],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            frameAncestors: ["'none'"],     // Prevent clickjacking
+            formAction: ["'self'"],
+            upgradeInsecureRequests: [],
+        },
+    },
+    crossOriginEmbedderPolicy: false,       // Required for mobile clients
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+}));
+
+// Explicit X-Content-Type-Options (belt-and-suspenders with Helmet)
+app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+});
 
 // CORS — only allow requests from the app bundle
 app.use(cors({
@@ -65,12 +91,37 @@ app.use(async (req: express.Request, res: express.Response, next: express.NextFu
     next();
 });
 
-// ── Routes ───────────────────────────────────────────────────
+// ── API v1 Routes ────────────────────────────────────────────
 
 // Health check — no auth required (used by Azure Monitor)
 app.use('/health', healthRouter);
 
-// All other routes require a valid Azure AD token
+// All v1 routes require a valid Azure AD token
+app.use('/api/v1', verifyAzureAdToken);
+app.use('/api/v1/listings', listingsRouter);
+app.use('/api/v1/chats', chatsRouter);
+app.use('/api/v1/users', usersRouter);
+app.use('/api/v1/reviews', reviewsRouter);
+app.use('/api/v1/notifications', notificationsRouter);
+app.use('/api/v1/credits', creditsRouter);
+app.use('/api/v1/upload', uploadRouter);
+app.use('/api/v1/tokens', tokensRouter);
+
+// Admin-only audit log
+app.get('/api/v1/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
+    res.json({ message: 'Audit log endpoint — Phase 6 implementation' });
+});
+
+// ── Backward-Compatible Deprecated /api/* Routes ─────────────
+// Old /api/* paths still work but return deprecation headers.
+// Will be removed in a future release.
+const deprecationMiddleware = (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', '2026-09-01');
+    res.setHeader('Link', '</api/v1>; rel="successor-version"');
+    next();
+};
+app.use('/api', deprecationMiddleware);
 app.use('/api', verifyAzureAdToken);
 app.use('/api/listings', listingsRouter);
 app.use('/api/chats', chatsRouter);
@@ -81,7 +132,6 @@ app.use('/api/credits', creditsRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/tokens', tokensRouter);
 
-// Admin-only audit log
 app.get('/api/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
     res.json({ message: 'Audit log endpoint — Phase 6 implementation' });
 });
