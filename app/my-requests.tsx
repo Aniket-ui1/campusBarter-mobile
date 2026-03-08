@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 export default function MyRequestsScreen() {
     const router = useRouter();
 
-    // Requests will be a Firestore collection in a future iteration.
+    // Requests will be stored in Azure SQL in a future iteration.
     // For now, show an informational empty state.
     return (
         <View style={styles.container}>

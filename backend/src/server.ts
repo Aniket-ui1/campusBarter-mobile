@@ -60,14 +60,18 @@ app.use((_req, res, next) => {
     next();
 });
 
-// CORS — only allow requests from the app bundle
+// CORS — allow requests from the app bundle + dev proxy
 app.use(cors({
     origin: [
         'https://campusbarter.azurestaticapps.net',
-        'exp://*',
+        'http://localhost:3999',     // dev-proxy for web development
+        'http://localhost:8081',     // Metro bundler
+        'http://localhost:8083',     // Web dev server
+        /^exp:\/\/.*/,               // Expo Go
     ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Authorization', 'Content-Type'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'x-dev-user-id', 'x-dev-email', 'x-dev-name', 'x-dev-role'],
+    credentials: true,
 }));
 
 // Rate limiting — max 100 requests per 15 minutes per IP
