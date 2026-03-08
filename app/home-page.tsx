@@ -1,11 +1,17 @@
 import { Link } from "expo-router";
-import { useContext } from "react"; // 1. Import useContext
+import { useContext } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { AuthContext } from "../context/AuthContext"; // 2. Import your actual context
+import { AuthContext } from "../context/AuthContext";
 
 export default function HomePage() {
-  // 3. Get the user data from your context
-  const { user } = useContext(AuthContext);
+  // 3. This gets the real user data (which might be empty right now)
+  const { user: realUser } = useContext(AuthContext);
+
+  // --- DEVELOPER BYPASS START ---
+  // We rename the real user and use this fake 'user' instead for testing.
+  // Change 'role' to 'Student' if you want to test the button disappearing!
+  const user = { role: 'Admin', email: 'daniel@edu.sait.ca' }; 
+  // --- DEVELOPER BYPASS END ---
 
   return (
     <View style={styles.container}>
@@ -51,7 +57,6 @@ export default function HomePage() {
   );
 }
 
-// ... styles remain the same as before ...
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20, backgroundColor: "#fff" },
   card: { width: "100%", maxWidth: 420, padding: 20, borderRadius: 16, borderWidth: 1, borderColor: "#eee" },
