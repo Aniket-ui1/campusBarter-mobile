@@ -24,6 +24,7 @@ import { notificationsRouter } from './routes/notifications';
 import { creditsRouter } from './routes/credits';
 import { uploadRouter } from './routes/upload';
 import { tokensRouter } from './routes/tokens';
+import { insightsRouter } from './routes/insights';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -106,6 +107,7 @@ app.use('/api/v1/notifications', notificationsRouter);
 app.use('/api/v1/credits', creditsRouter);
 app.use('/api/v1/upload', uploadRouter);
 app.use('/api/v1/tokens', tokensRouter);
+app.use('/api/v1/insights', insightsRouter);
 
 // Admin-only audit log
 app.get('/api/v1/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
@@ -131,6 +133,7 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/credits', creditsRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/tokens', tokensRouter);
+app.use('/api/insights', insightsRouter);
 
 app.get('/api/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
     res.json({ message: 'Audit log endpoint — Phase 6 implementation' });

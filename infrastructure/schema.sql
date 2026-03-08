@@ -114,3 +114,34 @@ CREATE TABLE Reviews (
     comment     NVARCHAR(1000)  NULL,
     createdAt   DATETIME2       NOT NULL DEFAULT GETUTCDATE()
 );
+
+-- ── Time Credits (Transaction Ledger) ─────────────────────────
+CREATE TABLE TimeCredits (
+    id          NVARCHAR(128)   NOT NULL PRIMARY KEY DEFAULT NEWID(),
+    fromUserId  NVARCHAR(128)   NOT NULL REFERENCES Users(id),
+    toUserId    NVARCHAR(128)   NOT NULL REFERENCES Users(id),
+    amount      INT             NOT NULL CHECK (amount > 0),
+    reason      NVARCHAR(500)   NOT NULL,
+    createdAt   DATETIME2       NOT NULL DEFAULT GETUTCDATE()
+);
+
+CREATE INDEX IX_TimeCredits_From ON TimeCredits(fromUserId, createdAt);
+CREATE INDEX IX_TimeCredits_To   ON TimeCredits(toUserId, createdAt);
+
+-- ── Exchanges (QR Code Verification) ──────────────────────────
+CREATE TABLE Exchanges (
+    id               NVARCHAR(128)  NOT NULL PRIMARY KEY DEFAULT NEWID(),
+    listingId        NVARCHAR(128)  NOT NULL REFERENCES Listings(id),
+    buyerId          NVARCHAR(128)  NOT NULL REFERENCES Users(id),
+    sellerId         NVARCHAR(128)  NOT NULL REFERENCES Users(id),
+    credits          INT            NOT NULL CHECK (credits > 0),
+    qrCode           NVARCHAR(50)   NOT NULL UNIQUE,
+    status           NVARCHAR(20)   NOT NULL DEFAULT 'PENDING'
+                                    CHECK (status IN ('PENDING', 'COMPLETED', 'CANCELLED')),
+    buyerConfirmed   BIT            NOT NULL DEFAULT 0,
+    sellerConfirmed  BIT            NOT NULL DEFAULT 0,
+    createdAt        DATETIME2      NOT NULL DEFAULT GETUTCDATE(),
+    completedAt      DATETIME2      NULL
+);
+
+CREATE INDEX IX_Exchanges_QR ON Exchanges(qrCode);

@@ -509,3 +509,161 @@ export async function findMatchingUsers(params: {
 
     return result.recordset;
 }
+
+// ── Leaderboard (Task 4) ──────────────────────────────────────
+
+/**
+ * Get top helpers this week — users who earned the most credits
+ * by receiving transfers (i.e., helping others).
+ */
+export async function getWeeklyLeaderboard(limit = 10): Promise<Record<string, unknown>[]> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('limit', sql.Int, limit)
+        .query(`
+            SELECT TOP (@limit)
+                u.id, u.displayName, u.avatarUrl,
+                ISNULL(SUM(tc.amount), 0) AS weeklyCredits
+            FROM   Users u
+            LEFT JOIN TimeCredits tc ON tc.toUserId = u.id
+                AND tc.createdAt >= DATEADD(DAY, -DATEPART(DW, GETUTCDATE()) + 1, CAST(GETUTCDATE() AS DATE))
+            GROUP BY u.id, u.displayName, u.avatarUrl
+            ORDER BY weeklyCredits DESC
+        `);
+    return result.recordset;
+}
+
+// ── Market Insights (Task 7) ──────────────────────────────────
+
+export async function getMarketInsights(): Promise<{
+    trendingThisWeek: Record<string, unknown>[];
+    mostWantedCategories: Record<string, unknown>[];
+    avgCreditsByType: Record<string, unknown>[];
+    totalListings: number;
+    totalExchanges: number;
+}> {
+    const db = await getPool();
+
+    // Trending: most-viewed/recently-posted listings this week
+    const trending = await db.request().query(`
+        SELECT TOP 10 id, type, title, credits, userName, createdAt
+        FROM   Listings
+        WHERE  status = 'OPEN'
+          AND  createdAt >= DATEADD(DAY, -7, GETUTCDATE())
+        ORDER BY createdAt DESC
+    `);
+
+    // Most wanted: top categories in REQUEST listings
+    const mostWanted = await db.request().query(`
+        SELECT TOP 5
+            CASE
+                WHEN LOWER(title) LIKE '%math%' OR LOWER(title) LIKE '%calc%' THEN 'Mathematics'
+                WHEN LOWER(title) LIKE '%code%' OR LOWER(title) LIKE '%program%' THEN 'Programming'
+                WHEN LOWER(title) LIKE '%tutor%' OR LOWER(title) LIKE '%study%' THEN 'Tutoring'
+                WHEN LOWER(title) LIKE '%note%' OR LOWER(title) LIKE '%textbook%' THEN 'Study Materials'
+                WHEN LOWER(title) LIKE '%design%' OR LOWER(title) LIKE '%graphic%' THEN 'Design'
+                ELSE 'Other'
+            END AS category,
+            COUNT(*) AS count
+        FROM  Listings
+        WHERE type = 'REQUEST' AND status = 'OPEN'
+        GROUP BY
+            CASE
+                WHEN LOWER(title) LIKE '%math%' OR LOWER(title) LIKE '%calc%' THEN 'Mathematics'
+                WHEN LOWER(title) LIKE '%code%' OR LOWER(title) LIKE '%program%' THEN 'Programming'
+                WHEN LOWER(title) LIKE '%tutor%' OR LOWER(title) LIKE '%study%' THEN 'Tutoring'
+                WHEN LOWER(title) LIKE '%note%' OR LOWER(title) LIKE '%textbook%' THEN 'Study Materials'
+                WHEN LOWER(title) LIKE '%design%' OR LOWER(title) LIKE '%graphic%' THEN 'Design'
+                ELSE 'Other'
+            END
+        ORDER BY count DESC
+    `);
+
+    // Average credits by type
+    const avgCredits = await db.request().query(`
+        SELECT type, AVG(credits) AS avgCredits, COUNT(*) AS count
+        FROM   Listings WHERE status = 'OPEN'
+        GROUP BY type
+    `);
+
+    // Totals
+    const totals = await db.request().query(`
+        SELECT
+            (SELECT COUNT(*) FROM Listings) AS totalListings,
+            (SELECT COUNT(*) FROM TimeCredits) AS totalExchanges
+    `);
+
+    return {
+        trendingThisWeek: trending.recordset,
+        mostWantedCategories: mostWanted.recordset,
+        avgCreditsByType: avgCredits.recordset,
+        totalListings: totals.recordset[0]?.totalListings ?? 0,
+        totalExchanges: totals.recordset[0]?.totalExchanges ?? 0,
+    };
+}
+
+// ── QR Exchange (Task 3) ──────────────────────────────────────
+
+export async function createExchange(
+    listingId: string,
+    buyerId: string,
+    sellerId: string,
+    credits: number
+): Promise<string> {
+    const db = await getPool();
+    const id = crypto.randomUUID();
+    const qrCode = `CB-${id.slice(0, 8).toUpperCase()}`;
+
+    await db.request()
+        .input('id', sql.NVarChar(128), id)
+        .input('listingId', sql.NVarChar(128), listingId)
+        .input('buyerId', sql.NVarChar(128), buyerId)
+        .input('sellerId', sql.NVarChar(128), sellerId)
+        .input('credits', sql.Int, credits)
+        .input('qrCode', sql.NVarChar(50), qrCode)
+        .query(`
+            INSERT INTO Exchanges (id, listingId, buyerId, sellerId, credits, qrCode, status)
+            VALUES (@id, @listingId, @buyerId, @sellerId, @credits, @qrCode, 'PENDING')
+        `);
+
+    return qrCode;
+}
+
+export async function confirmExchange(qrCode: string, userId: string): Promise<{ credits: number; otherParty: string }> {
+    const db = await getPool();
+
+    // Find the exchange
+    const result = await db.request()
+        .input('qrCode', sql.NVarChar(50), qrCode)
+        .query(`SELECT * FROM Exchanges WHERE qrCode = @qrCode AND status = 'PENDING'`);
+
+    if (result.recordset.length === 0) throw new Error('Exchange not found or already completed');
+
+    const exchange = result.recordset[0];
+    const isBuyer = exchange.buyerId === userId;
+    const isSeller = exchange.sellerId === userId;
+
+    if (!isBuyer && !isSeller) throw new Error('You are not part of this exchange');
+
+    // Mark the user's confirmation
+    const confirmField = isBuyer ? 'buyerConfirmed' : 'sellerConfirmed';
+    await db.request()
+        .input('qrCode', sql.NVarChar(50), qrCode)
+        .query(`UPDATE Exchanges SET ${confirmField} = 1 WHERE qrCode = @qrCode`);
+
+    // Check if both confirmed
+    const updated = await db.request()
+        .input('qrCode', sql.NVarChar(50), qrCode)
+        .query(`SELECT * FROM Exchanges WHERE qrCode = @qrCode`);
+
+    const ex = updated.recordset[0];
+    if (ex.buyerConfirmed && ex.sellerConfirmed) {
+        // Both confirmed — transfer credits
+        await transferCredits(ex.buyerId, ex.sellerId, ex.credits, `Exchange: ${ex.listingId}`);
+        await db.request()
+            .input('qrCode', sql.NVarChar(50), qrCode)
+            .query(`UPDATE Exchanges SET status = 'COMPLETED', completedAt = GETUTCDATE() WHERE qrCode = @qrCode`);
+    }
+
+    return { credits: ex.credits, otherParty: isBuyer ? ex.sellerId : ex.buyerId };
+}

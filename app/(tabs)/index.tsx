@@ -24,12 +24,14 @@ export default function HomeScreen() {
   const activeListings = listings.filter((l) => l.status === 'OPEN');
   const myListingsCount = listings.filter((l) => l.userId === user?.id).length;
 
-  // Mark loading done once listings arrive (DataContext loads them)
+  // Stop loading once listings arrive OR after 3s timeout (for empty feeds)
   useEffect(() => {
-    if (listings.length > 0 || !isLoading) {
-      const timer = setTimeout(() => setIsLoading(false), 600);
-      return () => clearTimeout(timer);
+    if (listings.length > 0) {
+      setIsLoading(false);
+      return;
     }
+    const timer = setTimeout(() => setIsLoading(false), 3000);
+    return () => clearTimeout(timer);
   }, [listings]);
 
   useEffect(() => {
@@ -111,6 +113,22 @@ export default function HomeScreen() {
               <Text style={styles.heroPillLabel}>Trending</Text>
             </View>
           </View>
+        </Animated.View>
+
+        {/* ── Phase 6: Quick Access Cards ─────────────────── */}
+        <Animated.View entering={FadeInDown.delay(130).duration(400)} style={{ flexDirection: 'row', gap: 8, marginBottom: Spacing.lg }}>
+          <Pressable style={[styles.quickCard, { backgroundColor: '#FFD700' }]} onPress={() => router.push('/leaderboard' as any)}>
+            <Text style={styles.quickEmoji}>🏆</Text>
+            <Text style={styles.quickLabel}>Leaderboard</Text>
+          </Pressable>
+          <Pressable style={[styles.quickCard, { backgroundColor: '#6366F1' }]} onPress={() => router.push('/insights' as any)}>
+            <Text style={styles.quickEmoji}>📊</Text>
+            <Text style={styles.quickLabel}>Insights</Text>
+          </Pressable>
+          <Pressable style={[styles.quickCard, { backgroundColor: AppColors.primary }]} onPress={() => router.push('/exchange' as any)}>
+            <Text style={styles.quickEmoji}>🔄</Text>
+            <Text style={styles.quickLabel}>Exchange</Text>
+          </Pressable>
         </Animated.View>
 
         {/* Categories */}
@@ -310,4 +328,12 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 48 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: AppColors.text },
   emptyDesc: { fontSize: 14, color: AppColors.textMuted },
+
+  // Phase 6 quick access
+  quickCard: {
+    flex: 1, borderRadius: Radii.md, paddingVertical: 12,
+    alignItems: 'center', gap: 4,
+  },
+  quickEmoji: { fontSize: 20 },
+  quickLabel: { fontSize: 11, fontWeight: '700', color: '#FFF' },
 });
