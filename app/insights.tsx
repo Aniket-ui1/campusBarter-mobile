@@ -59,7 +59,7 @@ export default function InsightsScreen() {
                 </Pressable>
                 <View>
                     <Text style={styles.headerTitle}>📊 Market Insights</Text>
-                    <Text style={styles.headerSub}>What's hot on campus this week</Text>
+                    <Text style={styles.headerSub}>What&apos;s hot on campus this week</Text>
                 </View>
                 <View style={{ width: 40 }} />
             </View>

@@ -132,7 +132,7 @@ export default function ExchangeScreen() {
                         </View>
 
                         <Pressable style={styles.confirmBtn} onPress={() => handleConfirm(qrCode)}>
-                            <Text style={styles.confirmBtnText}>I've Met — Confirm My Side</Text>
+                            <Text style={styles.confirmBtnText}>I&apos;ve Met — Confirm My Side</Text>
                         </Pressable>
                     </Animated.View>
                 )}
