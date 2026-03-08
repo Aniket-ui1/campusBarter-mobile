@@ -4,14 +4,8 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { AuthContext } from "../context/AuthContext";
 
 export default function HomePage() {
-  // 3. This gets the real user data (which might be empty right now)
-  const { user: realUser } = useContext(AuthContext);
-
-  // --- DEVELOPER BYPASS START ---
-  // We rename the real user and use this fake 'user' instead for testing.
-  // Change 'role' to 'Student' if you want to test the button disappearing!
-  const user = { role: 'Admin', email: 'daniel@edu.sait.ca' }; 
-  // --- DEVELOPER BYPASS END ---
+  // 3. This gets the real user data from your authentication context
+  const { user } = useContext(AuthContext);
 
   return (
     <View style={styles.container}>
