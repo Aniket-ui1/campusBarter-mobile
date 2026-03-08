@@ -41,12 +41,18 @@ const updateProfileRules = [
         .isLength({ min: 1, max: 128 }).withMessage('Display name must be 1–128 characters'),
     body('bio').optional().trim()
         .isLength({ max: 500 }).withMessage('Bio max 500 characters'),
+    body('program').optional().trim(),
+    body('semester').optional().isInt({ min: 1, max: 12 }),
+    body('profileComplete').optional().isBoolean(),
 ];
 
 usersRouter.patch('/me', validate(updateProfileRules), async (req: Request, res: Response) => {
     try {
-        const { displayName, bio } = req.body;
-        await updateUserProfile(req.user!.id, { displayName, bio });
+        const { displayName, bio, program, major, semester, skills, weaknesses, interests, profileComplete, avatarUrl } = req.body;
+        await updateUserProfile(req.user!.id, {
+            displayName, bio, program, major, semester,
+            skills, weaknesses, interests, profileComplete, avatarUrl,
+        });
         res.json({ message: 'Profile updated' });
     } catch {
         res.status(500).json({ error: 'Failed to update profile' });

@@ -220,21 +220,57 @@ export async function getUserProfile(userId: string): Promise<Record<string, unk
 
 export async function updateUserProfile(
     userId: string,
-    updates: Partial<{ displayName: string; bio: string }>
+    updates: Partial<{
+        displayName: string;
+        bio: string;
+        program: string;
+        major: string;
+        semester: number;
+        skills: string[];
+        weaknesses: string[];
+        interests: string[];
+        profileComplete: boolean;
+        avatarUrl: string;
+    }>
 ): Promise<void> {
-    if (!updates.displayName?.trim() && !updates.bio?.trim()) return;
-
     const db = await getPool();
-    await db.request()
-        .input('id', sql.NVarChar(128), userId)
-        .input('displayName', sql.NVarChar(128), updates.displayName?.trim() ?? null)
-        .input('bio', sql.NVarChar(500), updates.bio?.trim() ?? null)
-        .query(`
-            UPDATE Users
-            SET displayName = ISNULL(@displayName, displayName),
-                bio         = ISNULL(@bio, bio)
-            WHERE id = @id
-        `);
+
+    // Build dynamic SET clauses based on what was provided
+    const setClauses: string[] = [];
+    const request = db.request().input('id', sql.NVarChar(128), userId);
+
+    if (updates.displayName?.trim()) {
+        setClauses.push('displayName = @displayName');
+        request.input('displayName', sql.NVarChar(128), updates.displayName.trim());
+    }
+    if (updates.bio !== undefined) {
+        setClauses.push('bio = @bio');
+        request.input('bio', sql.NVarChar(500), updates.bio?.trim() ?? null);
+    }
+    if (updates.program !== undefined) {
+        setClauses.push('program = @program');
+        request.input('program', sql.NVarChar(128), updates.program);
+    }
+    if (updates.semester !== undefined) {
+        setClauses.push('semester = @semester');
+        request.input('semester', sql.Int, updates.semester);
+    }
+    if (updates.profileComplete !== undefined) {
+        setClauses.push('profileComplete = @profileComplete');
+        request.input('profileComplete', sql.Bit, updates.profileComplete ? 1 : 0);
+    }
+    if (updates.avatarUrl !== undefined) {
+        setClauses.push('avatarUrl = @avatarUrl');
+        request.input('avatarUrl', sql.NVarChar(500), updates.avatarUrl);
+    }
+
+    if (setClauses.length === 0) return;
+
+    await request.query(`
+        UPDATE Users
+        SET ${setClauses.join(', ')}
+        WHERE id = @id
+    `);
     await auditLog(userId, 'UPDATE_PROFILE', `User:${userId}`);
 }
 
