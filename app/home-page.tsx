@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Link } from "expo-router";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 export default function HomePage() {
   return (
@@ -20,6 +20,23 @@ export default function HomePage() {
               <Text style={styles.primaryButtonText}>Register</Text>
             </Pressable>
           </Link>
+
+          {/* Dev Links: Remove or hide behind RBAC later */}
+          <View style={styles.devSection}>
+             <Text style={styles.devText}>--- Developer Links ---</Text>
+             
+             <Link href="/AdminDashboard" asChild>
+                <Pressable style={[styles.outlineButton, { borderColor: '#CC0633' }]}>
+                   <Text style={[styles.outlineButtonText, { color: '#CC0633' }]}>Admin Dashboard</Text>
+                </Pressable>
+             </Link>
+
+             <Link href="/ReviewsScreen" asChild>
+                <Pressable style={styles.outlineButton}>
+                   <Text style={styles.outlineButtonText}>Reviews Screen</Text>
+                </Pressable>
+             </Link>
+          </View>
         </View>
       </View>
     </View>
@@ -32,6 +49,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+    backgroundColor: "#fff",
   },
   card: {
     width: "100%",
@@ -39,12 +57,15 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 16,
     borderWidth: 1,
+    borderColor: "#eee",
   },
   title: { fontSize: 28, fontWeight: "700", textAlign: "center" },
   subtitle: { fontSize: 14, textAlign: "center", marginTop: 8, opacity: 0.8 },
   buttonRow: { marginTop: 18, gap: 12 },
-  outlineButton: { paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: "center" },
+  outlineButton: { paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: "center", borderColor: "#ccc" },
   outlineButtonText: { fontSize: 16, fontWeight: "600" },
-  primaryButton: { paddingVertical: 12, borderRadius: 12, alignItems: "center" },
-  primaryButtonText: { fontSize: 16, fontWeight: "700" },
+  primaryButton: { paddingVertical: 12, borderRadius: 12, alignItems: "center", backgroundColor: "#000" },
+  primaryButtonText: { fontSize: 16, fontWeight: "700", color: "#fff" },
+  devSection: { marginTop: 20, gap: 10, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 20 },
+  devText: { fontSize: 12, textAlign: 'center', color: '#999', marginBottom: 5 },
 });
