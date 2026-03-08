@@ -49,9 +49,10 @@ export async function verifyAzureAdToken(
     const authHeader = req.headers.authorization;
 
     // ── Development bypass ────────────────────────────────────
-    // In non-production, allow x-dev-user-id header to skip JWT.
-    // Also allow "Bearer dev-<userId>" format for mock tokens.
-    if (process.env.NODE_ENV !== 'production') {
+    // When ALLOW_DEV_AUTH=true, allow x-dev-user-id header and mock tokens.
+    // Set this in Azure App Service → Configuration → Application Settings for testing.
+    // NEVER enable this in actual production!
+    if (process.env.ALLOW_DEV_AUTH === 'true' || process.env.NODE_ENV === 'development') {
         const devUserId = req.headers['x-dev-user-id'] as string | undefined;
         if (devUserId) {
             req.user = {
