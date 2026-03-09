@@ -12,6 +12,8 @@ healthRouter.get('/', (_req: Request, res: Response) => {
     res.json({
         status: 'ok',
         service: 'campusbarter-api',
+        allowDevAuth: process.env.ALLOW_DEV_AUTH === 'true',
+        nodeEnv: process.env.NODE_ENV,
         timestamp: new Date().toISOString(),
     });
 });

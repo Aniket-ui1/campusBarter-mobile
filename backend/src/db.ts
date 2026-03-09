@@ -129,21 +129,31 @@ export async function createListing(
     if (!data.description?.trim()) throw new Error('Description is required');
     if (data.credits < 1) throw new Error('Credits must be at least 1');
 
+    console.log(`[DB] Creating listing for user ${data.userId} (userName: ${data.userName})`);
     const db = await getPool();
     const id = crypto.randomUUID();
-    await db.request()
-        .input('id', sql.NVarChar(128), id)
-        .input('type', sql.NVarChar(10), data.type)
-        .input('title', sql.NVarChar(200), data.title.trim())
-        .input('description', sql.NVarChar(2000), data.description.trim())
-        .input('credits', sql.Int, data.credits)
-        .input('userId', sql.NVarChar(128), data.userId)
-        .input('userName', sql.NVarChar(128), data.userName)
-        .input('category', sql.NVarChar(64), data.category || null)
-        .query(`
-            INSERT INTO Listings (id, type, title, description, credits, userId, userName, category)
-            VALUES (@id, @type, @title, @description, @credits, @userId, @userName, @category)
-        `);
+    try {
+        await db.request()
+            .input('id', sql.NVarChar(128), id)
+            .input('type', sql.NVarChar(10), data.type)
+            .input('title', sql.NVarChar(200), data.title.trim())
+            .input('description', sql.NVarChar(2000), data.description.trim())
+            .input('credits', sql.Int, data.credits)
+            .input('userId', sql.NVarChar(128), data.userId)
+            .input('userName', sql.NVarChar(128), data.userName)
+            .input('category', sql.NVarChar(64), data.category || null)
+            .query(`
+                INSERT INTO Listings (id, type, title, description, credits, userId, userName, category)
+                VALUES (@id, @type, @title, @description, @credits, @userId, @userName, @category)
+            `);
+        console.log(`[DB] Successfully created listing ${id}`);
+    } catch (err: any) {
+        console.error(`[DB] Failed to create listing:`, err.message);
+        if (err.message.includes('FOREIGN KEY')) {
+            console.error(`[DB] CRITICAL: User ${data.userId} does not exist in Users table!`);
+        }
+        throw err;
+    }
 
     await auditLog(data.userId, 'CREATE_LISTING', `Listing:${id}`);
     return id;
@@ -310,24 +320,31 @@ export async function upsertUserProfile(
         .query('SELECT id FROM Users WHERE id = @id');
 
     if (existing.recordset.length === 0) {
+        console.log(`[DB] Creating NEW user record for ${userId} (${data.email})`);
         // First time login — CREATE user record
         // Default credits = 10 (per schema.sql)
-        await db.request()
-            .input('id', sql.NVarChar(128), userId)
-            .input('email', sql.NVarChar(256), data.email || 'user@edu.sait.ca')
-            .input('name', sql.NVarChar(128), data.displayName || 'SAIT Student')
-            .input('bio', sql.NVarChar(500), data.bio || null)
-            .input('program', sql.NVarChar(128), data.program || null)
-            .input('semester', sql.Int, data.semester || null)
-            .input('avatarUrl', sql.NVarChar(500), data.avatarUrl || null)
-            .input('profileComplete', sql.Bit, data.profileComplete ? 1 : 0)
-            .query(`
-                INSERT INTO Users (id, email, displayName, bio, program, semester, avatarUrl, profileComplete)
-                VALUES (@id, @email, @name, @bio, @program, @semester, @avatarUrl, @profileComplete)
-            `);
+        try {
+            await db.request()
+                .input('id', sql.NVarChar(128), userId)
+                .input('email', sql.NVarChar(256), data.email || 'user@edu.sait.ca')
+                .input('name', sql.NVarChar(128), data.displayName || 'SAIT Student')
+                .input('bio', sql.NVarChar(500), data.bio || null)
+                .input('program', sql.NVarChar(128), data.program || null)
+                .input('semester', sql.Int, data.semester || null)
+                .input('avatarUrl', sql.NVarChar(500), data.avatarUrl || null)
+                .input('profileComplete', sql.Bit, data.profileComplete ? 1 : 0)
+                .query(`
+                    INSERT INTO Users (id, email, displayName, bio, program, semester, avatarUrl, profileComplete)
+                    VALUES (@id, @email, @name, @bio, @program, @semester, @avatarUrl, @profileComplete)
+                `);
+            console.log(`[DB] Successfully created user ${userId}`);
+        } catch (err: any) {
+            console.error(`[DB] Failed to create user ${userId}:`, err.message);
+            throw err;
+        }
         await auditLog(userId, 'CREATE_USER', `User:${userId}`);
     } else {
-        // User already exists — just UPDATE their profile
+        console.log(`[DB] Updating existing user record for ${userId}`);
         await updateUserProfile(userId, data);
     }
 }
