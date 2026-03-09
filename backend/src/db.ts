@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import sql from 'mssql';
+import crypto from 'crypto';
 
 // ── Types (same as firestore.ts) ─────────────────────────────
 
@@ -100,25 +101,30 @@ export async function auditLog(
 
 export async function getOpenListings(): Promise<FSListing[]> {
     const db = await getPool();
-    const result = await db.request().query(`
-        SELECT id AS id, 
-               type AS type, 
-               title AS title, 
-               description AS description, 
-               credits AS credits, 
-               userId AS userId, 
-               userName AS userName,
-               category AS category,
-               createdAt AS createdAt, 
-               status AS status
-        FROM   Listings
-        WHERE  status = 'OPEN'
-        ORDER  BY createdAt DESC
-    `);
-    return result.recordset.map((row: Record<string, unknown>) => ({
-        ...row,
-        createdAt: row.createdAt ? new Date(row.createdAt as any).toISOString() : new Date().toISOString(),
-    } as FSListing));
+    try {
+        const result = await db.request().query(`
+            SELECT id AS id, 
+                   type AS type, 
+                   title AS title, 
+                   description AS description, 
+                   credits AS credits, 
+                   userId AS userId, 
+                   userName AS userName,
+                   category AS category,
+                   createdAt AS createdAt, 
+                   status AS status
+            FROM   Listings
+            WHERE  status = 'OPEN'
+            ORDER  BY createdAt DESC
+        `);
+        return result.recordset.map((row: Record<string, unknown>) => ({
+            ...row,
+            createdAt: row.createdAt ? new Date(row.createdAt as any).toISOString() : new Date().toISOString(),
+        } as FSListing));
+    } catch (err: any) {
+        console.error(`[DB] Failed to fetch open listings:`, err.message);
+        throw err;
+    }
 }
 
 export async function createListing(

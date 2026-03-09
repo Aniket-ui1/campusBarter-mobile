@@ -15,7 +15,8 @@ listingsRouter.get('/', async (req: Request, res: Response) => {
     try {
         const listings = await getOpenListings();
         res.json(listings);
-    } catch {
+    } catch (err) {
+        console.error('[Listings] GET / failed:', err);
         res.status(500).json({ error: 'Failed to fetch listings' });
     }
 });
