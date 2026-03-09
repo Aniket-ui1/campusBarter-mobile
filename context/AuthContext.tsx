@@ -240,18 +240,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const persistUser = async (u: User, idToken?: string) => {
         setUser(u);
         await storage.setItem(AUTH_KEY, JSON.stringify(u));
+
+        // Wire up Azure API + socket BEFORE syncing (so headers are present)
+        if (idToken) {
+            setApiToken(idToken);
+            await storage.setItem(TOKEN_KEY, idToken);
+            connectSocket();
+        }
+
         // Ensure user is synced to SQL before proceding (crucial for foreign key)
         try {
             await syncUserToApi(u);
         } catch (e) {
             console.error("[Auth] User sync failed:", e);
         }
-        // Wire up Azure API + socket
+
+        // Register push token (best effort — ignore failure)
         if (idToken) {
-            setApiToken(idToken);
-            await storage.setItem(TOKEN_KEY, idToken);
-            connectSocket();
-            // Register push token (best effort — ignore failure)
             try {
                 const Notifications = await import('expo-notifications');
                 const { status } = await Notifications.requestPermissionsAsync();
