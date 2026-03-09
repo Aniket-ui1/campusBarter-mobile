@@ -48,6 +48,7 @@ export default function PostScreen() {
                 credits: 1,
                 userId: user.id,
                 userName: user.displayName || user.name,
+                category: category,
             });
 
             Alert.alert(

@@ -4,7 +4,7 @@ import { Router, Request, Response } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
 import { requireRole } from '../middleware/auth';
-import { getUserProfile, updateUserProfile } from '../db';
+import { getUserProfile, updateUserProfile, upsertUserProfile } from '../db';
 
 export const usersRouter = Router();
 
@@ -56,6 +56,22 @@ usersRouter.patch('/me', validate(updateProfileRules), async (req: Request, res:
         res.json({ message: 'Profile updated' });
     } catch {
         res.status(500).json({ error: 'Failed to update profile' });
+    }
+});
+
+// PUT /api/users/me — sync/upsert own profile (AuthContext call)
+usersRouter.put('/me', validate(updateProfileRules), async (req: Request, res: Response) => {
+    try {
+        const { email, displayName, bio, program, major, semester, avatarUrl, profileComplete } = req.body;
+        await upsertUserProfile(req.user!.id, {
+            email: email || req.user!.email,
+            displayName: displayName || req.user!.displayName,
+            bio, program, major, semester, avatarUrl, profileComplete
+        });
+        res.json({ message: 'Profile synced' });
+    } catch (err) {
+        console.error('[Users] PUT /me failed:', err);
+        res.status(500).json({ error: 'Failed to sync profile' });
     }
 });
 

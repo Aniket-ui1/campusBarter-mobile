@@ -48,7 +48,7 @@ export type FSMessage = ApiMessage;
 
 interface DataContextType {
     listings: Listing[];
-    addListing: (listing: Omit<Listing, "id" | "createdAt" | "status">) => Promise<void>;
+    addListing: (listing: Omit<Listing, "id" | "createdAt" | "status"> & { category?: string }) => Promise<void>;
     getListingById: (id: string) => Listing | undefined;
     closeListing: (id: string) => Promise<void>;
     deleteListing: (id: string) => Promise<void>;
@@ -172,13 +172,14 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     // ── Listings API ──────────────────────────────────────────────
 
     const addListing = async (
-        data: Omit<Listing, "id" | "createdAt" | "status">
+        data: Omit<Listing, "id" | "createdAt" | "status"> & { category?: string }
     ) => {
         await apiCreateListing({
             type: data.type,
             title: data.title,
             description: data.description,
             credits: data.credits,
+            category: data.category,
         });
         await refreshListings(); // refresh feed immediately after posting
     };

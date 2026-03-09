@@ -28,6 +28,7 @@ const createListingRules = [
     body('description').trim().notEmpty().withMessage('Description is required')
         .isLength({ max: 2000 }).withMessage('Description max 2000 characters'),
     body('credits').isInt({ min: 1 }).withMessage('Credits must be a positive integer'),
+    body('category').optional().trim().isLength({ max: 64 }).withMessage('Category max 64 characters'),
 ];
 
 listingsRouter.post('/', validate(createListingRules), async (req: Request, res: Response) => {
@@ -41,6 +42,7 @@ listingsRouter.post('/', validate(createListingRules), async (req: Request, res:
             credits: Number(credits),
             userId: req.user!.id,
             userName: req.user!.displayName,
+            category: req.body.category, // Pass category
         });
 
         // ── Smart Matching ──────────────────────────────────
@@ -56,7 +58,8 @@ listingsRouter.post('/', validate(createListingRules), async (req: Request, res:
         });
 
         res.status(201).json({ id, message: 'Listing created' });
-    } catch {
+    } catch (err) {
+        console.error('[Listings] POST / failed:', err);
         res.status(500).json({ error: 'Failed to create listing' });
     }
 });

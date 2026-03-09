@@ -108,6 +108,7 @@ export async function createListing(data: {
     title: string;
     description: string;
     credits: number;
+    category?: string;
 }): Promise<string> {
     const res = await apiFetch<{ id: string }>('/api/v1/listings', {
         method: 'POST',

@@ -22,6 +22,7 @@ export interface FSListing {
     userName: string;
     createdAt: string;
     status: 'OPEN' | 'CLOSED';
+    category?: string;
 }
 
 export interface FSMessage {
@@ -130,9 +131,10 @@ export async function createListing(
         .input('credits', sql.Int, data.credits)
         .input('userId', sql.NVarChar(128), data.userId)
         .input('userName', sql.NVarChar(128), data.userName)
+        .input('category', sql.NVarChar(64), data.category || null)
         .query(`
-            INSERT INTO Listings (id, type, title, description, credits, userId, userName)
-            VALUES (@id, @type, @title, @description, @credits, @userId, @userName)
+            INSERT INTO Listings (id, type, title, description, credits, userId, userName, category)
+            VALUES (@id, @type, @title, @description, @credits, @userId, @userName, @category)
         `);
 
     await auditLog(data.userId, 'CREATE_LISTING', `Listing:${id}`);
@@ -272,6 +274,54 @@ export async function updateUserProfile(
         WHERE id = @id
     `);
     await auditLog(userId, 'UPDATE_PROFILE', `User:${userId}`);
+}
+
+/**
+ * Sync user profile to the SQL database.
+ * If the user doesn't exist (first login), they are created with 10 default credits.
+ * If they exist, provided fields are updated.
+ */
+export async function upsertUserProfile(
+    userId: string,
+    data: Partial<{
+        email: string;
+        displayName: string;
+        bio: string;
+        program: string;
+        major: string;
+        semester: number;
+        avatarUrl: string;
+        profileComplete: boolean;
+    }>
+): Promise<void> {
+    const db = await getPool();
+
+    // Check if user exists
+    const existing = await db.request()
+        .input('id', sql.NVarChar(128), userId)
+        .query('SELECT id FROM Users WHERE id = @id');
+
+    if (existing.recordset.length === 0) {
+        // First time login — CREATE user record
+        // Default credits = 10 (per schema.sql)
+        await db.request()
+            .input('id', sql.NVarChar(128), userId)
+            .input('email', sql.NVarChar(256), data.email || 'user@edu.sait.ca')
+            .input('name', sql.NVarChar(128), data.displayName || 'SAIT Student')
+            .input('bio', sql.NVarChar(500), data.bio || null)
+            .input('program', sql.NVarChar(128), data.program || null)
+            .input('semester', sql.Int, data.semester || null)
+            .input('avatarUrl', sql.NVarChar(500), data.avatarUrl || null)
+            .input('profileComplete', sql.Bit, data.profileComplete ? 1 : 0)
+            .query(`
+                INSERT INTO Users (id, email, displayName, bio, program, semester, avatarUrl, profileComplete)
+                VALUES (@id, @email, @name, @bio, @program, @semester, @avatarUrl, @profileComplete)
+            `);
+        await auditLog(userId, 'CREATE_USER', `User:${userId}`);
+    } else {
+        // User already exists — just UPDATE their profile
+        await updateUserProfile(userId, data);
+    }
 }
 
 // ── Chats ─────────────────────────────────────────────────────
