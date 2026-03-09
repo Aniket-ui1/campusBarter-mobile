@@ -17,7 +17,11 @@ listingsRouter.get('/', async (req: Request, res: Response) => {
         res.json(listings);
     } catch (err: any) {
         console.error('[Listings] GET / failed:', err);
-        res.status(500).json({ error: 'Failed to fetch listings', details: err.message });
+        res.status(500).json({
+            error: 'Failed to fetch listings',
+            details: err.message,
+            v: '1.0.4'
+        });
     }
 });
 
