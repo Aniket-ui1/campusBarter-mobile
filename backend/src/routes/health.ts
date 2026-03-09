@@ -14,6 +14,9 @@ healthRouter.get('/', (_req: Request, res: Response) => {
         service: 'campusbarter-api',
         allowDevAuth: process.env.ALLOW_DEV_AUTH === 'true',
         nodeEnv: process.env.NODE_ENV,
+        dbStringInfo: process.env.AZURE_SQL_CONNECTION_STRING
+            ? `${process.env.AZURE_SQL_CONNECTION_STRING.substring(0, 15)}... (len: ${process.env.AZURE_SQL_CONNECTION_STRING.length})`
+            : 'NOT_SET',
         v: '1.0.4',
         timestamp: new Date().toISOString(),
     });
