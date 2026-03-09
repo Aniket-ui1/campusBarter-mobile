@@ -240,7 +240,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const persistUser = async (u: User, idToken?: string) => {
         setUser(u);
         await storage.setItem(AUTH_KEY, JSON.stringify(u));
-        await syncUserToApi(u);
+        // Ensure user is synced to SQL before proceding (crucial for foreign key)
+        try {
+            await syncUserToApi(u);
+        } catch (e) {
+            console.error("[Auth] User sync failed:", e);
+        }
         // Wire up Azure API + socket
         if (idToken) {
             setApiToken(idToken);

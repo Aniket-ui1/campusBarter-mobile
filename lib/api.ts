@@ -241,9 +241,9 @@ export async function upsertUserProfile(data: Partial<ApiUserProfile>): Promise<
             method: 'PUT',
             body: JSON.stringify(data),
         });
-    } catch {
-        // Best-effort — profile sync to backend may fail for mock login
-        console.warn('[API] upsertUserProfile failed (expected for mock login)');
+    } catch (e) {
+        console.warn('[API] upsertUserProfile failed:', e);
+        throw e; // Throw so AuthContext knows it failed
     }
 }
 
