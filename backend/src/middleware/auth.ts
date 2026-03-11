@@ -10,11 +10,14 @@ import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { ensureUserExists } from '../db';
 
-// CIAM JWKS endpoint — Entra External ID uses ciamlogin.com, NOT login.microsoftonline.com
-// Tenant: campusbarter.ciamlogin.com  |  TenantId: 25cf3e13-f550-42d6-b0a9-366ae872b929
-const CIAM_AUTHORITY = process.env.AZURE_AD_CIAM_AUTHORITY ?? 'campusbarter.ciamlogin.com';
+// CIAM JWKS endpoint — Entra External ID (CIAM) tokens use the tenant ID as the
+// subdomain in the issuer claim, NOT the friendly name.
+// Real token issuer:  https://{tenantId}.ciamlogin.com/{tenantId}/v2.0
+// Using tenant name:  https://campusbarter.ciamlogin.com/{tenantId}/v2.0  ← WRONG
+const TENANT_ID = process.env.AZURE_AD_TENANT_ID ?? '';
+const CIAM_AUTHORITY = process.env.AZURE_AD_CIAM_AUTHORITY ?? `${TENANT_ID}.ciamlogin.com`;
 const client = jwksClient({
-    jwksUri: `https://${CIAM_AUTHORITY}/${process.env.AZURE_AD_TENANT_ID}/discovery/v2.0/keys`,
+    jwksUri: `https://${CIAM_AUTHORITY}/${TENANT_ID}/discovery/v2.0/keys`,
     cache: true,
     rateLimit: true,
 });
