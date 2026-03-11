@@ -10,9 +10,11 @@ import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { ensureUserExists } from '../db';
 
-// Azure AD JWKS endpoint — fetches public keys to verify tokens
+// CIAM JWKS endpoint — Entra External ID uses ciamlogin.com, NOT login.microsoftonline.com
+// Tenant: campusbarter.ciamlogin.com  |  TenantId: 25cf3e13-f550-42d6-b0a9-366ae872b929
+const CIAM_AUTHORITY = process.env.AZURE_AD_CIAM_AUTHORITY ?? 'campusbarter.ciamlogin.com';
 const client = jwksClient({
-    jwksUri: `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/discovery/v2.0/keys`,
+    jwksUri: `https://${CIAM_AUTHORITY}/${process.env.AZURE_AD_TENANT_ID}/discovery/v2.0/keys`,
     cache: true,
     rateLimit: true,
 });
@@ -106,27 +108,26 @@ export async function verifyAzureAdToken(
         getSigningKey,
         {
             audience: process.env.AZURE_AD_CLIENT_ID,
-            issuer: `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/v2.0`,
+            // CIAM issuer uses campusbarter.ciamlogin.com, not login.microsoftonline.com
+            issuer: `https://${CIAM_AUTHORITY}/${process.env.AZURE_AD_TENANT_ID}/v2.0`,
         },
         (err, decoded) => {
             if (err) {
-                res.status(401).json({ error: 'Invalid or expired token' });
+                console.error('[Auth] JWT verification failed:', err.message);
+                res.status(401).json({ error: 'Invalid or expired token', detail: err.message });
                 return;
             }
 
             const payload = decoded as Record<string, string>;
 
-            // Enforce SAIT email domain
-            const email = payload.preferred_username || payload.email || '';
-            if (!email.endsWith('@sait.ca') && !email.endsWith('@edu.sait.ca')) {
-                res.status(403).json({ error: 'Access restricted to SAIT students' });
-                return;
-            }
+            // Trust any user authenticated through our CIAM tenant.
+            // CIAM controls who can sign up/in — no extra domain restriction needed.
+            const email = payload.preferred_username || payload.email || payload.emails?.[0] || '';
 
             req.user = {
-                id: payload.oid,          // Azure AD Object ID
-                email: email,
-                displayName: payload.name,
+                id: payload.oid || payload.sub,   // Azure AD Object ID
+                email,
+                displayName: payload.name || payload.given_name || email.split('@')[0],
                 role: (payload['campusbarter_role'] as 'Student' | 'Moderator' | 'Admin') ?? 'Student',
             };
 
