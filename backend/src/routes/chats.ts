@@ -1,11 +1,9 @@
-// backend/src/routes/chats.ts
-
 import { Router, Request, Response } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
 import { getMessages, sendMessage, getChats, createChat } from '../db';
-import { notifyNewMessage } from '../push';
-import { getIO } from '../socketInstance'; // ← singleton, no circular import
+import { getIO } from '../socketInstance';
+import { notifySkillRequest, notifyMessage } from '../notifyEvent';
 
 export const chatsRouter = Router();
 
@@ -24,15 +22,28 @@ const createChatRules = [
     body('listingId').trim().notEmpty().withMessage('listingId is required'),
     body('listingTitle').trim().notEmpty().withMessage('listingTitle is required')
         .isLength({ max: 200 }).withMessage('listingTitle max 200 characters'),
+    body('listingOwnerId').optional().trim(),
 ];
 
 chatsRouter.post('/', validate(createChatRules), async (req: Request, res: Response) => {
     try {
+        const { listingId, listingTitle, listingOwnerId } = req.body;
         const chatId = await createChat(
-            req.body.listingId.trim(),
-            req.body.listingTitle.trim(),
+            listingId.trim(),
+            listingTitle.trim(),
             req.user!.id
         );
+
+        // Notify listing owner that someone requested their skill
+        if (listingOwnerId && listingOwnerId !== req.user!.id) {
+            notifySkillRequest(
+                listingOwnerId,
+                req.user!.displayName,
+                listingTitle.trim(),
+                chatId
+            );
+        }
+
         res.status(201).json({ id: chatId, message: 'Chat created' });
     } catch {
         res.status(500).json({ error: 'Failed to create chat' });
@@ -82,9 +93,9 @@ chatsRouter.post('/:chatId/messages', validate(sendMessageRules), async (req: Re
             // Socket not yet initialised (e.g. in tests) — safe to skip
         }
 
-        // 3. Push notification to recipient if offline
-        if (recipientId) {
-            await notifyNewMessage(recipientId, req.user!.displayName, chatId, text);
+        // 3. Notify recipient via DB + push (fire-and-forget)
+        if (recipientId && recipientId !== req.user!.id) {
+            notifyMessage(recipientId, req.user!.displayName, chatId, text);
         }
 
         res.status(201).json({ message: 'Sent' });

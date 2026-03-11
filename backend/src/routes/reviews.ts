@@ -4,6 +4,7 @@ import { Router, Request, Response } from 'express';
 import { body, param } from 'express-validator';
 import { validate } from '../middleware/validate';
 import { createReview, getReviews } from '../db';
+import { notifyReview } from '../notifyEvent';
 
 export const reviewsRouter = Router();
 
@@ -25,6 +26,10 @@ reviewsRouter.post('/', validate(createReviewRules), async (req: Request, res: R
         }
 
         const id = await createReview(req.user!.id, revieweeId.trim(), Number(rating), comment);
+
+        // Notify reviewee (fire-and-forget)
+        notifyReview(revieweeId.trim(), req.user!.displayName, Number(rating));
+
         res.status(201).json({ id, message: 'Review submitted' });
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to create review';
