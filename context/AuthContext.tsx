@@ -38,7 +38,7 @@ import {
     useState,
 } from "react";
 import azureConfig from "../config/azureConfig";
-import { setApiToken, clearApiToken, registerPushToken, upsertUserProfile, getUserById, updateMyProfile } from "../lib/api";
+import { setApiToken, clearApiToken, setDevUser, registerPushToken, upsertUserProfile, getUserById, updateMyProfile } from "../lib/api";
 import { connectSocket, disconnectSocket } from "../lib/socket";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -280,6 +280,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             // Generate mock token with "mock-" prefix so backend dev bypass accepts it
             const mockToken = `mock-${userId}`;
             setApiToken(mockToken);
+            setDevUser({ id: userId, email: email.toLowerCase().trim(), name: 'SAIT Student' });
 
             // Restore existing profile from Azure API if it exists
             let existingProfile: any = null;
@@ -325,6 +326,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     : Math.random().toString(36).slice(2);
             const u = makeUser(id, name, email.toLowerCase().trim());
             const mockToken = `mock-${id}`;
+            setDevUser({ id, email: email.toLowerCase().trim(), name });
             await persistUser(u, mockToken);
             router.replace("/(tabs)");
         } finally {
@@ -364,6 +366,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 semester: data.semester,
             });
             const mockToken = `mock-${id}`;
+            setDevUser({ id, email: data.email.toLowerCase().trim(), name: data.displayName });
             await persistUser(u, mockToken);
             router.replace("/(tabs)");
         } finally {

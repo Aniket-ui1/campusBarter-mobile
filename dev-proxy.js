@@ -35,6 +35,11 @@ const server = http.createServer((req, res) => {
         headers: {
             ...req.headers,
             host: target.host, // Override host header
+            // Explicitly forward dev auth headers
+            ...(req.headers['x-dev-user-id'] ? { 'x-dev-user-id': req.headers['x-dev-user-id'] } : {}),
+            ...(req.headers['x-dev-email'] ? { 'x-dev-email': req.headers['x-dev-email'] } : {}),
+            ...(req.headers['x-dev-name'] ? { 'x-dev-name': req.headers['x-dev-name'] } : {}),
+            ...(req.headers['x-dev-role'] ? { 'x-dev-role': req.headers['x-dev-role'] } : {}),
         },
     }, (proxyRes) => {
         // Copy status + headers, then add CORS

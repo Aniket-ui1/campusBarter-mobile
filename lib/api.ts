@@ -34,6 +34,13 @@ class ApiError extends Error {
     }
 }
 
+// ── Type for dev user info stored alongside mock token ────────
+let _devUser: { id: string; email: string; name: string } | null = null;
+
+export function setDevUser(info: { id: string; email: string; name: string }) {
+    _devUser = info;
+}
+
 async function apiFetch<T>(
     path: string,
     options: RequestInit = {}
@@ -42,7 +49,18 @@ async function apiFetch<T>(
         'Content-Type': 'application/json',
         ...(options.headers as Record<string, string>),
     };
-    if (_token) headers['Authorization'] = `Bearer ${_token}`;
+
+    if (_token) {
+        headers['Authorization'] = `Bearer ${_token}`;
+
+        // When using a mock token (local dev), also send x-dev-* headers
+        // so the backend dev bypass can identify the user without JWT.
+        if (_token.startsWith('mock-') && _devUser) {
+            headers['x-dev-user-id'] = _devUser.id;
+            headers['x-dev-email'] = _devUser.email;
+            headers['x-dev-name'] = _devUser.name;
+        }
+    }
 
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
