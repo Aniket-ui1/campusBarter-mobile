@@ -492,9 +492,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 const claims = decodeJwtPayload(idToken);
                 const email: string = claims.preferred_username ?? claims.email ?? "";
 
-                if (!isSaitEmail(email)) {
-                    throw new Error(`Only @sait.ca and @edu.sait.ca accounts are allowed. Got: ${email}`);
-                }
+                // CIAM controls who can authenticate — trust any user who passes OAuth
+                // No additional email domain check needed here
 
                 const userId = claims.oid ?? claims.sub ?? "azure-user-id";
                 const displayName = claims.name ?? "SAIT Student";
@@ -512,7 +511,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 }
 
                 const u = makeUser(userId, displayName, userEmail, {
-                    bio: existingProfile?.bio ?? "SAIT student ready to barter!",
+                    bio: existingProfile?.bio ?? "CampusBarter student ready to trade skills!",
                     program: existingProfile?.program ?? "",
                     major: existingProfile?.major ?? "",
                     semester: existingProfile?.semester ?? 1,
