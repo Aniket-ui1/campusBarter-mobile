@@ -44,13 +44,13 @@ export default function SkillDetailScreen() {
     const handleRequest = async () => {
         if (!user) return;
         try {
-            await addNotification(listing.userId, {
-                type: 'request',
-                title: 'New Skill Request',
-                body: `${user.displayName} wants to learn "${listing.title}"`,
-                relatedId: listing.id,
-            });
-            const chatId = await startChat(listing.id, listing.title, [user.id, listing.userId]);
+            // startChat now notifies the listing owner server-side
+            const chatId = await startChat(
+                listing.id,
+                listing.title,
+                [user.id, listing.userId],
+                listing.userId  // listingOwnerId → triggers skill request notification
+            );
             Alert.alert(
                 'Request Sent! 🎉',
                 `Your request for "${listing.title}" has been sent to ${listing.userName}. A chat has been started.`,
@@ -67,7 +67,12 @@ export default function SkillDetailScreen() {
     const handleMessage = async () => {
         if (!user) return;
         try {
-            const chatId = await startChat(listing.id, listing.title, [user.id, listing.userId]);
+            const chatId = await startChat(
+                listing.id,
+                listing.title,
+                [user.id, listing.userId],
+                listing.userId
+            );
             router.push({ pathname: '/chat/[id]' as any, params: { id: chatId } });
         } catch {
             Alert.alert('Error', 'Could not start chat.');

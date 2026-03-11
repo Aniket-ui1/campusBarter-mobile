@@ -55,7 +55,7 @@ interface DataContextType {
     refreshListings: () => Promise<void>;
 
     chats: Chat[];
-    startChat: (listingId: string, listingTitle: string, userIds: string[]) => Promise<string>;
+    startChat: (listingId: string, listingTitle: string, userIds: string[], listingOwnerId?: string) => Promise<string>;
     sendMessage: (chatId: string, text: string, senderId: string) => Promise<void>;
     getChatById: (chatId: string) => Chat | undefined;
     subscribeToMessages: (chatId: string, cb: (msgs: ApiMessage[]) => void) => () => void;
@@ -201,9 +201,10 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const startChat = async (
         listingId: string,
         listingTitle: string,
-        _userIds: string[] // kept for API compat — server infers from token
+        _userIds: string[], // kept for API compat — server infers from token
+        listingOwnerId?: string
     ) => {
-        const chatId = await apiStartChat(listingId, listingTitle);
+        const chatId = await apiStartChat(listingId, listingTitle, listingOwnerId);
         await refreshChats();
         joinChat(chatId);
         return chatId;
