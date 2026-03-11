@@ -97,6 +97,40 @@ export async function auditLog(
     }
 }
 
+// ── Users ─────────────────────────────────────────────────────
+
+/**
+ * Upsert a user row — called automatically by auth middleware on every request.
+ * Uses MERGE so it's safe to call repeatedly (idempotent).
+ * This ensures the userId Foreign Key always exists before any INSERT into
+ * Listings, Chats, Messages, Reviews, etc.
+ */
+export async function ensureUserExists(user: {
+    id: string;
+    email: string;
+    displayName: string;
+    role?: string;
+}): Promise<void> {
+    try {
+        const db = await getPool();
+        await db.request()
+            .input('id', sql.NVarChar(128), user.id)
+            .input('email', sql.NVarChar(256), user.email)
+            .input('displayName', sql.NVarChar(128), user.displayName || 'SAIT Student')
+            .input('role', sql.NVarChar(20), user.role || 'Student')
+            .query(`
+                MERGE Users AS target
+                USING (SELECT @id AS id) AS source ON target.id = source.id
+                WHEN NOT MATCHED THEN
+                    INSERT (id, email, displayName, role, credits)
+                    VALUES (@id, @email, @displayName, @role, 10);
+            `);
+    } catch (err: any) {
+        // Non-fatal — log but don't crash the request
+        console.error('[DB] ensureUserExists failed:', err.message);
+    }
+}
+
 // ── Listings ─────────────────────────────────────────────────
 
 export async function getOpenListings(): Promise<FSListing[]> {

@@ -8,6 +8,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
+import { ensureUserExists } from '../db';
 
 // Azure AD JWKS endpoint — fetches public keys to verify tokens
 const client = jwksClient({
@@ -61,18 +62,20 @@ export async function verifyAzureAdToken(
                 displayName: (req.headers['x-dev-name'] as string) || 'Dev User',
                 role: ((req.headers['x-dev-role'] as string) || 'Student') as 'Student' | 'Moderator' | 'Admin',
             };
+            await ensureUserExists(req.user);
             return next();
         }
 
         // Allow "Bearer dev-<id>" mock tokens
         if (authHeader?.startsWith('Bearer dev-')) {
-            const mockId = authHeader.slice(11); // after "Bearer dev-"
+            const mockId = authHeader.slice(11);
             req.user = {
                 id: mockId,
                 email: `${mockId}@edu.sait.ca`,
                 displayName: 'Dev User',
                 role: 'Student',
             };
+            await ensureUserExists(req.user);
             return next();
         }
 
@@ -85,6 +88,7 @@ export async function verifyAzureAdToken(
                 displayName: 'Mock User',
                 role: 'Student',
             };
+            await ensureUserExists(req.user);
             return next();
         }
     }
@@ -126,7 +130,8 @@ export async function verifyAzureAdToken(
                 role: (payload['campusbarter_role'] as 'Student' | 'Moderator' | 'Admin') ?? 'Student',
             };
 
-            next();
+            // Ensure user row exists in SQL before any FK-constrained insert
+            ensureUserExists(req.user).finally(() => next());
         }
     );
 }
