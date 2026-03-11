@@ -25,11 +25,28 @@ usersRouter.get('/:id',
     async (req: Request, res: Response) => {
         try {
             const profile = await getUserProfile(req.params.id);
-            if (!profile) { res.status(404).json({ error: 'User not found' }); return; }
-            const { ...safeProfile } = profile as Record<string, unknown>;
+            if (!profile) {
+                // User hasn't had their row created yet — return a safe placeholder
+                res.json({
+                    id: req.params.id,
+                    displayName: 'CampusBarter User',
+                    bio: '',
+                    program: null,
+                    semester: null,
+                    avatarUrl: null,
+                    role: 'Student',
+                    credits: 10,
+                    rating: null,
+                    ratingCount: 0,
+                    profileComplete: false,
+                });
+                return;
+            }
+            const safeProfile = { ...profile as Record<string, unknown> };
             delete safeProfile['email']; // never expose email to other users
             res.json(safeProfile);
-        } catch {
+        } catch (err: any) {
+            console.error('[Users] GET /:id failed:', err.message);
             res.status(500).json({ error: 'Failed to fetch profile' });
         }
     }

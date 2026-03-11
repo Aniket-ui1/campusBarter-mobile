@@ -74,10 +74,12 @@ app.use(cors({
     credentials: true,
 }));
 
-// Rate limiting — max 100 requests per 15 minutes per IP
+// Rate limiting — 2000 requests per 15 minutes per IP.
+// We need headroom for: Socket.IO handshake+polling (~20 req), real-time
+// data polling (listings/chats/notifications), and actual user actions.
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 2000,
     message: { error: 'Too many requests. Please try again later.' },
     standardHeaders: true,
     legacyHeaders: false,

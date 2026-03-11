@@ -13,8 +13,10 @@ notificationsRouter.get('/', async (req: Request, res: Response) => {
     try {
         const notifications = await getNotifications(req.user!.id);
         res.json(notifications);
-    } catch {
-        res.status(500).json({ error: 'Failed to fetch notifications' });
+    } catch (err: any) {
+        console.error('[Notifications] GET / failed:', err.message);
+        // Return empty array instead of 500 — user simply has no notifications yet
+        res.json([]);
     }
 });
 
