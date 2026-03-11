@@ -114,9 +114,39 @@ export async function verifyAzureAdToken(
             // CIAM issuer uses campusbarter.ciamlogin.com, not login.microsoftonline.com
             issuer: `https://${CIAM_AUTHORITY}/${process.env.AZURE_AD_TENANT_ID}/v2.0`,
         },
-        (err, decoded) => {
+        async (err, decoded) => {
             if (err) {
                 console.error('[Auth] JWT verification failed:', err.message);
+
+                // ── Dev-mode expired-token recovery ───────────────
+                // When ALLOW_DEV_AUTH is true and the token is expired (but otherwise
+                // structurally valid), decode it anyway and allow the request.
+                // This prevents "listings disappeared" bugs during testing when
+                // the user's Azure AD token expires mid-session.
+                if (
+                    (process.env.ALLOW_DEV_AUTH === 'true' || process.env.NODE_ENV === 'development') &&
+                    err.name === 'TokenExpiredError'
+                ) {
+                    console.warn('[Auth] ⚠️  Token expired — allowing anyway because ALLOW_DEV_AUTH is enabled');
+                    try {
+                        // Decode without verification to extract user claims
+                        const payload = jwt.decode(token) as Record<string, string> | null;
+                        if (payload) {
+                            const email = payload.preferred_username || payload.email || (payload as any).emails?.[0] || '';
+                            req.user = {
+                                id: payload.oid || payload.sub,
+                                email,
+                                displayName: payload.name || payload.given_name || email.split('@')[0] || 'User',
+                                role: (payload['campusbarter_role'] as 'Student' | 'Moderator' | 'Admin') ?? 'Student',
+                            };
+                            await ensureUserExists(req.user);
+                            return next();
+                        }
+                    } catch (decodeErr) {
+                        console.error('[Auth] Failed to decode expired token:', decodeErr);
+                    }
+                }
+
                 res.status(401).json({ error: 'Invalid or expired token', detail: err.message });
                 return;
             }
@@ -135,7 +165,8 @@ export async function verifyAzureAdToken(
             };
 
             // Ensure user row exists in SQL before any FK-constrained insert
-            ensureUserExists(req.user).finally(() => next());
+            await ensureUserExists(req.user);
+            next();
         }
     );
 }

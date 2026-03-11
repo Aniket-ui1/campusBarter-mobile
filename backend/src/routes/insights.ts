@@ -18,7 +18,9 @@ insightsRouter.get('/leaderboard', async (_req: Request, res: Response) => {
     try {
         const leaderboard = await getWeeklyLeaderboard(10);
         res.json(leaderboard);
-    } catch {
+    } catch (err) {
+        console.error('[Insights] Leaderboard error:', err instanceof Error ? err.message : err);
+        console.error('[Insights] Leaderboard stack:', err instanceof Error ? err.stack : 'N/A');
         res.status(500).json({ error: 'Failed to fetch leaderboard' });
     }
 });
@@ -28,7 +30,8 @@ insightsRouter.get('/market', async (_req: Request, res: Response) => {
     try {
         const insights = await getMarketInsights();
         res.json(insights);
-    } catch {
+    } catch (err) {
+        console.error('[Insights] Market error:', err instanceof Error ? err.message : err);
         res.status(500).json({ error: 'Failed to fetch market insights' });
     }
 });
