@@ -14,7 +14,7 @@ import {
     View,
     Alert,
 } from 'react-native';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { AppColors } from '@/constants/theme';
 import { Avatar } from '@/components/ui/Avatar';
 import { useAuth } from '@/context/AuthContext';
 import { useData, FSMessage } from '@/context/DataContext';
@@ -65,7 +65,6 @@ export default function ChatScreen() {
     const [otherName, setOtherName] = useState(
         paramRecipientName ?? chat?.listingTitle ?? 'Chat'
     );
-    const [otherInitial, setOtherInitial] = useState(paramRecipientName ?? 'C');
 
     const [messages, setMessages] = useState<FSMessage[]>([]);
     const [loading, setLoading] = useState(true);
@@ -82,7 +81,6 @@ export default function ChatScreen() {
         // If we have a recipientName in params, use it directly
         if (paramRecipientName) {
             setOtherName(paramRecipientName);
-            setOtherInitial(paramRecipientName[0]?.toUpperCase() ?? 'C');
         }
     }, [paramRecipientName]);
 
@@ -92,7 +90,6 @@ export default function ChatScreen() {
         const otherMsg = msgs.find(m => m.senderId !== user?.id);
         if (otherMsg?.senderName) {
             setOtherName(otherMsg.senderName);
-            setOtherInitial(otherMsg.senderName[0]?.toUpperCase() ?? 'C');
         }
         if (otherMsg?.senderId && !recipientId) {
             setRecipientId(otherMsg.senderId);
@@ -292,7 +289,7 @@ export default function ChatScreen() {
                             <Text style={styles.emptyTitle}>Say Hello!</Text>
                             <Text style={styles.emptySub}>
                                 This is the start of your conversation about{'\n'}
-                                <Text style={{ fontWeight: '700' }}>"{chat?.listingTitle ?? 'a skill'}"</Text>
+                                <Text style={{ fontWeight: '700' }}>&quot;{chat?.listingTitle ?? 'a skill'}&quot;</Text>
                             </Text>
                         </View>
                     ) : (

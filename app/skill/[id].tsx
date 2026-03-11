@@ -5,7 +5,6 @@ import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from '
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
 import { Avatar } from '@/components/ui/Avatar';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
@@ -14,7 +13,7 @@ export default function SkillDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
     const { user } = useAuth();
-    const { getListingById, startChat, addNotification } = useData();
+    const { getListingById, startChat } = useData();
     const listing = getListingById(id);
 
     if (!listing) {
