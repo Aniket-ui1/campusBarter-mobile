@@ -24,33 +24,43 @@ export default function ChatsScreen() {
     const router = useRouter();
     const { chats } = useData();
 
-    const renderItem = ({ item, index }: { item: typeof chats[0]; index: number }) => (
-        <Animated.View entering={FadeInDown.delay(index * 40).duration(300)}>
-            <Pressable
-                style={({ pressed }) => [styles.chatItem, pressed && { backgroundColor: AppColors.surface }]}
-                onPress={() => router.push({ pathname: '/chat/[id]' as any, params: { id: item.id } })}
-                accessibilityRole="button"
-                accessibilityLabel={`Chat about ${item.listingTitle || 'conversation'}${item.lastMessage ? `, last message: ${item.lastMessage}` : ''}`}
-            >
-                <View style={styles.avatarWrap}>
-                    <Avatar name={item.listingTitle ?? 'Chat'} size={52} />
-                </View>
-                <View style={styles.chatInfo}>
-                    <View style={styles.chatTopRow}>
-                        <Text style={styles.chatName} numberOfLines={1}>
-                            {item.listingTitle ?? 'Conversation'}
-                        </Text>
-                        <Text style={styles.chatTime}>{formatTime(item.lastMessageAt)}</Text>
+    const renderItem = ({ item, index }: { item: typeof chats[0]; index: number }) => {
+        const displayName = item.otherUserName || item.listingTitle || 'Chat';
+        return (
+            <Animated.View entering={FadeInDown.delay(index * 40).duration(300)}>
+                <Pressable
+                    style={({ pressed }) => [styles.chatItem, pressed && { backgroundColor: AppColors.surface }]}
+                    onPress={() => router.push({
+                        pathname: '/chat/[id]' as any,
+                        params: {
+                            id: item.id,
+                            recipientName: displayName,
+                            recipientId: item.otherUserId ?? '',
+                        },
+                    })}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Chat with ${displayName}${item.lastMessage ? `, last message: ${item.lastMessage}` : ''}`}
+                >
+                    <View style={styles.avatarWrap}>
+                        <Avatar name={displayName} size={52} />
                     </View>
-                    <View style={styles.chatBottomRow}>
-                        <Text style={styles.chatPreview} numberOfLines={1}>
-                            {item.lastMessage || `💬 New conversation`}
-                        </Text>
+                    <View style={styles.chatInfo}>
+                        <View style={styles.chatTopRow}>
+                            <Text style={styles.chatName} numberOfLines={1}>
+                                {displayName}
+                            </Text>
+                            <Text style={styles.chatTime}>{formatTime(item.lastMessageAt)}</Text>
+                        </View>
+                        <View style={styles.chatBottomRow}>
+                            <Text style={styles.chatPreview} numberOfLines={1}>
+                                {item.lastMessage || `💬 New conversation`}
+                            </Text>
+                        </View>
                     </View>
-                </View>
-            </Pressable>
-        </Animated.View>
-    );
+                </Pressable>
+            </Animated.View>
+        );
+    };
 
     return (
         <View style={styles.container}>

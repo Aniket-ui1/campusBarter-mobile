@@ -103,6 +103,10 @@ export interface ApiChat {
     listingTitle: string;
     lastMessageAt: string;
     lastMessage?: string;
+    otherUserName?: string;
+    otherUserId?: string;
+    initiatorId?: string;
+    listingOwnerId?: string;
 }
 
 export interface ApiNotification {

@@ -399,14 +399,42 @@ export async function upsertUserProfile(
 
 export async function getChats(userId: string): Promise<Record<string, unknown>[]> {
     const db = await getPool();
+
+    // Ensure initiatorId column exists (one-time migration)
+    try {
+        await db.request().query(`
+            IF NOT EXISTS (
+                SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = 'Chats' AND COLUMN_NAME = 'initiatorId'
+            )
+            ALTER TABLE Chats ADD initiatorId NVARCHAR(128) NULL;
+        `);
+    } catch { /* column may already exist */ }
+
     const result = await db.request()
         .input('userId', sql.NVarChar(128), userId)
         .query(`
-            SELECT DISTINCT c.id, c.listingId, c.listingTitle, c.lastMessageAt, c.lastMessage
+            SELECT c.id, c.listingId, c.listingTitle, c.lastMessageAt, c.lastMessage,
+                   c.initiatorId,
+                   l.userId AS listingOwnerId,
+                   -- Determine the other user's name
+                   CASE
+                       WHEN c.initiatorId = @userId THEN COALESCE(lo.displayName, l.userName)
+                       ELSE COALESCE(init.displayName, c.initiatorId)
+                   END AS otherUserName,
+                   CASE
+                       WHEN c.initiatorId = @userId THEN l.userId
+                       ELSE c.initiatorId
+                   END AS otherUserId
             FROM   Chats c
-            INNER JOIN Messages m ON m.chatId = c.id
-            WHERE  m.senderId = @userId
-               OR  c.id IN (SELECT chatId FROM Messages WHERE senderId = @userId)
+            LEFT JOIN Listings l ON l.id = c.listingId
+            LEFT JOIN Users lo  ON lo.id = l.userId           -- listing owner
+            LEFT JOIN Users init ON init.id = c.initiatorId   -- chat initiator
+            WHERE  c.initiatorId = @userId           -- I started this chat
+               OR  l.userId = @userId                -- someone chatted on my listing
+               OR  c.id IN (
+                       SELECT DISTINCT chatId FROM Messages WHERE senderId = @userId
+                   )                                 -- I sent a message in this chat
             ORDER BY c.lastMessageAt DESC
         `);
     return result.recordset;
@@ -419,14 +447,41 @@ export async function createChat(
 ): Promise<string> {
     const db = await getPool();
     const chatId = crypto.randomUUID();
+
+    // Ensure initiatorId column exists
+    try {
+        await db.request().query(`
+            IF NOT EXISTS (
+                SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = 'Chats' AND COLUMN_NAME = 'initiatorId'
+            )
+            ALTER TABLE Chats ADD initiatorId NVARCHAR(128) NULL;
+        `);
+    } catch { /* already exists */ }
+
+    // Create the chat with initiatorId
     await db.request()
         .input('id', sql.NVarChar(128), chatId)
         .input('listingId', sql.NVarChar(128), listingId)
         .input('listingTitle', sql.NVarChar(200), listingTitle)
+        .input('initiatorId', sql.NVarChar(128), initiatorId)
         .query(`
-            INSERT INTO Chats (id, listingId, listingTitle)
-            VALUES (@id, @listingId, @listingTitle)
+            INSERT INTO Chats (id, listingId, listingTitle, initiatorId, lastMessageAt, lastMessage)
+            VALUES (@id, @listingId, @listingTitle, @initiatorId, GETUTCDATE(), N'Chat started')
         `);
+
+    // Insert a system welcome message so the chat is immediately visible
+    const welcomeId = crypto.randomUUID();
+    await db.request()
+        .input('msgId', sql.NVarChar(128), welcomeId)
+        .input('chatId', sql.NVarChar(128), chatId)
+        .input('senderId', sql.NVarChar(128), initiatorId)
+        .input('text', sql.NVarChar(4000), `👋 Hi! I'm interested in "${listingTitle}"`)
+        .query(`
+            INSERT INTO Messages (id, chatId, senderId, text)
+            VALUES (@msgId, @chatId, @senderId, @text)
+        `);
+
     await auditLog(initiatorId, 'CREATE_CHAT', `Chat:${chatId}`);
     return chatId;
 }
