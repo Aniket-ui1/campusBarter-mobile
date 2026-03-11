@@ -229,15 +229,21 @@ export async function getMessages(chatId: string): Promise<FSMessage[]> {
     const result = await db.request()
         .input('chatId', sql.NVarChar(128), chatId)
         .query(`
-            SELECT id, senderId, text, timestamp
-            FROM   Messages
-            WHERE  chatId = @chatId
-            ORDER  BY timestamp ASC
+            SELECT m.id, m.senderId, m.text, m.timestamp,
+                   COALESCE(u.displayName, m.senderId) AS senderName
+            FROM   Messages m
+            LEFT JOIN Users u ON u.id = m.senderId
+            WHERE  m.chatId = @chatId
+            ORDER  BY m.timestamp ASC
         `);
     return result.recordset.map((row: Record<string, unknown>) => ({
-        ...row,
-        timestamp: (row.timestamp as Date).toISOString(),
-    } as FSMessage));
+        id: row.id as string,
+        senderId: row.senderId as string,
+        senderName: row.senderName as string,
+        text: row.text as string,
+        // Map DB 'timestamp' → 'sentAt' to match frontend ApiMessage type
+        sentAt: (row.timestamp as Date).toISOString(),
+    } as unknown as FSMessage));
 }
 
 export async function sendMessage(
