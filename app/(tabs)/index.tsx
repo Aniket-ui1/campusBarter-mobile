@@ -15,7 +15,7 @@ import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { unreadCount, listings } = useData();
+  const { unreadCount, listings, refreshListings } = useData();
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
   const [matches, setMatches] = useState<MatchedUser[]>([]);
@@ -42,13 +42,15 @@ export default function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    const tasks: Promise<any>[] = [refreshListings()];
     if (user?.id) {
-      try {
-        const m = await getRecommendedUsers(user.id, user.skills ?? [], user.weaknesses ?? [], user.interests ?? []);
-        setMatches(m);
-      } catch { }
+      tasks.push(
+        getRecommendedUsers(user.id, user.skills ?? [], user.weaknesses ?? [], user.interests ?? [])
+          .then(setMatches).catch(() => {})
+      );
     }
-    await new Promise((r) => setTimeout(r, 400));
+    await Promise.all(tasks);
+    await new Promise((r) => setTimeout(r, 200));
     setRefreshing(false);
   };
 
