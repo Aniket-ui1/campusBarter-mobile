@@ -42,8 +42,9 @@ CampusBarter uses **two Azure AD tenants** — this is normal and expected for E
 | **Firewall** | Allow only App Service IP — block all public access |
 | **Backup** | Geo-redundant, 7-day retention |
 
-**Tables:** Users, Listings, Chats, ChatParticipants, Messages, Notifications, AuditLog, Reviews  
-**Schema file:** `infrastructure/schema.sql`
+**Tables:** Users, Listings, Chats, ChatParticipants, ChatUserState, Messages, Notifications, AuditLog, Reviews  
+**Schema file:** `infrastructure/schema.sql`  
+**Chat merge migration:** `infrastructure/chat_conversation_merge.sql`
 
 ---
 

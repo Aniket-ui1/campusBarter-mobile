@@ -1,10 +1,10 @@
 // backend/src/routes/users.ts
 
-import { Router, Request, Response } from 'express';
+import { Request, Response, Router } from 'express';
 import { body, param } from 'express-validator';
-import { validate } from '../middleware/validate';
+import { adminAnonymizeUser, getUserProfile, updateUserProfile, upsertUserProfile } from '../db';
 import { requireRole } from '../middleware/auth';
-import { getUserProfile, updateUserProfile, upsertUserProfile } from '../db';
+import { validate } from '../middleware/validate';
 
 export const usersRouter = Router();
 
@@ -96,6 +96,23 @@ usersRouter.put('/me', validate(updateProfileRules), async (req: Request, res: R
 usersRouter.delete('/:id', requireRole('Admin'),
     validate([param('id').trim().notEmpty().withMessage('User ID is required')]),
     async (req: Request, res: Response) => {
-        res.json({ message: 'User deletion — Phase 5 implementation' });
+        try {
+            const targetUserId = req.params.id;
+
+            if (targetUserId === req.user!.id) {
+                res.status(400).json({ error: 'Admins cannot anonymize their own account via this endpoint' });
+                return;
+            }
+
+            const updated = await adminAnonymizeUser(targetUserId, req.user!.id);
+            if (!updated) {
+                res.status(404).json({ error: 'User not found' });
+                return;
+            }
+
+            res.json({ message: 'User anonymized successfully' });
+        } catch {
+            res.status(500).json({ error: 'Failed to anonymize user' });
+        }
     }
 );

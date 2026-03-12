@@ -1,0 +1,27 @@
+
+> campusbarter-api@1.0.0 lint
+> eslint src/**/*.ts
+
+
+C:\Users\anike\Projects\campusBarter-mobile\backend\src\db.ts
+  258:11  warning  'now' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\backend\src\matcher.ts
+  16:35  warning  'C:\Users\anike\Projects\campusBarter-mobile\backend\src\db.ts' imported multiple times  import/no-duplicates
+  18:36  warning  'C:\Users\anike\Projects\campusBarter-mobile\backend\src\db.ts' imported multiple times  import/no-duplicates
+
+C:\Users\anike\Projects\campusBarter-mobile\backend\src\middleware\auth.ts
+  149:39  warning  Array type using 'Array<T>' is forbidden. Use 'T[]' instead  @typescript-eslint/array-type
+
+C:\Users\anike\Projects\campusBarter-mobile\backend\src\push.ts
+  8:8  warning  Using exported name 'Expo' as identifier for default import  import/no-named-as-default
+
+C:\Users\anike\Projects\campusBarter-mobile\backend\src\routes\health.ts
+  32:14  warning  'err' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\backend\src\server.ts
+  11:8  warning  Using exported name 'rateLimit' as identifier for default import  import/no-named-as-default
+
+✖ 7 problems (0 errors, 7 warnings)
+  0 errors and 2 warnings potentially fixable with the `--fix` option.
+

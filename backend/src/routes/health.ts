@@ -2,7 +2,7 @@
 // Public endpoint — no auth required
 // Used by Azure Monitor to check if the API is alive
 
-import { Router, Request, Response } from 'express';
+import { Request, Response, Router } from 'express';
 import { getPool } from '../db';
 
 export const healthRouter = Router();
@@ -12,7 +12,6 @@ healthRouter.get('/', (_req: Request, res: Response) => {
     res.json({
         status: 'ok',
         service: 'campusbarter-api',
-        allowDevAuth: process.env.ALLOW_DEV_AUTH === 'true',
         nodeEnv: process.env.NODE_ENV,
         v: '1.0.4',
         timestamp: new Date().toISOString(),

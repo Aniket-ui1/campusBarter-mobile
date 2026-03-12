@@ -1,12 +1,12 @@
 // backend/src/routes/listings.ts
 // RBAC: Students create/close their own. Moderators close any. Admins full access.
 
-import { Router, Request, Response } from 'express';
+import { Request, Response, Router } from 'express';
 import { body, param } from 'express-validator';
-import { validate } from '../middleware/validate';
-import { requireRole } from '../middleware/auth';
-import { getOpenListings, createListing, closeListing, deleteListing } from '../db';
+import { closeListing, closeListingAsStaff, createListing, deleteListing, deleteListingAsStaff, getOpenListings } from '../db';
 import { runSmartMatching } from '../matcher';
+import { requireRole } from '../middleware/auth';
+import { validate } from '../middleware/validate';
 
 export const listingsRouter = Router();
 
@@ -79,7 +79,11 @@ const listingIdRule = [
 
 listingsRouter.patch('/:id/close', validate(listingIdRule), async (req: Request, res: Response) => {
     try {
-        await closeListing(req.params.id, req.user!.id);
+        if (req.user!.role === 'Moderator' || req.user!.role === 'Admin') {
+            await closeListingAsStaff(req.params.id, req.user!.id);
+        } else {
+            await closeListing(req.params.id, req.user!.id);
+        }
         res.json({ message: 'Listing closed' });
     } catch {
         res.status(500).json({ error: 'Failed to close listing' });
@@ -89,8 +93,12 @@ listingsRouter.patch('/:id/close', validate(listingIdRule), async (req: Request,
 // DELETE /api/listings/:id — Moderators and Admins only
 listingsRouter.delete('/:id', requireRole('Moderator', 'Admin'), validate(listingIdRule), async (req: Request, res: Response) => {
     try {
-        await deleteListing(req.params.id, req.user!.id);
-        res.json({ message: 'Listing deleted' });;
+        if (req.user!.role === 'Moderator' || req.user!.role === 'Admin') {
+            await deleteListingAsStaff(req.params.id, req.user!.id);
+        } else {
+            await deleteListing(req.params.id, req.user!.id);
+        }
+        res.json({ message: 'Listing deleted' });
     } catch {
         res.status(500).json({ error: 'Failed to delete listing' });
     }

@@ -1,0 +1,76 @@
+
+> campusbarter-mobile@1.0.0 lint
+> expo lint
+
+
+C:\Users\anike\Projects\campusBarter-mobile\app\(auth)\register-step3.tsx
+  6:21  warning  'Radii' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\(auth)\welcome.tsx
+  1:10  warning  'Ionicons' is defined but never used  @typescript-eslint/no-unused-vars
+  7:10  warning  'Button' is defined but never used    @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\(onboarding)\tutorial.tsx
+  3:8   warning  'Animated' is defined but never used  @typescript-eslint/no-unused-vars
+  3:20  warning  'FadeIn' is defined but never used    @typescript-eslint/no-unused-vars
+  4:21  warning  'Radii' is defined but never used     @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\(tabs)\chats.tsx
+  23:13  warning  'user' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\(tabs)\index.tsx
+  41:6  warning  React Hook useEffect has missing dependencies: 'user.interests', 'user.skills', and 'user.weaknesses'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\anike\Projects\campusBarter-mobile\app\(tabs)\post.tsx
+   6:45  warning  'Shadows' is defined but never used  @typescript-eslint/no-unused-vars
+  64:18  warning  'err' is defined but never used      @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\(tabs)\profile.tsx
+   6:28  warning  'Shadows' is defined but never used     @typescript-eslint/no-unused-vars
+  10:10  warning  'StarRating' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\about.tsx
+  4:10  warning  'Linking' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\admin.tsx
+  13:28  warning  'Shadows' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\chat\[id].tsx
+  114:8  warning  React Hook useEffect has missing dependencies: 'resolveOtherUser' and 'subscribeToMessages'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  125:8  warning  React Hook useEffect has a missing dependency: 'user?.displayName'. Either include it or remove the dependency array                             react-hooks/exhaustive-deps
+
+C:\Users\anike\Projects\campusBarter-mobile\app\drafts.tsx
+  4:31  warning  'ScrollView' is defined but never used  @typescript-eslint/no-unused-vars
+  5:21  warning  'Radii' is defined but never used       @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\exchange.tsx
+  25:12  warning  'scanInput' is assigned a value but never used                                                                                                                                    @typescript-eslint/no-unused-vars
+  25:23  warning  'setScanInput' is assigned a value but never used                                                                                                                                 @typescript-eslint/no-unused-vars
+  34:8   warning  React Hook useEffect has missing dependencies: 'handleGenerate', 'params.credits', 'params.listingId', and 'params.sellerId'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  59:18  warning  'e' is defined but never used                                                                                                                                                     @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\leaderboard.tsx
+  8:28  warning  'Shadows' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\my-requests.tsx
+  4:31  warning  'ScrollView' is defined but never used  @typescript-eslint/no-unused-vars
+  5:21  warning  'Radii' is defined but never used       @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\app\reviews\[userId].tsx
+  79:46  warning  React Hook useEffect has a missing dependency: 'loadReviews'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\Users\anike\Projects\campusBarter-mobile\app\skill\[id].tsx
+  4:10  warning  'ActivityIndicator' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\components\ui\Badge.tsx
+  3:28  warning  'Spacing' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\components\ui\Button.tsx
+  2:79  warning  'TextStyle' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\anike\Projects\campusBarter-mobile\components\ui\CategoryChip.tsx
+  2:39  warning  'View' is defined but never used     @typescript-eslint/no-unused-vars
+  3:28  warning  'Spacing' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 31 problems (0 errors, 31 warnings)
+

@@ -226,7 +226,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     const savedToken = await storage.getItem(TOKEN_KEY);
                     if (savedToken) {
                         setApiToken(savedToken);
+
+                        // Web refresh recovery: restore mock user headers too.
+                        // Without this, a persisted mock token can fail API auth after reload.
+                        if (savedToken.startsWith('mock-')) {
+                            setDevUser({
+                                id: parsed.id,
+                                email: parsed.email,
+                                name: parsed.displayName || parsed.name || 'SAIT Student',
+                            });
+                        }
+
                         connectSocket();
+
+                        // Validate restored session once; if token is no longer valid,
+                        // clear stale local session so the app doesn't appear signed in
+                        // while all posting/listing APIs fail with 401.
+                        try {
+                            await getUserById(parsed.id);
+                        } catch (error) {
+                            if ((error as { status?: number }).status === 401) {
+                                setUser(null);
+                                await storage.deleteItem(AUTH_KEY);
+                                await storage.deleteItem(TOKEN_KEY);
+                                clearApiToken();
+                                disconnectSocket();
+                            }
+                        }
                     }
                 }
             } catch (e) {
@@ -262,7 +288,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 const { status } = await Notifications.requestPermissionsAsync();
                 if (status === 'granted') {
                     const tokenRes = await Notifications.getExpoPushTokenAsync();
-                    await registerPushToken(tokenRes.data).catch(() => { });
+                    const expoPushToken = tokenRes.data;
+                    const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
+                    // Register with both old endpoint (legacy) and new chat v2 endpoint
+                    await registerPushToken(expoPushToken).catch(() => { });
+                    const { chatApi } = await import('../services/chatApi');
+                    await chatApi.registerPushToken(expoPushToken, platform).catch(() => { });
                 }
             } catch { /* push not available on web / simulator */ }
         }

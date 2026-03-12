@@ -1,9 +1,9 @@
 // backend/src/routes/reviews.ts
 
-import { Router, Request, Response } from 'express';
+import { Request, Response, Router } from 'express';
 import { body, param } from 'express-validator';
+import { createReview, getReviews, hasCompletedExchangeBetweenUsers } from '../db';
 import { validate } from '../middleware/validate';
-import { createReview, getReviews } from '../db';
 import { notifyReview } from '../notifyEvent';
 
 export const reviewsRouter = Router();
@@ -22,6 +22,12 @@ reviewsRouter.post('/', validate(createReviewRules), async (req: Request, res: R
 
         if (revieweeId.trim() === req.user!.id) {
             res.status(400).json({ errors: [{ field: 'revieweeId', message: 'You cannot review yourself' }] });
+            return;
+        }
+
+        const hasExchange = await hasCompletedExchangeBetweenUsers(req.user!.id, revieweeId.trim());
+        if (!hasExchange) {
+            res.status(403).json({ error: 'You can only review users after a completed exchange' });
             return;
         }
 

@@ -62,6 +62,17 @@ CREATE TABLE ChatParticipants (
     PRIMARY KEY (chatId, userId)
 );
 
+-- Per-user chat state for unread counts and soft delete/hide.
+CREATE TABLE ChatUserState (
+    chatId      NVARCHAR(128)   NOT NULL REFERENCES Chats(id) ON DELETE CASCADE,
+    userId      NVARCHAR(128)   NOT NULL REFERENCES Users(id),
+    lastReadAt  DATETIME2       NULL,
+    hiddenAt    DATETIME2       NULL,
+    PRIMARY KEY (chatId, userId)
+);
+
+CREATE INDEX IX_ChatUserState_UserId ON ChatUserState(userId, hiddenAt, lastReadAt);
+
 -- ── Messages ─────────────────────────────────────────────────
 CREATE TABLE Messages (
     id          NVARCHAR(128)   NOT NULL PRIMARY KEY DEFAULT NEWID(),

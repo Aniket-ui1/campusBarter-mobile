@@ -1,15 +1,16 @@
 // backend/src/routes/insights.ts
 // Market Insights + Leaderboard + Exchanges API
 
-import { Router, Request, Response } from 'express';
+import { Request, Response, Router } from 'express';
 import { body } from 'express-validator';
-import { validate } from '../middleware/validate';
 import {
-    getWeeklyLeaderboard,
-    getMarketInsights,
-    createExchange,
     confirmExchange,
+    createExchange,
+    getListingById,
+    getMarketInsights,
+    getWeeklyLeaderboard,
 } from '../db';
+import { validate } from '../middleware/validate';
 
 export const insightsRouter = Router();
 
@@ -46,7 +47,36 @@ const exchangeRules = [
 insightsRouter.post('/exchange', validate(exchangeRules), async (req: Request, res: Response) => {
     try {
         const { listingId, sellerId, credits } = req.body;
-        const qrCode = await createExchange(listingId, req.user!.id, sellerId, Number(credits));
+        const listing = await getListingById(listingId);
+
+        if (!listing) {
+            res.status(404).json({ error: 'Listing not found' });
+            return;
+        }
+
+        if (listing.status !== 'OPEN') {
+            res.status(400).json({ error: 'Listing is not open for exchange' });
+            return;
+        }
+
+        if ((listing.userId as string) !== sellerId) {
+            res.status(400).json({ error: 'Seller does not own this listing' });
+            return;
+        }
+
+        if (req.user!.id === sellerId) {
+            res.status(400).json({ error: 'Cannot create an exchange with yourself' });
+            return;
+        }
+
+        const requestedCredits = Number(credits);
+        const listingCredits = Number(listing.credits);
+        if (requestedCredits !== listingCredits) {
+            res.status(400).json({ error: 'Credits must match the listing value' });
+            return;
+        }
+
+        const qrCode = await createExchange(listingId, req.user!.id, sellerId, requestedCredits);
         res.status(201).json({ qrCode });
     } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to create exchange';

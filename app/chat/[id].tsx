@@ -1,9 +1,23 @@
-// app/chat/[id].tsx  — WhatsApp-style chat screen
+// app/chat/[id].tsx  — WhatsApp-style chat screen (Chat System v2)
+import { Avatar } from '@/components/ui/Avatar';
+import { AppColors } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { type FSMessage, useData } from '@/context/DataContext';
+import { chatApi, type ChatMessage } from '@/services/chatApi';
+import {
+    createTypingEmitter,
+    joinConversation,
+    leaveConversation,
+    onReceiveMessage,
+    onMessagesSeen,
+    onUserTyping,
+} from '@/services/socketService';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     KeyboardAvoidingView,
     Platform,
@@ -12,13 +26,7 @@ import {
     Text,
     TextInput,
     View,
-    Alert,
 } from 'react-native';
-import { AppColors } from '@/constants/theme';
-import { Avatar } from '@/components/ui/Avatar';
-import { useAuth } from '@/context/AuthContext';
-import { useData, FSMessage } from '@/context/DataContext';
-import { emitTyping, onTyping } from '@/lib/socket';
 
 // ── Helpers ──────────────────────────────────────────────────────
 function formatTime(iso: string): string {
@@ -38,16 +46,11 @@ function formatDateLabel(iso: string): string {
     return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 }
 
-function needsDateSep(msgs: FSMessage[], index: number): boolean {
+function needsDateSep(msgs: ChatMessage[], index: number): boolean {
     if (index === msgs.length - 1) return true;
-    const a = new Date(msgs[index].sentAt ?? (msgs[index] as any).timestamp).toDateString();
-    const b = new Date(msgs[index + 1].sentAt ?? (msgs[index + 1] as any).timestamp).toDateString();
+    const a = new Date(msgs[index].createdAt).toDateString();
+    const b = new Date(msgs[index + 1].createdAt).toDateString();
     return a !== b;
-}
-
-// resolve sentAt from either field name the backend returns
-function getMsgTime(msg: FSMessage): string {
-    return (msg.sentAt || (msg as any).timestamp || new Date().toISOString());
 }
 
 // ── Component ─────────────────────────────────────────────────────
@@ -56,98 +59,196 @@ export default function ChatScreen() {
         = useLocalSearchParams<{ id: string; recipientId?: string; recipientName?: string }>();
     const router = useRouter();
     const { user } = useAuth();
-    const { chats, sendMessage, subscribeToMessages } = useData();
+    const {
+        getChatById,
+        loadOlderMessages,
+        sendMessage: sendLegacyMessage,
+        markChatRead,
+        subscribeToMessages,
+    } = useData();
 
-    // Find chat metadata
-    const chat = chats.find(c => c.id === id);
-
-    // Other user display info (resolved from listing or passed via params)
-    const [otherName, setOtherName] = useState(
-        paramRecipientName ?? chat?.listingTitle ?? 'Chat'
-    );
-
-    const [messages, setMessages] = useState<FSMessage[]>([]);
+    const [otherName, setOtherName] = useState(paramRecipientName ?? 'Chat');
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [isLegacyMode, setIsLegacyMode] = useState(false);
     const [loading, setLoading] = useState(true);
     const [text, setText] = useState('');
     const [sending, setSending] = useState(false);
     const [typingName, setTypingName] = useState<string | null>(null);
     const [recipientId, setRecipientId] = useState(paramRecipientId ?? '');
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingOlder, setLoadingOlder] = useState(false);
 
     const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const listRef = useRef<FlatList>(null);
+    const typingEmitter = useRef<ReturnType<typeof createTypingEmitter> | null>(null);
 
-    // ── Resolve the other person's name from finding the first message not from me
+    const mapLegacyMessage = useCallback((m: FSMessage): ChatMessage => ({
+        messageId: m.id,
+        conversationId: id,
+        senderId: m.senderId,
+        senderName: m.senderName,
+        messageType: 'text',
+        textContent: m.text,
+        mediaUrl: null,
+        mediaName: null,
+        isRead: false,
+        readAt: null,
+        isDeleted: false,
+        createdAt: m.sentAt,
+    }), [id]);
+
+    // ── Load initial messages ────────────────────────────────────
+    const loadMessages = useCallback(async (p: number) => {
+        if (!id) return;
+        if (!isLegacyMode) {
+            try {
+                const data = await chatApi.getMessages(id, p);
+                const msgs = data.messages ?? [];
+                if (p === 1) {
+                    setMessages(msgs);
+                    setHasMore(msgs.length >= 30);
+                    setLoading(false);
+                    if (!paramRecipientName) {
+                        const otherMsg = msgs.find(m => m.senderId !== user?.id);
+                        if (otherMsg?.senderName) setOtherName(otherMsg.senderName);
+                        if (otherMsg?.senderId && !recipientId) setRecipientId(otherMsg.senderId);
+                    }
+                } else {
+                    setMessages(prev => [...msgs, ...prev]);
+                    setHasMore(msgs.length >= 30);
+                }
+                return;
+            } catch {
+                // Fall back to legacy chat API/data context.
+                setIsLegacyMode(true);
+            }
+        }
+
+        try {
+            const legacyMsgs = await loadOlderMessages(id, p, 30);
+            const mapped = legacyMsgs.map(mapLegacyMessage);
+            if (p === 1) {
+                setMessages(mapped);
+                setHasMore(mapped.length >= 30);
+                setLoading(false);
+                const legacyChat = getChatById(id);
+                if (legacyChat) {
+                    if (!paramRecipientName && legacyChat.otherUserName) setOtherName(legacyChat.otherUserName);
+                    if (!recipientId && legacyChat.otherUserId) setRecipientId(legacyChat.otherUserId);
+                }
+            } else {
+                setMessages(prev => [...mapped, ...prev]);
+                setHasMore(mapped.length >= 30);
+            }
+        } catch {
+            setLoading(false);
+        }
+    }, [id, isLegacyMode, paramRecipientName, user?.id, recipientId, loadOlderMessages, mapLegacyMessage, getChatById]);
+
     useEffect(() => {
-        // If we have a recipientName in params, use it directly
-        if (paramRecipientName) {
-            setOtherName(paramRecipientName);
-        }
-    }, [paramRecipientName]);
+        void loadMessages(1);
+    }, [loadMessages]);
 
-    // Once messages load, pick the other person's name from senderId
-    const resolveOtherUser = useCallback((msgs: FSMessage[]) => {
-        if (paramRecipientName) return; // already resolved
-        const otherMsg = msgs.find(m => m.senderId !== user?.id);
-        if (otherMsg?.senderName) {
-            setOtherName(otherMsg.senderName);
-        }
-        if (otherMsg?.senderId && !recipientId) {
-            setRecipientId(otherMsg.senderId);
-        }
-    }, [user?.id, paramRecipientName, recipientId]);
-
-    // ── Subscribe to messages ────────────────────────────────────
+    // ── Mark as read ─────────────────────────────────────────────
     useEffect(() => {
         if (!id) return;
-        setLoading(true);
-        const unsub = subscribeToMessages(id, (msgs) => {
-            // Normalize timestamp field — DB returns timestamp, socket uses sentAt
-            const normalized = msgs.map(m => ({
-                ...m,
-                sentAt: m.sentAt || (m as any).timestamp || new Date().toISOString(),
-            }));
-            setMessages([...normalized].reverse()); // newest first for inverted FlatList
-            setLoading(false);
-            resolveOtherUser(normalized);
-        });
-        return unsub;
-    }, [id]);
+        if (isLegacyMode) {
+            void markChatRead(id).catch(() => undefined);
+            return;
+        }
+        void chatApi.markRead(id).catch(() => undefined);
+    }, [id, isLegacyMode, markChatRead]);
 
-    // ── Typing indicator ─────────────────────────────────────────
+    // ── Socket: join room & subscribe to messages ────────────────
     useEffect(() => {
-        const cleanup = onTyping(({ displayName }) => {
-            if (displayName === user?.displayName) return;
+        if (!id) return;
+
+        if (isLegacyMode) {
+            const unsubLegacy = subscribeToMessages(id, (legacyMsgs) => {
+                setMessages(legacyMsgs.map(mapLegacyMessage));
+            });
+            return () => {
+                unsubLegacy();
+            };
+        }
+
+        joinConversation(id);
+        typingEmitter.current = createTypingEmitter(id);
+
+        const unsubMsg = onReceiveMessage((msg) => {
+            if (msg.conversationId !== id) return;
+            setMessages(prev => {
+                // Dedup by messageId
+                if (prev.some(m => m.messageId === msg.messageId)) return prev;
+                return [...prev, msg as ChatMessage];
+            });
+            void chatApi.markRead(id).catch(() => undefined);
+        });
+
+        const unsubSeen = onMessagesSeen(({ conversationId }) => {
+            if (conversationId !== id) return;
+            setMessages(prev => prev.map(m =>
+                m.senderId === user?.id ? { ...m, isRead: true } : m
+            ));
+        });
+
+        const unsubTyping = onUserTyping(({ displayName }) => {
+            if (!displayName || displayName === user?.displayName) return;
             setTypingName(displayName);
             if (typingTimer.current) clearTimeout(typingTimer.current);
             typingTimer.current = setTimeout(() => setTypingName(null), 3000);
         });
-        return cleanup;
-    }, []);
+
+        return () => {
+            leaveConversation(id);
+            typingEmitter.current?.cleanup();
+            unsubMsg();
+            unsubSeen();
+            unsubTyping();
+        };
+    }, [id, isLegacyMode, user?.id, user?.displayName, subscribeToMessages, mapLegacyMessage]);
 
     // ── Send message ─────────────────────────────────────────────
     const handleSend = async () => {
         const t = text.trim();
         if (!t || !user?.id || !id || sending) return;
 
-        // Optimistic update — add message to UI immediately
-        const optimisticMsg: FSMessage = {
-            id: `opt-${Date.now()}`,
-            senderId: user.id,
-            senderName: user.displayName,
-            text: t,
-            sentAt: new Date().toISOString(),
+        // Optimistic update
+        const optimisticMsg: ChatMessage = {
+            messageId:      `opt-${Date.now()}`,
+            conversationId: id,
+            senderId:       user.id,
+            senderName:     user.displayName,
+            messageType:    'text',
+            textContent:    t,
+            mediaUrl:       null,
+            mediaName:      null,
+            isRead:         false,
+            readAt:         null,
+            isDeleted:      false,
+            createdAt:      new Date().toISOString(),
         };
-        setMessages(prev => [optimisticMsg, ...prev]);
+        setMessages(prev => [...prev, optimisticMsg]);
         setText('');
         setSending(true);
 
         try {
-            await sendMessage(id, t, recipientId);
-        } catch {
-            // Remove optimistic message on failure
-            setMessages(prev => prev.filter(m => m.id !== optimisticMsg.id));
+            if (isLegacyMode) {
+                await sendLegacyMessage(id, t, user.id);
+                setMessages(prev => prev.filter(m => m.messageId !== optimisticMsg.messageId));
+                await loadMessages(1);
+            } else {
+                const { message } = await chatApi.sendMessage(id, t);
+                setMessages(prev => prev.map(m =>
+                    m.messageId === optimisticMsg.messageId ? message : m
+                ));
+            }
+        } catch (error) {
+            setMessages(prev => prev.filter(m => m.messageId !== optimisticMsg.messageId));
             setText(t);
-            Alert.alert('Send failed', 'Message could not be sent. Please try again.');
+            const message = (error as { message?: string })?.message || 'Message could not be sent. Please try again.';
+            Alert.alert('Send failed', message);
         } finally {
             setSending(false);
         }
@@ -156,14 +257,26 @@ export default function ChatScreen() {
     // ── Typing emit ──────────────────────────────────────────────
     const handleTyping = (val: string) => {
         setText(val);
-        if (id) emitTyping(id);
+        typingEmitter.current?.onInput();
+    };
+
+    const handleLoadOlder = async () => {
+        if (!id || loadingOlder || !hasMore) return;
+        setLoadingOlder(true);
+        try {
+            const nextPage = page + 1;
+            await loadMessages(nextPage);
+            setPage(nextPage);
+        } finally {
+            setLoadingOlder(false);
+        }
     };
 
     // ── Render message bubble ────────────────────────────────────
-    const renderMessage = ({ item, index }: { item: FSMessage; index: number }) => {
+    const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
         const isMe = item.senderId === user?.id;
-        const msgTime = getMsgTime(item);
-        const isOptimistic = item.id.startsWith('opt-');
+        const msgTime = item.createdAt;
+        const isOptimistic = item.messageId.startsWith('opt-');
 
         // Date separator (shown below in inverted list = visually above)
         const showDate = needsDateSep(messages, index);
@@ -192,7 +305,7 @@ export default function ChatScreen() {
                             isMe ? styles.bubbleMe : styles.bubbleThem,
                             isOptimistic && styles.bubbleOptimistic,
                         ]}
-                        onLongPress={() => Alert.alert('Message', item.text, [
+                        onLongPress={() => Alert.alert('Message', item.textContent ?? '', [
                             { text: 'Copy', onPress: () => { } },
                             { text: 'Cancel', style: 'cancel' },
                         ])}
@@ -204,7 +317,7 @@ export default function ChatScreen() {
 
                         {/* Message text */}
                         <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
-                            {item.text}
+                            {item.textContent}
                         </Text>
 
                         {/* Time + tick */}
@@ -214,9 +327,9 @@ export default function ChatScreen() {
                             </Text>
                             {isMe && (
                                 <Ionicons
-                                    name={isOptimistic ? 'checkmark' : 'checkmark-done'}
+                                    name={isOptimistic ? 'checkmark' : (item.isRead ? 'checkmark-done' : 'checkmark')}
                                     size={13}
-                                    color={isOptimistic ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.85)'}
+                                    color={isOptimistic ? 'rgba(255,255,255,0.5)' : (item.isRead ? '#4FC3F7' : 'rgba(0,0,0,0.4)')}
                                     style={{ marginLeft: 2 }}
                                 />
                             )}
@@ -252,9 +365,7 @@ export default function ChatScreen() {
                         {typingName ? (
                             <Text style={styles.typingText}>typing…</Text>
                         ) : (
-                            <Text style={styles.headerSub}>
-                                {chat?.listingTitle ? `📌 ${chat.listingTitle}` : 'CampusBarter'}
-                            </Text>
+                            <Text style={styles.headerSub}>CampusBarter</Text>
                         )}
                     </View>
                 </Pressable>
@@ -288,17 +399,24 @@ export default function ChatScreen() {
                             <Text style={styles.emptyEmoji}>👋</Text>
                             <Text style={styles.emptyTitle}>Say Hello!</Text>
                             <Text style={styles.emptySub}>
-                                This is the start of your conversation about{'\n'}
-                                <Text style={{ fontWeight: '700' }}>&quot;{chat?.listingTitle ?? 'a skill'}&quot;</Text>
+                                This is the start of your conversation with{'\n'}
+                                <Text style={{ fontWeight: '700' }}>{otherName}</Text>
                             </Text>
                         </View>
                     ) : (
                         <FlatList
                             ref={listRef}
                             data={messages}
-                            keyExtractor={item => item.id}
+                            keyExtractor={item => item.messageId}
                             renderItem={renderMessage}
                             inverted
+                            onEndReached={handleLoadOlder}
+                            onEndReachedThreshold={0.2}
+                            ListFooterComponent={loadingOlder ? (
+                                <View style={styles.loadingOlderWrap}>
+                                    <ActivityIndicator color={AppColors.primary} size="small" />
+                                </View>
+                            ) : null}
                             contentContainerStyle={styles.msgList}
                             showsVerticalScrollIndicator={false}
                             keyboardDismissMode="interactive"
@@ -409,6 +527,7 @@ const styles = StyleSheet.create({
     // Chat area
     chatArea: { flex: 1 },
     loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    loadingOlderWrap: { paddingVertical: 12 },
     msgList: { paddingHorizontal: 8, paddingVertical: 12 },
 
     // Empty state

@@ -5,7 +5,7 @@
 // Token is issued by Azure AD after Microsoft login.
 // ─────────────────────────────────────────────────────────────
 
-import { Request, Response, NextFunction } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { ensureUserExists } from '../db';
@@ -21,11 +21,14 @@ import { ensureUserExists } from '../db';
 //   ❌ https://campusbarter.ciamlogin.com/{tenantId}/v2.0  (friendly name — wrong for issuer)
 const TENANT_ID = process.env.AZURE_AD_TENANT_ID ?? '';
 const CIAM_AUTHORITY = process.env.AZURE_AD_CIAM_AUTHORITY ?? `${TENANT_ID}.ciamlogin.com`;
+const TOKEN_ISSUER = `https://${TENANT_ID}.ciamlogin.com/${TENANT_ID}/v2.0`;
 const client = jwksClient({
     jwksUri: `https://${CIAM_AUTHORITY}/${TENANT_ID}/discovery/v2.0/keys`,
     cache: true,
     rateLimit: true,
 });
+
+const DEV_AUTH_ENABLED = process.env.ALLOW_DEV_AUTH === 'true';
 
 function getSigningKey(header: jwt.JwtHeader, callback: jwt.SigningKeyCallback) {
     client.getSigningKey(header.kid!, (err, key) => {
@@ -82,7 +85,7 @@ export async function verifyAzureAdToken(
     // When ALLOW_DEV_AUTH=true, allow x-dev-user-id header and mock tokens.
     // Set this in Azure App Service → Configuration → Application Settings for testing.
     // NEVER enable this in actual production!
-    if (process.env.ALLOW_DEV_AUTH === 'true' || process.env.NODE_ENV === 'development') {
+    if (DEV_AUTH_ENABLED) {
         const devUserId = req.headers['x-dev-user-id'] as string | undefined;
         if (devUserId) {
             req.user = {
@@ -135,36 +138,11 @@ export async function verifyAzureAdToken(
         getSigningKey,
         {
             audience: process.env.AZURE_AD_CLIENT_ID,
-            // CIAM issuer uses campusbarter.ciamlogin.com, not login.microsoftonline.com
-            issuer: `https://${CIAM_AUTHORITY}/${process.env.AZURE_AD_TENANT_ID}/v2.0`,
+            issuer: TOKEN_ISSUER,
         },
         async (err, decoded) => {
             if (err) {
                 console.error('[Auth] JWT verification failed:', err.message);
-
-                // ── Dev-mode expired-token recovery ───────────────
-                if (
-                    (process.env.ALLOW_DEV_AUTH === 'true' || process.env.NODE_ENV === 'development') &&
-                    err.name === 'TokenExpiredError'
-                ) {
-                    console.warn('[Auth] ⚠️  Token expired — allowing anyway because ALLOW_DEV_AUTH is enabled');
-                    try {
-                        const payload = jwt.decode(token) as Record<string, string> | null;
-                        if (payload) {
-                            const email = payload.preferred_username || payload.email || (payload as any).emails?.[0] || '';
-                            req.user = {
-                                id: payload.oid || payload.sub,
-                                email,
-                                displayName: payload.name || payload.given_name || email.split('@')[0] || 'User',
-                                role: (payload['campusbarter_role'] as 'Student' | 'Moderator' | 'Admin') ?? 'Student',
-                            };
-                            if (!await upsertOrFail(req, res)) return;
-                            return next();
-                        }
-                    } catch (decodeErr) {
-                        console.error('[Auth] Failed to decode expired token:', decodeErr);
-                    }
-                }
 
                 res.status(401).json({ error: 'Invalid or expired token', detail: err.message });
                 return;

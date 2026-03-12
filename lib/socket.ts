@@ -5,14 +5,59 @@
 // ─────────────────────────────────────────────────────────────
 
 import { io, Socket } from 'socket.io-client';
-import { getApiToken, getApiBase } from './api';
+import { getApiBase, getApiToken } from './api';
 
 
 let _socket: Socket | null = null;
+const joinedRooms = new Set<string>();
+const messageHandlers = new Set<(msg: {
+    conversationId: string;
+    chatId: string;
+    senderId: string;
+    senderName: string;
+    text: string;
+    sentAt: string;
+}) => void>();
+const typingHandlers = new Set<(data: { conversationId?: string; userId: string; displayName: string }) => void>();
+
+function normalizeMessage(msg: {
+    conversationId?: string;
+    chatId?: string;
+    senderId: string;
+    senderName: string;
+    text: string;
+    sentAt: string;
+}) {
+    const conversationId = msg.conversationId ?? msg.chatId ?? '';
+    return {
+        ...msg,
+        conversationId,
+        chatId: msg.chatId ?? conversationId,
+    };
+}
+
+function dispatchNewMessage(msg: {
+    conversationId?: string;
+    chatId?: string;
+    senderId: string;
+    senderName: string;
+    text: string;
+    sentAt: string;
+}) {
+    const normalized = normalizeMessage(msg);
+    messageHandlers.forEach((handler) => handler(normalized));
+}
+
+function dispatchTyping(data: { conversationId?: string; userId: string; displayName: string }) {
+    typingHandlers.forEach((handler) => handler(data));
+}
 
 /** Connect and authenticate. Call after setApiToken() is set. */
 export function connectSocket(): Socket {
-    if (_socket?.connected) return _socket;
+    if (_socket) {
+        if (!_socket.connected) _socket.connect();
+        return _socket;
+    }
 
     _socket = io(getApiBase(), {
         // Use a callback so socket.io reads the CURRENT token on every (re)connect,
@@ -23,9 +68,19 @@ export function connectSocket(): Socket {
         reconnectionDelay: 2000,
     });
 
-    _socket.on('connect', () => console.log('[Socket] Connected'));
+    _socket.on('connect', () => {
+        console.log('[Socket] Connected');
+        // Re-join active rooms after reconnect so real-time messages continue.
+        joinedRooms.forEach((conversationId) => {
+            _socket?.emit('join_conversation', conversationId);
+        });
+    });
     _socket.on('disconnect', () => console.log('[Socket] Disconnected'));
     _socket.on('connect_error', (err) => console.warn('[Socket] Error:', err.message));
+    _socket.on('new_message', dispatchNewMessage);
+    _socket.on('receive_message', dispatchNewMessage);
+    _socket.on('typing', dispatchTyping);
+    _socket.on('user_typing', dispatchTyping);
 
     return _socket;
 }
@@ -41,17 +96,29 @@ export function getSocket(): Socket | null {
 
 /** Join a chat room to receive real-time messages. */
 export function joinChat(chatId: string) {
-    _socket?.emit('joinChat', chatId);
+    if (!chatId) return;
+    joinedRooms.add(chatId);
+    if (!_socket) connectSocket();
+    _socket?.emit('join_conversation', chatId);
 }
 
 /** Leave a chat room. */
 export function leaveChat(chatId: string) {
-    _socket?.emit('leaveChat', chatId);
+    if (!chatId) return;
+    joinedRooms.delete(chatId);
+    _socket?.emit('leave_conversation', chatId);
 }
 
 /** Emit typing indicator to the chat room. */
 export function emitTyping(chatId: string) {
     _socket?.emit('typing', chatId);
+}
+
+export function emitConversationMessage(data: {
+    conversationId: string;
+    text: string;
+}) {
+    _socket?.emit('send_message', data);
 }
 
 /** Emit stop-typing to the chat room. */
@@ -62,6 +129,7 @@ export function emitStopTyping(chatId: string) {
 /** Listen for new messages in a room. Returns cleanup function. */
 export function onNewMessage(
     handler: (msg: {
+        conversationId: string;
         chatId: string;
         senderId: string;
         senderName: string;
@@ -69,14 +137,18 @@ export function onNewMessage(
         sentAt: string;
     }) => void
 ): () => void {
-    _socket?.on('new_message', handler);
-    return () => { _socket?.off('new_message', handler); };
+    messageHandlers.add(handler);
+    return () => {
+        messageHandlers.delete(handler);
+    };
 }
 
 /** Listen for typing events in a room. Returns cleanup function. */
 export function onTyping(
-    handler: (data: { userId: string; displayName: string }) => void
+    handler: (data: { conversationId?: string; userId: string; displayName: string }) => void
 ): () => void {
-    _socket?.on('typing', handler);
-    return () => { _socket?.off('typing', handler); };
+    typingHandlers.add(handler);
+    return () => {
+        typingHandlers.delete(handler);
+    };
 }

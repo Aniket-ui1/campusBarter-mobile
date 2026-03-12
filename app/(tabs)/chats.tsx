@@ -1,12 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
-import { FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { Avatar } from '@/components/ui/Avatar';
-import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
+import { type Conversation, chatApi } from '@/services/chatApi';
+import { onConversationUpdated } from '@/services/socketService';
 
 function formatTime(dateStr?: string): string {
     if (!dateStr) return '';
@@ -20,41 +20,105 @@ function formatTime(dateStr?: string): string {
 }
 
 export default function ChatsScreen() {
-    const { user } = useAuth();
     const router = useRouter();
-    const { chats } = useData();
+    const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [refreshing, setRefreshing] = useState(false);
 
-    const renderItem = ({ item, index }: { item: typeof chats[0]; index: number }) => {
-        const displayName = item.otherUserName || item.listingTitle || 'Chat';
+    const loadConversations = useCallback(async () => {
+        try {
+            setRefreshing(true);
+            const data = await chatApi.getConversations();
+            setConversations(data.conversations ?? []);
+        } catch {
+            // Silently fail — stale data is better than a crash
+        } finally {
+            setRefreshing(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        void loadConversations();
+    }, [loadConversations]);
+
+    // Real-time: update conversation preview when a new message arrives
+    useEffect(() => {
+        const unsub = onConversationUpdated((updated) => {
+            setConversations(prev =>
+                prev
+                    .map(c => c.conversationId === updated.conversationId
+                        ? { ...c, lastMessage: updated.lastMessage, lastMessageTime: updated.lastMessageTime, lastSenderId: updated.lastSenderId }
+                        : c
+                    )
+                    .sort((a, b) => {
+                        const ta = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
+                        const tb = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
+                        return tb - ta;
+                    })
+            );
+        });
+        return unsub;
+    }, []);
+
+    const confirmDelete = (convId: string, displayName: string) => {
+        Alert.alert(
+            'Delete this conversation?',
+            'This cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await chatApi.deleteConversation(convId);
+                            setConversations(prev => prev.filter(c => c.conversationId !== convId));
+                        } catch {
+                            Alert.alert('Delete failed', `Could not delete the conversation with ${displayName}.`);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    const renderItem = ({ item, index }: { item: Conversation; index: number }) => {
+        const displayName = item.otherUser?.name ?? 'Chat';
+        const unreadCount = item.unreadCount ?? 0;
         return (
             <Animated.View entering={FadeInDown.delay(index * 40).duration(300)}>
                 <Pressable
                     style={({ pressed }) => [styles.chatItem, pressed && { backgroundColor: AppColors.surface }]}
+                    onLongPress={() => confirmDelete(item.conversationId, displayName)}
                     onPress={() => router.push({
                         pathname: '/chat/[id]' as any,
                         params: {
-                            id: item.id,
+                            id: item.conversationId,
                             recipientName: displayName,
-                            recipientId: item.otherUserId ?? '',
+                            recipientId: item.otherUser?.id ?? '',
                         },
                     })}
                     accessibilityRole="button"
                     accessibilityLabel={`Chat with ${displayName}${item.lastMessage ? `, last message: ${item.lastMessage}` : ''}`}
                 >
                     <View style={styles.avatarWrap}>
-                        <Avatar name={displayName} size={52} />
+                        <Avatar name={displayName} uri={item.otherUser?.avatarUrl ?? undefined} size={52} />
                     </View>
                     <View style={styles.chatInfo}>
                         <View style={styles.chatTopRow}>
                             <Text style={styles.chatName} numberOfLines={1}>
                                 {displayName}
                             </Text>
-                            <Text style={styles.chatTime}>{formatTime(item.lastMessageAt)}</Text>
+                            <Text style={styles.chatTime}>{formatTime(item.lastMessageTime ?? undefined)}</Text>
                         </View>
                         <View style={styles.chatBottomRow}>
                             <Text style={styles.chatPreview} numberOfLines={1}>
                                 {item.lastMessage || `💬 New conversation`}
                             </Text>
+                            {unreadCount > 0 && (
+                                <View style={styles.unreadBadge}>
+                                    <Text style={styles.unreadBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                                </View>
+                            )}
                         </View>
                     </View>
                 </Pressable>
@@ -76,7 +140,7 @@ export default function ChatsScreen() {
                 </View>
             </View>
 
-            {chats.length === 0 ? (
+            {conversations.length === 0 ? (
                 <View style={styles.emptyWrap}>
                     <Text style={styles.emptyEmoji}>💬</Text>
                     <Text style={styles.emptyTitle}>No conversations yet</Text>
@@ -88,9 +152,11 @@ export default function ChatsScreen() {
                 </View>
             ) : (
                 <FlatList
-                    data={chats}
-                    keyExtractor={(item) => item.id}
+                    data={conversations}
+                    keyExtractor={(item) => item.conversationId}
                     renderItem={renderItem}
+                    refreshing={refreshing}
+                    onRefresh={loadConversations}
                     contentContainerStyle={styles.list}
                     showsVerticalScrollIndicator={false}
                 />
@@ -138,6 +204,16 @@ const styles = StyleSheet.create({
     chatTime: { fontSize: 12, color: AppColors.textMuted, fontWeight: '500' },
     chatBottomRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     chatPreview: { fontSize: 14, color: AppColors.textMuted, flex: 1, lineHeight: 20 },
+    unreadBadge: {
+        minWidth: 22,
+        height: 22,
+        paddingHorizontal: 6,
+        borderRadius: 11,
+        backgroundColor: AppColors.primary,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    unreadBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
 
     emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, paddingBottom: 80 },
     emptyEmoji: { fontSize: 56 },

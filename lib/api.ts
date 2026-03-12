@@ -6,13 +6,8 @@
 // Auth: every call attaches the Azure AD ID token stored in SecureStore.
 // Token is injected by AuthContext after login via setApiToken().
 // ─────────────────────────────────────────────────────────────
-import { Platform } from 'react-native';
-
-// On web development, use local CORS proxy (dev-proxy.js on port 3999).
-// On native or when EXPO_PUBLIC_API_URL is explicitly set, use that.
 const AZURE_URL = 'https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net';
-const API_BASE = process.env.EXPO_PUBLIC_API_URL
-    ?? (Platform.OS === 'web' && __DEV__ ? 'http://localhost:3999' : AZURE_URL);
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? AZURE_URL;
 
 // ── Token store ───────────────────────────────────────────────
 // AuthContext calls setApiToken(idToken) after login and
@@ -41,6 +36,17 @@ export function setDevUser(info: { id: string; email: string; name: string }) {
     _devUser = info;
 }
 
+function resolveAuthToken(): string | null {
+    if (_token) return _token;
+
+    // Web refresh fallback: recover token from localStorage when in-memory state is lost.
+    if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem('campusbarter_token');
+    }
+
+    return null;
+}
+
 async function apiFetch<T>(
     path: string,
     options: RequestInit = {}
@@ -50,12 +56,14 @@ async function apiFetch<T>(
         ...(options.headers as Record<string, string>),
     };
 
-    if (_token) {
-        headers['Authorization'] = `Bearer ${_token}`;
+    const token = resolveAuthToken();
+
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
 
         // When using a mock token (local dev), also send x-dev-* headers
         // so the backend dev bypass can identify the user without JWT.
-        if (_token.startsWith('mock-') && _devUser) {
+        if (token.startsWith('mock-') && _devUser) {
             headers['x-dev-user-id'] = _devUser.id;
             headers['x-dev-email'] = _devUser.email;
             headers['x-dev-name'] = _devUser.name;
@@ -99,12 +107,15 @@ export interface ApiMessage {
 
 export interface ApiChat {
     id: string;
+    conversationId?: string;
     listingId: string;
     listingTitle: string;
     lastMessageAt: string;
     lastMessage?: string;
+    unreadCount?: number;
     otherUserName?: string;
     otherUserId?: string;
+    otherUserAvatarUrl?: string;
     initiatorId?: string;
     listingOwnerId?: string;
 }
@@ -122,7 +133,13 @@ export interface ApiNotification {
 // ── Listings ──────────────────────────────────────────────────
 
 export async function getListings(): Promise<ApiListing[]> {
-    return apiFetch<ApiListing[]>('/api/v1/listings');
+    try {
+        return await apiFetch<ApiListing[]>('/api/v1/listings');
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+        return apiFetch<ApiListing[]>('/api/listings');
+    }
 }
 
 export async function createListing(data: {
@@ -132,41 +149,108 @@ export async function createListing(data: {
     credits: number;
     category?: string;
 }): Promise<string> {
-    const res = await apiFetch<{ id: string }>('/api/v1/listings', {
-        method: 'POST',
-        body: JSON.stringify(data),
-    });
-    return res.id;
+    try {
+        const res = await apiFetch<{ id: string }>('/api/v1/listings', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+        return res.id;
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+
+        const res = await apiFetch<{ id: string }>('/api/listings', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+        return res.id;
+    }
 }
 
 export async function closeListing(id: string): Promise<void> {
-    await apiFetch(`/api/v1/listings/${id}/close`, { method: 'PATCH' });
+    try {
+        await apiFetch(`/api/v1/listings/${id}/close`, { method: 'PATCH' });
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+        await apiFetch(`/api/listings/${id}/close`, { method: 'PATCH' });
+    }
 }
 
 export async function deleteListing(id: string): Promise<void> {
-    await apiFetch(`/api/v1/listings/${id}`, { method: 'DELETE' });
+    try {
+        await apiFetch(`/api/v1/listings/${id}`, { method: 'DELETE' });
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+        await apiFetch(`/api/listings/${id}`, { method: 'DELETE' });
+    }
 }
 
 // ── Chats ─────────────────────────────────────────────────────
 
-export async function getChats(): Promise<ApiChat[]> {
-    return apiFetch<ApiChat[]>('/api/v1/chats');
+export async function getChats(userId: string): Promise<ApiChat[]> {
+    try {
+        return await apiFetch<ApiChat[]>(`/api/v1/conversations/${userId}`);
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+
+        try {
+            return await apiFetch<ApiChat[]>('/api/v1/chats');
+        } catch {
+            return apiFetch<ApiChat[]>('/api/chats');
+        }
+    }
 }
 
 export async function startChat(
     listingId: string,
     listingTitle: string,
-    listingOwnerId?: string
+    otherUserId: string
 ): Promise<string> {
-    const res = await apiFetch<{ id: string }>('/api/v1/chats', {
-        method: 'POST',
-        body: JSON.stringify({ listingId, listingTitle, listingOwnerId }),
-    });
-    return res.id;
+    try {
+        const res = await apiFetch<{ conversationId: string }>('/api/v1/conversations', {
+            method: 'POST',
+            body: JSON.stringify({ listingId, listingTitle, otherUserId }),
+        });
+        return res.conversationId;
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404 && status !== 400) {
+            throw error;
+        }
+
+        // Backward-compatible fallback for older deployments.
+        try {
+            const legacy = await apiFetch<{ id: string }>('/api/v1/chats', {
+                method: 'POST',
+                body: JSON.stringify({ listingId, listingTitle, listingOwnerId: otherUserId }),
+            });
+            return legacy.id;
+        } catch {
+            const legacy = await apiFetch<{ id: string }>('/api/chats', {
+                method: 'POST',
+                body: JSON.stringify({ listingId, listingTitle, listingOwnerId: otherUserId }),
+            });
+            return legacy.id;
+        }
+    }
 }
 
-export async function getMessages(chatId: string): Promise<ApiMessage[]> {
-    return apiFetch<ApiMessage[]>(`/api/v1/chats/${chatId}/messages`);
+export async function getMessages(chatId: string, page = 1, limit = 30): Promise<ApiMessage[]> {
+    try {
+        return await apiFetch<ApiMessage[]>(`/api/v1/conversations/${chatId}/messages?page=${page}&limit=${limit}`);
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+
+        try {
+            return await apiFetch<ApiMessage[]>(`/api/v1/chats/${chatId}/messages`);
+        } catch {
+            return apiFetch<ApiMessage[]>(`/api/chats/${chatId}/messages`);
+        }
+    }
 }
 
 export async function sendMessage(
@@ -174,10 +258,69 @@ export async function sendMessage(
     text: string,
     recipientId?: string
 ): Promise<void> {
-    await apiFetch(`/api/v1/chats/${chatId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ text, recipientId }),
-    });
+    try {
+        await apiFetch(`/api/v1/conversations/${chatId}/messages`, {
+            method: 'POST',
+            body: JSON.stringify({ text, recipientId }),
+        });
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+
+        try {
+            await apiFetch(`/api/v1/chats/${chatId}/messages`, {
+                method: 'POST',
+                body: JSON.stringify({ text, recipientId }),
+            });
+        } catch {
+            await apiFetch(`/api/chats/${chatId}/messages`, {
+                method: 'POST',
+                body: JSON.stringify({ text, recipientId }),
+            });
+        }
+    }
+}
+
+export async function markChatRead(chatId: string, userId: string): Promise<void> {
+    try {
+        await apiFetch(`/api/v1/conversations/${chatId}/read/${userId}`, {
+            method: 'PUT',
+        });
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+
+        try {
+            await apiFetch(`/api/v1/chats/${chatId}/read`, {
+                method: 'PUT',
+            });
+        } catch {
+            await apiFetch(`/api/chats/${chatId}/read`, {
+                method: 'PUT',
+            });
+        }
+    }
+}
+
+export async function deleteChat(chatId: string, userId: string): Promise<void> {
+    try {
+        await apiFetch(`/api/v1/conversations/${chatId}/${userId}`, {
+            method: 'DELETE',
+        });
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+
+        try {
+            await apiFetch(`/api/v1/chats/${chatId}`, {
+                method: 'DELETE',
+            });
+        } catch {
+            await apiFetch(`/api/chats/${chatId}`, {
+                method: 'DELETE',
+            });
+        }
+    }
 }
 
 // ── Notifications ─────────────────────────────────────────────
@@ -283,7 +426,8 @@ export async function uploadImage(
     formData.append('image', { uri, type: mimeType, name: 'photo.jpg' } as unknown as Blob);
 
     const headers: Record<string, string> = {};
-    if (_token) headers['Authorization'] = `Bearer ${_token}`;
+    const token = resolveAuthToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const res = await fetch(`${API_BASE}/api/v1/upload`, {
         method: 'POST',

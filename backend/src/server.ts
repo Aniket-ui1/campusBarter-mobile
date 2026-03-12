@@ -4,30 +4,33 @@
 // Hosted on Azure App Service (Node 22, Linux)
 // ─────────────────────────────────────────────────────────────
 
-import http from 'http';
-import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
+import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { verifyAzureAdToken, requireRole } from './middleware/auth';
-import { auditLog, closePool } from './db';
+import helmet from 'helmet';
+import http from 'http';
+import { auditLog, closePool, getAuditLogEntries } from './db';
+import { requireRole, verifyAzureAdToken } from './middleware/auth';
 import { initSocketServer } from './socket';
 import { setIO } from './socketInstance';
 
 // Route handlers
-import { listingsRouter } from './routes/listings';
 import { chatsRouter } from './routes/chats';
-import { usersRouter } from './routes/users';
-import { healthRouter } from './routes/health';
-import { reviewsRouter } from './routes/reviews';
-import { notificationsRouter } from './routes/notifications';
+import { registerChatRoutes } from './routes/chat';
+import { conversationsRouter } from './routes/conversations';
 import { creditsRouter } from './routes/credits';
-import { uploadRouter } from './routes/upload';
-import { tokensRouter } from './routes/tokens';
+import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
+import { listingsRouter } from './routes/listings';
+import { notificationsRouter } from './routes/notifications';
+import { reviewsRouter } from './routes/reviews';
+import { tokensRouter } from './routes/tokens';
+import { uploadRouter } from './routes/upload';
+import { usersRouter } from './routes/users';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const isDevEnvironment = process.env.NODE_ENV === 'development';
 
 // ── Security Middleware ───────────────────────────────────────
 
@@ -60,15 +63,18 @@ app.use((_req, res, next) => {
     next();
 });
 
-// CORS — allow requests from the app bundle + dev proxy
+// CORS — allow app origin plus local development clients.
+const allowedOrigins: Array<string | RegExp> = [
+    'https://campusbarter.azurestaticapps.net',
+    'http://localhost:3999',
+    'http://localhost:8081',
+    'http://localhost:8082',
+    'http://localhost:8083',
+    /^exp:\/\/.*/,
+];
+
 app.use(cors({
-    origin: [
-        'https://campusbarter.azurestaticapps.net',
-        'http://localhost:3999',     // dev-proxy for web development
-        'http://localhost:8081',     // Metro bundler
-        'http://localhost:8083',     // Web dev server
-        /^exp:\/\/.*/,               // Expo Go
-    ],
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Authorization', 'Content-Type', 'x-dev-user-id', 'x-dev-email', 'x-dev-name', 'x-dev-role'],
     credentials: true,
@@ -107,6 +113,7 @@ app.use('/health', healthRouter);
 app.use('/api/v1', verifyAzureAdToken);
 app.use('/api/v1/listings', listingsRouter);
 app.use('/api/v1/chats', chatsRouter);
+app.use('/api/v1/conversations', conversationsRouter);
 app.use('/api/v1/users', usersRouter);
 app.use('/api/v1/reviews', reviewsRouter);
 app.use('/api/v1/notifications', notificationsRouter);
@@ -117,7 +124,13 @@ app.use('/api/v1/insights', insightsRouter);
 
 // Admin-only audit log
 app.get('/api/v1/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
-    res.json({ message: 'Audit log endpoint — Phase 6 implementation' });
+    try {
+        const limit = Math.max(1, Math.min(1000, Number(req.query.limit) || 200));
+        const logs = await getAuditLogEntries(limit);
+        res.json({ count: logs.length, logs });
+    } catch {
+        res.status(500).json({ error: 'Failed to fetch audit log entries' });
+    }
 });
 
 // ── Backward-Compatible Deprecated /api/* Routes ─────────────
@@ -133,6 +146,7 @@ app.use('/api', deprecationMiddleware);
 app.use('/api', verifyAzureAdToken);
 app.use('/api/listings', listingsRouter);
 app.use('/api/chats', chatsRouter);
+app.use('/api/conversations', conversationsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/reviews', reviewsRouter);
 app.use('/api/notifications', notificationsRouter);
@@ -142,7 +156,13 @@ app.use('/api/tokens', tokensRouter);
 app.use('/api/insights', insightsRouter);
 
 app.get('/api/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
-    res.json({ message: 'Audit log endpoint — Phase 6 implementation' });
+    try {
+        const limit = Math.max(1, Math.min(1000, Number(req.query.limit) || 200));
+        const logs = await getAuditLogEntries(limit);
+        res.json({ count: logs.length, logs });
+    } catch {
+        res.status(500).json({ error: 'Failed to fetch audit log entries' });
+    }
 });
 
 // ── Error Handler ────────────────────────────────────────────
@@ -158,6 +178,11 @@ app.use((err: Error, req: express.Request, res: express.Response, _next: express
 const httpServer = http.createServer(app);
 const io = initSocketServer(httpServer);
 setIO(io); // Register singleton so route files can emit without circular imports
+
+// ── Chat System v2 routes ─────────────────────────────────────
+// Registered AFTER http server is created so getIO() is available.
+// Mounts at both /api/chat/* and /api/v1/chat/* (see routes/chat.ts).
+registerChatRoutes(app);
 
 httpServer.listen(PORT, () => {
     console.log(`CampusBarter API + WebSocket running on port ${PORT}`);

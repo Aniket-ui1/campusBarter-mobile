@@ -6,20 +6,24 @@
 // Rooms: each chat room = chatId string.
 // ─────────────────────────────────────────────────────────────
 
-import { Server as SocketServer, Socket } from 'socket.io';
 import http from 'http';
 import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
+import { Socket, Server as SocketServer } from 'socket.io';
+import { canAccessChat } from './db';
 
 // ── JWKS client — must match auth.ts (CIAM tenant, NOT login.microsoftonline.com) ──
 const TENANT_ID = process.env.AZURE_AD_TENANT_ID ?? '';
 const CIAM_AUTHORITY = process.env.AZURE_AD_CIAM_AUTHORITY ?? `${TENANT_ID}.ciamlogin.com`;
+const TOKEN_ISSUER = `https://${TENANT_ID}.ciamlogin.com/${TENANT_ID}/v2.0`;
 
 const client = jwksClient({
     jwksUri: `https://${CIAM_AUTHORITY}/${TENANT_ID}/discovery/v2.0/keys`,
     cache: true,
     rateLimit: true,
 });
+
+const DEV_AUTH_ENABLED = process.env.ALLOW_DEV_AUTH === 'true';
 
 function getSigningKey(header: jwt.JwtHeader): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -61,7 +65,7 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
             }
 
             // ── Dev bypass — matches REST middleware in auth.ts ────
-            if (process.env.ALLOW_DEV_AUTH === 'true' || process.env.NODE_ENV === 'development') {
+            if (DEV_AUTH_ENABLED) {
                 if (token.startsWith('dev-') || token.startsWith('mock-')) {
                     const mockId = token.replace(/^(dev-|mock-)/, '');
                     socket.userId = mockId || 'mock-user-001';
@@ -79,7 +83,7 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
             const signingKey = await getSigningKey(decoded.header);
             const payload = jwt.verify(token, signingKey, {
                 audience: process.env.AZURE_AD_CLIENT_ID,
-                issuer: `https://${CIAM_AUTHORITY}/${TENANT_ID}/v2.0`,
+                issuer: TOKEN_ISSUER,
             }) as Record<string, string>;
 
             // CIAM controls who can authenticate — no additional email check needed.
@@ -94,31 +98,81 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
     // ── Connection handler ─────────────────────────────────────
     io.on('connection', (socket: AuthenticatedSocket) => {
         console.log(`[Socket] Connected: ${socket.userId} (${socket.displayName})`);
+        if (socket.userId) {
+            socket.join(`user:${socket.userId}`);
+        }
 
-        // Join a chat room — client sends { chatId }
-        socket.on('joinChat', (chatId: string) => {
-            if (!chatId?.trim()) return;
-            socket.join(chatId);
-            console.log(`[Socket] ${socket.userId} joined chat ${chatId}`);
-        });
+        const joinConversationRoom = async (conversationId: string) => {
+            try {
+                if (!conversationId?.trim()) return;
+                const allowed = await canAccessChat(conversationId, socket.userId!);
+                if (!allowed) {
+                    socket.emit('socket_error', { message: 'Access denied for this conversation' });
+                    return;
+                }
+                socket.join(conversationId);
+                console.log(`[Socket] ${socket.userId} joined conversation ${conversationId}`);
+            } catch {
+                socket.emit('socket_error', { message: 'Failed to join conversation' });
+            }
+        };
 
-        // Leave a chat room — client sends { chatId }
-        socket.on('leaveChat', (chatId: string) => {
-            if (!chatId?.trim()) return;
-            socket.leave(chatId);
-        });
+        socket.on('joinChat', joinConversationRoom);
+        socket.on('join_conversation', joinConversationRoom);
+
+        const leaveConversationRoom = (conversationId: string) => {
+            if (!conversationId?.trim()) return;
+            socket.leave(conversationId);
+        };
+
+        socket.on('leaveChat', leaveConversationRoom);
+        socket.on('leave_conversation', leaveConversationRoom);
 
         // Typing indicator — broadcast to everyone else in the room
-        socket.on('typing', (chatId: string) => {
-            socket.to(chatId).emit('typing', {
-                userId: socket.userId,
-                displayName: socket.displayName,
-            });
+        socket.on('typing', async (conversationId: string) => {
+            try {
+                if (!conversationId?.trim()) return;
+                const allowed = await canAccessChat(conversationId, socket.userId!);
+                if (!allowed) return;
+                const payload = {
+                    conversationId,
+                    userId: socket.userId,
+                    displayName: socket.displayName,
+                };
+                socket.to(conversationId).emit('typing', payload);
+                socket.to(conversationId).emit('user_typing', payload);
+            } catch {
+                // Ignore transient DB errors for typing events.
+            }
+        });
+
+        socket.on('send_message', async (data: { conversationId?: string; text?: string }) => {
+            const conversationId = data?.conversationId?.trim();
+            if (!conversationId) return;
+            try {
+                const allowed = await canAccessChat(conversationId, socket.userId!);
+                if (!allowed) return;
+                socket.to(conversationId).emit('receive_message', {
+                    ...data,
+                    conversationId,
+                    senderId: socket.userId,
+                    senderName: socket.displayName,
+                });
+            } catch {
+                // Ignore transient DB errors for socket-only message fanout.
+            }
         });
 
         // Stop typing — broadcast to everyone else in the room
-        socket.on('stop_typing', (chatId: string) => {
-            socket.to(chatId).emit('stop_typing', { userId: socket.userId });
+        socket.on('stop_typing', async (conversationId: string) => {
+            try {
+                if (!conversationId?.trim()) return;
+                const allowed = await canAccessChat(conversationId, socket.userId!);
+                if (!allowed) return;
+                socket.to(conversationId).emit('stop_typing', { conversationId, userId: socket.userId });
+            } catch {
+                // Ignore transient DB errors for typing events.
+            }
         });
 
         socket.on('disconnect', () => {

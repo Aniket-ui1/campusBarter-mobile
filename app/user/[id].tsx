@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { Avatar } from '@/components/ui/Avatar';
@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
+import { chatApi } from '@/services/chatApi';
 import { getUserById } from '@/lib/api';
 
 export default function UserProfileScreen() {
@@ -34,9 +35,24 @@ export default function UserProfileScreen() {
     const handleMessage = async () => {
         if (!currentUser || !id) return;
         try {
-            const chatId = await startChat('profile', `Chat with ${profile?.displayName || 'User'}`, [currentUser.id, id]);
-            router.push({ pathname: '/chat/[id]', params: { id: chatId } });
-        } catch { }
+            const conv = await chatApi.findOrCreate(id);
+            const convId = (conv as any)?.conversation?.conversationId ?? (conv as any)?.conversationId;
+            if (!convId) throw new Error('Invalid conversation response');
+            router.push({ pathname: '/chat/[id]', params: { id: convId } });
+        } catch {
+            try {
+                const listingForChat = userListings[0];
+                const legacyChatId = await startChat(
+                    listingForChat?.id ?? '',
+                    listingForChat?.title ?? `Chat with ${profile?.displayName || 'User'}`,
+                    [currentUser.id, id],
+                    id
+                );
+                router.push({ pathname: '/chat/[id]', params: { id: legacyChatId } });
+            } catch {
+                Alert.alert('Error', 'Could not start chat.');
+            }
+        }
     };
 
     if (loading) {

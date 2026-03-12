@@ -1,13 +1,14 @@
+import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
+import { AppColors, CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
+import { chatApi } from '@/services/chatApi';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
-import { Avatar } from '@/components/ui/Avatar';
-import { Button } from '@/components/ui/Button';
-import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
 
 export default function SkillDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -43,38 +44,92 @@ export default function SkillDetailScreen() {
     const handleRequest = async () => {
         if (!user) return;
         try {
-            // startChat now notifies the listing owner server-side
-            const chatId = await startChat(
-                listing.id,
-                listing.title,
-                [user.id, listing.userId],
-                listing.userId  // listingOwnerId → triggers skill request notification
-            );
+            const conv = await chatApi.findOrCreate(listing.userId);
+            const convId = (conv as any)?.conversation?.conversationId ?? (conv as any)?.conversationId;
+            if (!convId) throw new Error('Invalid conversation response');
             Alert.alert(
                 'Request Sent! 🎉',
                 `Your request for "${listing.title}" has been sent to ${listing.userName}. A chat has been started.`,
                 [
-                    { text: 'View Chat', onPress: () => router.push({ pathname: '/chat/[id]' as any, params: { id: chatId } }) },
+                    {
+                        text: 'View Chat',
+                        onPress: () => router.push({
+                            pathname: '/chat/[id]' as any,
+                            params: {
+                                id: convId,
+                                recipientId: listing.userId,
+                                recipientName: listing.userName,
+                            },
+                        }),
+                    },
                     { text: 'OK', style: 'cancel' },
                 ]
             );
         } catch {
-            Alert.alert('Error', 'Could not send request. Please try again.');
+            try {
+                const legacyChatId = await startChat(
+                    listing.id,
+                    listing.title,
+                    [user.id, listing.userId],
+                    listing.userId
+                );
+                Alert.alert(
+                    'Request Sent! 🎉',
+                    `Your request for "${listing.title}" has been sent to ${listing.userName}. A chat has been started.`,
+                    [
+                        {
+                            text: 'View Chat',
+                            onPress: () => router.push({
+                                pathname: '/chat/[id]' as any,
+                                params: {
+                                    id: legacyChatId,
+                                    recipientId: listing.userId,
+                                    recipientName: listing.userName,
+                                },
+                            }),
+                        },
+                        { text: 'OK', style: 'cancel' },
+                    ]
+                );
+            } catch {
+                Alert.alert('Error', 'Could not send request. Please try again.');
+            }
         }
     };
 
     const handleMessage = async () => {
         if (!user) return;
         try {
-            const chatId = await startChat(
-                listing.id,
-                listing.title,
-                [user.id, listing.userId],
-                listing.userId
-            );
-            router.push({ pathname: '/chat/[id]' as any, params: { id: chatId } });
+            const conv = await chatApi.findOrCreate(listing.userId);
+            const convId = (conv as any)?.conversation?.conversationId ?? (conv as any)?.conversationId;
+            if (!convId) throw new Error('Invalid conversation response');
+            router.push({
+                pathname: '/chat/[id]' as any,
+                params: {
+                    id: convId,
+                    recipientId: listing.userId,
+                    recipientName: listing.userName,
+                },
+            });
         } catch {
-            Alert.alert('Error', 'Could not start chat.');
+            try {
+                const legacyChatId = await startChat(
+                    listing.id,
+                    listing.title,
+                    [user.id, listing.userId],
+                    listing.userId
+                );
+                router.push({
+                    pathname: '/chat/[id]' as any,
+                    params: {
+                        id: legacyChatId,
+                        recipientId: listing.userId,
+                        recipientName: listing.userName,
+                    },
+                });
+            } catch {
+                Alert.alert('Error', 'Could not start chat.');
+            }
         }
     };
 

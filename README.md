@@ -12,7 +12,7 @@
 
 | Feature | Description |
 |---------|-------------|
-| 🔐 **SAIT Auth** | Microsoft Entra ID (Azure AD) — only `@edu.sait.ca` emails |
+| 🔐 **SAIT Auth** | Microsoft Entra ID (Azure AD) — only  emails |
 | 📦 **Listings** | Post skills you OFFER or REQUEST with Time Credits |
 | 💬 **Real-Time Chat** | Socket.io WebSocket messaging with typing indicators |
 | ⏱️ **Time Credits** | Earn by helping, spend by getting help — no real money |
@@ -90,11 +90,12 @@ Backend environment (set in Azure App Service → Configuration):
 
 | Variable | Description |
 |----------|-------------|
-| `SQL_CONNECTION_STRING` | Azure SQL connection string (from Key Vault) |
-| `JWT_SECRET` | Token signing secret (from Key Vault) |
+| `AZURE_SQL_CONNECTION_STRING` | Azure SQL connection string (from Key Vault) |
 | `AZURE_STORAGE_CONNECTION_STRING` | Blob storage connection string |
 | `AZURE_AD_TENANT_ID` | Microsoft Entra ID tenant |
+| `AZURE_AD_CIAM_AUTHORITY` | CIAM authority host (for example `25cf3e13-f550-42d6-b0a9-366ae872b929.ciamlogin.com`) |
 | `AZURE_AD_CLIENT_ID` | App registration client ID |
+| `ALLOW_DEV_AUTH` | Optional local-only dev bypass (`true` only with `NODE_ENV=development`) |
 | `PORT` | Server port (default: 3000) |
 
 ### 3. Run Locally
@@ -146,7 +147,7 @@ Full OpenAPI 3.1 spec: [`docs/openapi.yaml`](docs/openapi.yaml)
 | `GET` | `/api/v1/credits/balance` | ✅ | Credit balance |
 | `POST` | `/api/v1/upload` | ✅ | Upload image |
 
-> All authenticated endpoints require `Authorization: Bearer <Azure AD token>`
+> All authenticated endpoints require `Authorization: Bearer <Azure AD / CIAM JWT>`
 
 ---
 
