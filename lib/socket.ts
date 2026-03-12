@@ -15,7 +15,9 @@ export function connectSocket(): Socket {
     if (_socket?.connected) return _socket;
 
     _socket = io(getApiBase(), {
-        auth: { token: getApiToken() },
+        // Use a callback so socket.io reads the CURRENT token on every (re)connect,
+        // instead of capturing a stale/null value at construction time.
+        auth: (cb) => cb({ token: getApiToken() }),
         transports: ['websocket'],
         reconnectionAttempts: 5,
         reconnectionDelay: 2000,

@@ -81,7 +81,7 @@ export const useData = () => {
 // ── Provider ──────────────────────────────────────────────────────
 
 export const DataProvider = ({ children }: { children: React.ReactNode }) => {
-    const { user } = useAuth();
+    const { user, isLoading: authLoading } = useAuth();
     const [listings, setListings] = useState<Listing[]>([]);
     const [chats, setChats] = useState<Chat[]>([]);
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -101,11 +101,15 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, []);
 
+    // Only start fetching listings once auth has fully resolved (token restored from SecureStore).
+    // Without this gate, the very first fetch runs before the token is set, fails silently,
+    // and listings stay empty until the 30-second polling interval fires.
     useEffect(() => {
+        if (authLoading) return; // wait for auth to finish initialising
         void refreshListings();
         const id = setInterval(refreshListings, 30_000); // poll every 30s
         return () => clearInterval(id);
-    }, [refreshListings]);
+    }, [authLoading, refreshListings]);
 
     // ── Load chats ────────────────────────────────────────────────
     const refreshChats = useCallback(async () => {
@@ -119,8 +123,9 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     }, [user?.id]);
 
     useEffect(() => {
+        if (authLoading) return; // wait for auth to resolve before fetching user data
         void refreshChats();
-    }, [refreshChats]);
+    }, [authLoading, refreshChats]);
 
     // ── Load notifications ────────────────────────────────────────
     const refreshNotifications = useCallback(async () => {
@@ -134,10 +139,11 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     }, [user?.id]);
 
     useEffect(() => {
+        if (authLoading) return; // wait for auth to resolve before fetching user data
         void refreshNotifications();
         const id = setInterval(refreshNotifications, 60_000); // poll every 60s
         return () => clearInterval(id);
-    }, [refreshNotifications]);
+    }, [authLoading, refreshNotifications]);
 
     // ── Socket.io: listen for new messages ────────────────────────
     useEffect(() => {
@@ -174,6 +180,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const addListing = async (
         data: Omit<Listing, "id" | "createdAt" | "status"> & { category?: string }
     ) => {
+        // Let creation errors propagate to the caller (post screen shows Alert)
         await apiCreateListing({
             type: data.type,
             title: data.title,
@@ -181,7 +188,12 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
             credits: data.credits,
             category: data.category,
         });
-        await refreshListings(); // refresh feed immediately after posting
+        // Refresh is best-effort — if it fails, the 30s poll will pick up the listing
+        try {
+            await refreshListings();
+        } catch (e) {
+            console.warn("[Data] refreshListings after create failed:", e);
+        }
     };
 
     const getListingById = (id: string) => listings.find(l => l.id === id);

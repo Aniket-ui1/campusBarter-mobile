@@ -10,7 +10,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { verifyAzureAdToken, requireRole } from './middleware/auth';
-import { auditLog } from './db';
+import { auditLog, closePool } from './db';
 import { initSocketServer } from './socket';
 import { setIO } from './socketInstance';
 
@@ -162,6 +162,18 @@ setIO(io); // Register singleton so route files can emit without circular import
 httpServer.listen(PORT, () => {
     console.log(`CampusBarter API + WebSocket running on port ${PORT}`);
 });
+
+// ── Graceful shutdown ────────────────────────────────────────
+// Close the SQL pool cleanly when the process is terminated
+// (Azure App Service sends SIGTERM before restarting).
+async function shutdown() {
+    console.log('[Server] Shutting down…');
+    httpServer.close();
+    await closePool();
+    process.exit(0);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
 
 export default app;
 

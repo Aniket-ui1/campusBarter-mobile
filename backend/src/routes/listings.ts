@@ -63,9 +63,12 @@ listingsRouter.post('/', validate(createListingRules), async (req: Request, res:
         });
 
         res.status(201).json({ id, message: 'Listing created' });
-    } catch (err) {
+    } catch (err: any) {
         console.error('[Listings] POST / failed:', err);
-        res.status(500).json({ error: 'Failed to create listing' });
+        res.status(500).json({
+            error: 'Failed to create listing',
+            detail: err.message,
+        });
     }
 });
 

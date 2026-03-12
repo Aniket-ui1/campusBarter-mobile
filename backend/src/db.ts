@@ -53,20 +53,72 @@ export interface FSNotification {
 }
 
 // ── Connection Pool ──────────────────────────────────────────
-// Connection string is loaded from environment (set by Azure Key Vault via App Service)
+// Connection string is loaded from environment (set by Azure Key Vault via App Service).
+// Uses a singleton promise to prevent race conditions when multiple requests
+// call getPool() simultaneously during startup.
 
 let pool: sql.ConnectionPool | null = null;
+let poolPromise: Promise<sql.ConnectionPool> | null = null;
 
-export async function getPool(): Promise<sql.ConnectionPool> {
-    if (pool && pool.connected) return pool;
-
+async function createPool(): Promise<sql.ConnectionPool> {
     const connectionString = process.env.AZURE_SQL_CONNECTION_STRING;
     if (!connectionString) {
         throw new Error('AZURE_SQL_CONNECTION_STRING is not set. Check Azure Key Vault configuration.');
     }
 
-    pool = await sql.connect(connectionString);
-    return pool;
+    // Parse the connection string into a config object, then overlay our settings
+    const parsed = sql.ConnectionPool.parseConnectionString(connectionString);
+    const config: sql.config = {
+        ...parsed,
+        pool: { ...parsed.pool, max: 20, min: 2, idleTimeoutMillis: 30_000 },
+        options: { ...parsed.options, encrypt: true, trustServerCertificate: false },
+        connectionTimeout: 30_000,
+        requestTimeout: 30_000,
+    };
+
+    // Retry up to 3 times with exponential backoff
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const newPool = await new sql.ConnectionPool(config).connect();
+            console.log(`[DB] Connection pool created (attempt ${attempt})`);
+            return newPool;
+        } catch (err: any) {
+            lastError = err;
+            console.error(`[DB] Pool connection attempt ${attempt}/3 failed:`, err.message);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+        }
+    }
+    throw lastError!;
+}
+
+export async function getPool(): Promise<sql.ConnectionPool> {
+    // Fast path: pool already exists and is connected
+    if (pool?.connected) return pool;
+
+    // Singleton promise prevents concurrent callers from creating multiple pools
+    if (!poolPromise) {
+        poolPromise = createPool().then(p => {
+            pool = p;
+            // Reset promise if pool closes unexpectedly so next call reconnects
+            p.on('close', () => { pool = null; poolPromise = null; });
+            return p;
+        }).catch(err => {
+            poolPromise = null; // allow retry on next call
+            throw err;
+        });
+    }
+    return poolPromise;
+}
+
+/** Close the pool gracefully — call on SIGTERM/SIGINT */
+export async function closePool(): Promise<void> {
+    if (pool) {
+        await pool.close();
+        pool = null;
+        poolPromise = null;
+        console.log('[DB] Connection pool closed');
+    }
 }
 
 // ── Audit Logging ────────────────────────────────────────────
@@ -101,33 +153,49 @@ export async function auditLog(
 
 /**
  * Upsert a user row — called automatically by auth middleware on every request.
- * Uses MERGE so it's safe to call repeatedly (idempotent).
  * This ensures the userId Foreign Key always exists before any INSERT into
  * Listings, Chats, Messages, Reviews, etc.
+ *
+ * IMPORTANT: Matches on EMAIL (not id) because the same person can have different
+ * ids depending on login method (Azure AD OID vs mock id). Email is the stable
+ * identifier. Returns the DB user's id so the caller can use it for FK references.
  */
 export async function ensureUserExists(user: {
     id: string;
     email: string;
     displayName: string;
     role?: string;
-}): Promise<void> {
+}): Promise<string> {
     try {
         const db = await getPool();
-        await db.request()
+
+        // Match on email (UNIQUE) — handles Azure AD login vs mock login for the same person.
+        // WHEN MATCHED: update display name + last login (user already exists).
+        // WHEN NOT MATCHED: insert new user row.
+        // OUTPUT: always return the actual DB id (may differ from the input id).
+        const result = await db.request()
             .input('id', sql.NVarChar(128), user.id)
             .input('email', sql.NVarChar(256), user.email)
             .input('displayName', sql.NVarChar(128), user.displayName || 'SAIT Student')
             .input('role', sql.NVarChar(20), user.role || 'Student')
             .query(`
                 MERGE Users AS target
-                USING (SELECT @id AS id) AS source ON target.id = source.id
+                USING (SELECT @email AS email) AS source ON target.email = source.email
+                WHEN MATCHED THEN
+                    UPDATE SET displayName = @displayName, lastLoginAt = GETUTCDATE()
                 WHEN NOT MATCHED THEN
                     INSERT (id, email, displayName, role, credits)
-                    VALUES (@id, @email, @displayName, @role, 10);
+                    VALUES (@id, @email, @displayName, @role, 10)
+                OUTPUT inserted.id;
             `);
+
+        // Return the actual DB user id
+        return result.recordset?.[0]?.id ?? user.id;
     } catch (err: any) {
-        // Non-fatal — log but don't crash the request
+        // This MUST propagate — if the user row isn't created, every subsequent
+        // INSERT (listings, chats, messages) will fail with a FK violation.
         console.error('[DB] ensureUserExists failed:', err.message);
+        throw err;
     }
 }
 

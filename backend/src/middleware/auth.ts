@@ -10,10 +10,15 @@ import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import { ensureUserExists } from '../db';
 
-// CIAM JWKS endpoint — Entra External ID (CIAM) tokens use the tenant ID as the
-// subdomain in the issuer claim, NOT the friendly name.
-// Real token issuer:  https://{tenantId}.ciamlogin.com/{tenantId}/v2.0
-// Using tenant name:  https://campusbarter.ciamlogin.com/{tenantId}/v2.0  ← WRONG
+// CIAM JWKS endpoint — Entra External ID (CIAM) uses a separate tenant for identity.
+//
+// Two-tenant setup (by design):
+//   Default tenant   → infrastructure (App Service, SQL, Key Vault)
+//   CIAM tenant      → identity (App Registration, users, auth flows)
+//
+// Token issuer always uses tenant-ID form:
+//   ✅ https://{tenantId}.ciamlogin.com/{tenantId}/v2.0
+//   ❌ https://campusbarter.ciamlogin.com/{tenantId}/v2.0  (friendly name — wrong for issuer)
 const TENANT_ID = process.env.AZURE_AD_TENANT_ID ?? '';
 const CIAM_AUTHORITY = process.env.AZURE_AD_CIAM_AUTHORITY ?? `${TENANT_ID}.ciamlogin.com`;
 const client = jwksClient({
@@ -44,6 +49,25 @@ declare global {
 }
 
 /**
+ * Helper: upsert user row or return 500. Returns true on success.
+ * Also overrides req.user.id with the actual DB id — this is critical because
+ * mock login generates a different id than Azure AD for the same person.
+ * The DB matches on email (UNIQUE) and returns the real id.
+ */
+async function upsertOrFail(req: Request, res: Response): Promise<boolean> {
+    try {
+        const dbId = await ensureUserExists(req.user!);
+        // Override with the DB's id — may differ from token id (mock vs Azure AD)
+        req.user!.id = dbId;
+        return true;
+    } catch (err: any) {
+        console.error('[Auth] ensureUserExists failed — cannot proceed:', err.message);
+        res.status(500).json({ error: 'Failed to provision user record. Please try again.' });
+        return false;
+    }
+}
+
+/**
  * Middleware: Verify Azure AD JWT token on every request.
  * Sets req.user if valid. Returns 401 if missing/invalid.
  */
@@ -67,7 +91,7 @@ export async function verifyAzureAdToken(
                 displayName: (req.headers['x-dev-name'] as string) || 'Dev User',
                 role: ((req.headers['x-dev-role'] as string) || 'Student') as 'Student' | 'Moderator' | 'Admin',
             };
-            await ensureUserExists(req.user);
+            if (!await upsertOrFail(req, res)) return;
             return next();
         }
 
@@ -80,7 +104,7 @@ export async function verifyAzureAdToken(
                 displayName: 'Dev User',
                 role: 'Student',
             };
-            await ensureUserExists(req.user);
+            if (!await upsertOrFail(req, res)) return;
             return next();
         }
 
@@ -93,7 +117,7 @@ export async function verifyAzureAdToken(
                 displayName: 'Mock User',
                 role: 'Student',
             };
-            await ensureUserExists(req.user);
+            if (!await upsertOrFail(req, res)) return;
             return next();
         }
     }
@@ -119,17 +143,12 @@ export async function verifyAzureAdToken(
                 console.error('[Auth] JWT verification failed:', err.message);
 
                 // ── Dev-mode expired-token recovery ───────────────
-                // When ALLOW_DEV_AUTH is true and the token is expired (but otherwise
-                // structurally valid), decode it anyway and allow the request.
-                // This prevents "listings disappeared" bugs during testing when
-                // the user's Azure AD token expires mid-session.
                 if (
                     (process.env.ALLOW_DEV_AUTH === 'true' || process.env.NODE_ENV === 'development') &&
                     err.name === 'TokenExpiredError'
                 ) {
                     console.warn('[Auth] ⚠️  Token expired — allowing anyway because ALLOW_DEV_AUTH is enabled');
                     try {
-                        // Decode without verification to extract user claims
                         const payload = jwt.decode(token) as Record<string, string> | null;
                         if (payload) {
                             const email = payload.preferred_username || payload.email || (payload as any).emails?.[0] || '';
@@ -139,7 +158,7 @@ export async function verifyAzureAdToken(
                                 displayName: payload.name || payload.given_name || email.split('@')[0] || 'User',
                                 role: (payload['campusbarter_role'] as 'Student' | 'Moderator' | 'Admin') ?? 'Student',
                             };
-                            await ensureUserExists(req.user);
+                            if (!await upsertOrFail(req, res)) return;
                             return next();
                         }
                     } catch (decodeErr) {
@@ -165,7 +184,7 @@ export async function verifyAzureAdToken(
             };
 
             // Ensure user row exists in SQL before any FK-constrained insert
-            await ensureUserExists(req.user);
+            if (!await upsertOrFail(req, res)) return;
             next();
         }
     );

@@ -11,9 +11,12 @@ import http from 'http';
 import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 
-// ── JWKS client (same config as auth middleware) ──────────────
+// ── JWKS client — must match auth.ts (CIAM tenant, NOT login.microsoftonline.com) ──
+const TENANT_ID = process.env.AZURE_AD_TENANT_ID ?? '';
+const CIAM_AUTHORITY = process.env.AZURE_AD_CIAM_AUTHORITY ?? `${TENANT_ID}.ciamlogin.com`;
+
 const client = jwksClient({
-    jwksUri: `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/discovery/v2.0/keys`,
+    jwksUri: `https://${CIAM_AUTHORITY}/${TENANT_ID}/discovery/v2.0/keys`,
     cache: true,
     rateLimit: true,
 });
@@ -48,7 +51,6 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
     });
 
     // ── Authentication middleware (runs on every connect) ─────
-    // Rejects any connection that doesn't send a valid Bearer token
     io.use(async (socket: AuthenticatedSocket, next) => {
         try {
             const token = (socket.handshake.auth as Record<string, string>)?.token
@@ -58,7 +60,17 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
                 return next(new Error('Authentication required'));
             }
 
-            // Decode header to get kid (key ID) for JWKS lookup
+            // ── Dev bypass — matches REST middleware in auth.ts ────
+            if (process.env.ALLOW_DEV_AUTH === 'true' || process.env.NODE_ENV === 'development') {
+                if (token.startsWith('dev-') || token.startsWith('mock-')) {
+                    const mockId = token.replace(/^(dev-|mock-)/, '');
+                    socket.userId = mockId || 'mock-user-001';
+                    socket.displayName = 'Dev User';
+                    return next();
+                }
+            }
+
+            // ── Production: strict CIAM JWT verification ──────────
             const decoded = jwt.decode(token, { complete: true });
             if (!decoded || typeof decoded === 'string') {
                 return next(new Error('Invalid token format'));
@@ -67,18 +79,12 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
             const signingKey = await getSigningKey(decoded.header);
             const payload = jwt.verify(token, signingKey, {
                 audience: process.env.AZURE_AD_CLIENT_ID,
-                issuer: `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/v2.0`,
+                issuer: `https://${CIAM_AUTHORITY}/${TENANT_ID}/v2.0`,
             }) as Record<string, string>;
 
-            // Enforce SAIT email
-            const email = payload.preferred_username || payload.email || '';
-            if (!email.endsWith('@sait.ca') && !email.endsWith('@edu.sait.ca')) {
-                return next(new Error('Access restricted to SAIT users'));
-            }
-
-            // Attach user info to socket for use in event handlers
-            socket.userId = payload.oid;
-            socket.displayName = payload.name;
+            // CIAM controls who can authenticate — no additional email check needed.
+            socket.userId = payload.oid || payload.sub;
+            socket.displayName = payload.name || 'User';
             next();
         } catch {
             next(new Error('Invalid or expired token'));
