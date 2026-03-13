@@ -38,9 +38,7 @@ import {
     useState,
 } from "react";
 import azureConfig from "../config/azureConfig";
-import { db } from "../lib/firebase";
-import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from "firebase/firestore";
-import { setApiToken, clearApiToken, registerPushToken } from "../lib/api";
+import { setApiToken, clearApiToken, setDevUser, registerPushToken, upsertUserProfile, getUserById, updateMyProfile } from "../lib/api";
 import { connectSocket, disconnectSocket } from "../lib/socket";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -116,6 +114,7 @@ interface AuthContextType {
 // ── Constants ─────────────────────────────────────────────────────
 
 const AUTH_KEY = "campusbarter_user";
+const TOKEN_KEY = "campusbarter_token";
 
 // ── Context ───────────────────────────────────────────────────────
 
@@ -143,35 +142,27 @@ function decodeJwtPayload(token: string): Record<string, any> {
     return JSON.parse(jsonPayload);
 }
 
-// ── Firestore helpers ──────────────────────────────────────────────
+// ── Azure API user profile helper ─────────────────────────────────
 
-/** Creates the Firestore /users/{id} doc on first login (non-destructive) */
-async function upsertFirestoreUser(user: User) {
-    try {
-        const ref = doc(db, "users", user.id);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) {
-            await setDoc(ref, {
-                displayName: user.displayName,
-                email: user.email,
-                bio: user.bio ?? "",
-                credits: user.credits,
-                program: user.program ?? "",
-                major: user.major ?? "",
-                semester: user.semester ?? 1,
-                rating: user.rating ?? 0,
-                reviewCount: user.reviewCount ?? 0,
-                skills: user.skills ?? [],
-                weaknesses: user.weaknesses ?? [],
-                interests: user.interests ?? [],
-                profileComplete: user.profileComplete ?? false,
-                avatarUrl: user.avatarUrl ?? "",
-                createdAt: serverTimestamp(),
-            });
-        }
-    } catch (e) {
-        console.warn("Firestore upsert failed (offline?):", e);
-    }
+/** Syncs user profile to Azure API (best-effort — may fail for mock login) */
+async function syncUserToApi(user: User) {
+    await upsertUserProfile({
+        id: user.id,
+        displayName: user.displayName,
+        email: user.email,
+        bio: user.bio ?? "",
+        credits: user.credits,
+        program: user.program ?? "",
+        major: user.major ?? "",
+        semester: user.semester ?? 1,
+        rating: user.rating ?? 0,
+        reviewCount: user.reviewCount ?? 0,
+        skills: user.skills ?? [],
+        weaknesses: user.weaknesses ?? [],
+        interests: user.interests ?? [],
+        profileComplete: user.profileComplete ?? false,
+        avatarUrl: user.avatarUrl ?? "",
+    });
 }
 
 /** Build a User object, keeping name and displayName in sync */
@@ -230,6 +221,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         parsed.profileComplete = false;
                     }
                     setUser(parsed);
+
+                    // Restore API token so Azure API calls work after reload
+                    const savedToken = await storage.getItem(TOKEN_KEY);
+                    if (savedToken) {
+                        setApiToken(savedToken);
+
+                        // Web refresh recovery: restore mock user headers too.
+                        // Without this, a persisted mock token can fail API auth after reload.
+                        if (savedToken.startsWith('mock-')) {
+                            setDevUser({
+                                id: parsed.id,
+                                email: parsed.email,
+                                name: parsed.displayName || parsed.name || 'SAIT Student',
+                            });
+                        }
+
+                        connectSocket();
+
+                        // Validate restored session once; if token is no longer valid,
+                        // clear stale local session so the app doesn't appear signed in
+                        // while all posting/listing APIs fail with 401.
+                        try {
+                            await getUserById(parsed.id);
+                        } catch (error) {
+                            if ((error as { status?: number }).status === 401) {
+                                setUser(null);
+                                await storage.deleteItem(AUTH_KEY);
+                                await storage.deleteItem(TOKEN_KEY);
+                                clearApiToken();
+                                disconnectSocket();
+                            }
+                        }
+                    }
                 }
             } catch (e) {
                 console.warn("Could not restore session:", e);
@@ -242,18 +266,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const persistUser = async (u: User, idToken?: string) => {
         setUser(u);
         await storage.setItem(AUTH_KEY, JSON.stringify(u));
-        await upsertFirestoreUser(u);
-        // Wire up Azure API + socket if we have a real Microsoft token
+
+        // Wire up Azure API + socket BEFORE syncing (so headers are present)
         if (idToken) {
             setApiToken(idToken);
+            await storage.setItem(TOKEN_KEY, idToken);
             connectSocket();
-            // Register push token (best effort — ignore failure)
+        }
+
+        // Ensure user is synced to SQL before proceding (crucial for foreign key)
+        try {
+            await syncUserToApi(u);
+        } catch (e) {
+            console.error("[Auth] User sync failed:", e);
+        }
+
+        // Register push token (best effort — ignore failure)
+        if (idToken) {
             try {
                 const Notifications = await import('expo-notifications');
                 const { status } = await Notifications.requestPermissionsAsync();
                 if (status === 'granted') {
                     const tokenRes = await Notifications.getExpoPushTokenAsync();
-                    await registerPushToken(tokenRes.data).catch(() => { });
+                    const expoPushToken = tokenRes.data;
+                    const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
+                    // Register with both old endpoint (legacy) and new chat v2 endpoint
+                    await registerPushToken(expoPushToken).catch(() => { });
+                    const { chatApi } = await import('../services/chatApi');
+                    await chatApi.registerPushToken(expoPushToken, platform).catch(() => { });
                 }
             } catch { /* push not available on web / simulator */ }
         }
@@ -268,11 +308,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (!isSaitEmail(email)) { alert("Only SAIT student emails (@sait.ca / @edu.sait.ca) are allowed."); return; }
             const userId = "mock-" + email.toLowerCase().trim().replace(/[^a-z0-9]/g, "-");
 
-            // Restore existing profile from Firestore if it exists
+            // Generate mock token with "mock-" prefix so backend dev bypass accepts it
+            const mockToken = `mock-${userId}`;
+            setApiToken(mockToken);
+            setDevUser({ id: userId, email: email.toLowerCase().trim(), name: 'SAIT Student' });
+
+            // Restore existing profile from Azure API if it exists
             let existingProfile: any = null;
             try {
-                const snap = await getDoc(doc(db, "users", userId));
-                if (snap.exists()) existingProfile = snap.data();
+                existingProfile = await getUserById(userId);
             } catch (e) {
                 console.warn("Could not check existing profile:", e);
             }
@@ -295,7 +339,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     reviewCount: existingProfile?.reviewCount ?? 0,
                 }
             );
-            await persistUser(u);
+            await persistUser(u, mockToken);
             router.replace("/(tabs)");
         } finally {
             setIsLoading(false);
@@ -312,7 +356,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     ? crypto.randomUUID()
                     : Math.random().toString(36).slice(2);
             const u = makeUser(id, name, email.toLowerCase().trim());
-            await persistUser(u);
+            const mockToken = `mock-${id}`;
+            setDevUser({ id, email: email.toLowerCase().trim(), name });
+            await persistUser(u, mockToken);
             router.replace("/(tabs)");
         } finally {
             setIsLoading(false);
@@ -322,6 +368,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const logout = async () => {
         setUser(null);
         await storage.deleteItem(AUTH_KEY);
+        await storage.deleteItem(TOKEN_KEY);
         clearApiToken();
         disconnectSocket();
         router.replace("/(auth)/sign-in");
@@ -349,7 +396,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 major: data.major,
                 semester: data.semester,
             });
-            await persistUser(u);
+            const mockToken = `mock-${id}`;
+            setDevUser({ id, email: data.email.toLowerCase().trim(), name: data.displayName });
+            await persistUser(u, mockToken);
             router.replace("/(tabs)");
         } finally {
             setIsLoading(false);
@@ -374,7 +423,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         };
         await persistUser(updated);
         try {
-            await updateDoc(doc(db, "users", user.id), {
+            await updateMyProfile({
                 ...(updates.displayName ? { displayName: updates.displayName } : {}),
                 ...(updates.bio !== undefined ? { bio: updates.bio } : {}),
                 ...(updates.program ? { program: updates.program } : {}),
@@ -386,7 +435,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 ...(updates.avatarUrl !== undefined ? { avatarUrl: updates.avatarUrl } : {}),
             });
         } catch (e) {
-            console.warn("Firestore profile update failed:", e);
+            console.warn("API profile update failed:", e);
         }
     };
 
@@ -399,21 +448,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         interests: string[];
     }) => {
         if (!user) return;
-        const updated: User = {
-            ...user,
-            ...data,
-            profileComplete: true,
-        };
-        await persistUser(updated);
+        setIsLoading(true);
         try {
-            await updateDoc(doc(db, "users", user.id), {
+            const updated: User = {
+                ...user,
                 ...data,
                 profileComplete: true,
-            });
-        } catch (e) {
-            console.warn("Firestore completeProfile failed:", e);
+            };
+            await persistUser(updated);
+            try {
+                await updateMyProfile({
+                    ...data,
+                    profileComplete: true,
+                });
+            } catch (e) {
+                console.warn("API completeProfile failed:", e);
+            }
+            router.replace("/(tabs)");
+        } finally {
+            setIsLoading(false);
         }
-        router.replace("/(tabs)");
     };
 
     // ── Microsoft Entra ID login ──────────────────────────────────
@@ -469,25 +523,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 const claims = decodeJwtPayload(idToken);
                 const email: string = claims.preferred_username ?? claims.email ?? "";
 
-                if (!isSaitEmail(email)) {
-                    throw new Error(`Only @sait.ca and @edu.sait.ca accounts are allowed. Got: ${email}`);
-                }
+                // CIAM controls who can authenticate — trust any user who passes OAuth
+                // No additional email domain check needed here
 
                 const userId = claims.oid ?? claims.sub ?? "azure-user-id";
                 const displayName = claims.name ?? "SAIT Student";
                 const userEmail = email.toLowerCase().trim();
 
-                // Check if user already has a complete profile in Firestore
+                // Set the API token BEFORE any API calls
+                setApiToken(idToken);
+
+                // Check if user already has a complete profile in Azure API
                 let existingProfile: any = null;
                 try {
-                    const snap = await getDoc(doc(db, "users", userId));
-                    if (snap.exists()) existingProfile = snap.data();
+                    existingProfile = await getUserById(userId);
                 } catch (e) {
                     console.warn("Could not check existing profile:", e);
                 }
 
                 const u = makeUser(userId, displayName, userEmail, {
-                    bio: existingProfile?.bio ?? "SAIT student ready to barter!",
+                    bio: existingProfile?.bio ?? "CampusBarter student ready to trade skills!",
                     program: existingProfile?.program ?? "",
                     major: existingProfile?.major ?? "",
                     semester: existingProfile?.semester ?? 1,

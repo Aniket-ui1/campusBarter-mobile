@@ -8,7 +8,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test": "npm run test:backend",
+    "test:backend": "npm --prefix backend run test"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -33,7 +35,6 @@
     "expo-symbols": "~1.0.8",
     "expo-system-ui": "~6.0.9",
     "expo-web-browser": "~15.0.10",
-    "firebase": "^12.10.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-native": "0.84.1",

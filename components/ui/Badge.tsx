@@ -18,7 +18,7 @@ const VARIANT_MAP = {
 export function Badge({ label, variant = 'primary' }: Props) {
     const v = VARIANT_MAP[variant];
     return (
-        <View style={[styles.badge, { backgroundColor: v.bg }]}>
+        <View style={[styles.badge, { backgroundColor: v.bg }]} accessibilityLabel={label} accessibilityRole="text">
             <Text style={[styles.text, { color: v.text }]}>{label}</Text>
         </View>
     );

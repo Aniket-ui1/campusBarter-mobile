@@ -4,6 +4,7 @@ import React from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
+import { chatApi } from "../../services/chatApi";
 
 export default function ListingDetail() {
     const { id } = useLocalSearchParams();
@@ -20,7 +21,7 @@ export default function ListingDetail() {
         );
     }
 
-    const handleContact = () => {
+    const handleContact = async () => {
         if (!user) {
             Alert.alert("Login Required", "You must be logged in to chat.");
             return;
@@ -30,8 +31,19 @@ export default function ListingDetail() {
             return;
         }
 
-        const chatId = startChat(listing.id, listing.title, [user.id, listing.userId]);
-        router.push(`/chat/${chatId}`);
+        try {
+            const conv = await chatApi.findOrCreate(listing.userId);
+            const convId = (conv as any)?.conversation?.conversationId ?? (conv as any)?.conversationId;
+            if (!convId) throw new Error('Invalid conversation response');
+            router.push(`/chat/${convId}`);
+        } catch {
+            try {
+                const legacyChatId = await startChat(listing.id, listing.title, [user.id, listing.userId], listing.userId);
+                router.push(`/chat/${legacyChatId}`);
+            } catch {
+                Alert.alert("Error", "Could not start chat.");
+            }
+        }
     };
 
     return (

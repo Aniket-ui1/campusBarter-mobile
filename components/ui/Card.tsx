@@ -48,6 +48,8 @@ export function Card({
     return (
         <Pressable
             onPress={onPress}
+            accessibilityRole="button"
+            accessibilityLabel={`${title} by ${userName}, ${credits} credits`}
             style={({ pressed }) => [
                 styles.card,
                 pressed && { opacity: 0.92, transform: [{ scale: 0.985 }] },
@@ -66,7 +68,10 @@ export function Card({
                         <View style={styles.nameRow}>
                             <Text style={styles.userName}>{userName}</Text>
                             {availability && (
-                                <View style={[styles.availDot, { backgroundColor: AVAIL_DOT[availability] }]} />
+                                <View
+                                    style={[styles.availDot, { backgroundColor: AVAIL_DOT[availability] }]}
+                                    accessibilityLabel={`Status: ${availability}`}
+                                />
                             )}
                         </View>
                         {createdAt ? (
@@ -74,7 +79,7 @@ export function Card({
                         ) : null}
                     </View>
                     {/* Credit pill */}
-                    <View style={styles.creditPill}>
+                    <View style={styles.creditPill} accessibilityLabel={`${credits} credits`}>
                         <Text style={styles.creditIcon}>🪙</Text>
                         <Text style={styles.creditText}>{credits}</Text>
                     </View>
@@ -97,7 +102,7 @@ export function Card({
                             </View>
                         )}
                         {(rating ?? 0) > 0 && (
-                            <View style={styles.ratingRow}>
+                            <View style={styles.ratingRow} accessibilityLabel={`Rating ${rating?.toFixed(1)} out of 5`}>
                                 <Ionicons name="star" size={12} color="#F59E0B" />
                                 <Text style={styles.ratingText}>{rating?.toFixed(1)}</Text>
                             </View>
@@ -108,6 +113,8 @@ export function Card({
                         <Pressable
                             style={({ pressed }) => [styles.connectBtn, pressed && { opacity: 0.85 }]}
                             onPress={onConnect}
+                            accessibilityRole="button"
+                            accessibilityLabel={`View ${title}`}
                         >
                             <Text style={styles.connectText}>View</Text>
                             <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />

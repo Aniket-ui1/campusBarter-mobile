@@ -1,0 +1,632 @@
+openapi: 3.1.0
+info:
+  title: CampusBarter API
+  description: |
+    REST API for the CampusBarter skill-trading platform.
+    All authenticated endpoints require a valid Azure AD Bearer token.
+  version: 1.0.0
+  contact:
+    name: CampusBarter Team
+    url: https://github.com/Aniket-ui1/campusBarter-mobile
+
+servers:
+  - url: https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net
+    description: Production (Azure App Service)
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Listings
+    description: Create, browse, and manage listings
+  - name: Chats
+    description: Real-time messaging
+  - name: Users
+    description: User profiles and authentication
+  - name: Reviews
+    description: User reviews and ratings
+  - name: Notifications
+    description: Push and in-app notifications
+  - name: Credits
+    description: Time credits balance and transfers
+  - name: Insights
+    description: Leaderboard, market insights, and exchanges
+  - name: Upload
+    description: Image upload to Azure Blob Storage
+  - name: Admin
+    description: Admin-only endpoints
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Azure AD ID token
+
+  schemas:
+    Listing:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [OFFER, REQUEST] }
+        title: { type: string }
+        description: { type: string }
+        credits: { type: integer }
+        userId: { type: string }
+        userName: { type: string }
+        status: { type: string, enum: [OPEN, CLOSED] }
+        createdAt: { type: string, format: date-time }
+
+    Message:
+      type: object
+      properties:
+        id: { type: string }
+        senderId: { type: string }
+        senderName: { type: string }
+        text: { type: string }
+        sentAt: { type: string, format: date-time }
+
+    Chat:
+      type: object
+      properties:
+        id: { type: string }
+        listingId: { type: string }
+        listingTitle: { type: string }
+        lastMessageAt: { type: string, format: date-time }
+        lastMessage: { type: string }
+
+    UserProfile:
+      type: object
+      properties:
+        id: { type: string }
+        displayName: { type: string }
+        email: { type: string }
+        bio: { type: string }
+        credits: { type: integer }
+        role: { type: string, enum: [Student, Moderator, Admin] }
+        rating: { type: number }
+        reviewCount: { type: integer }
+        avatarUrl: { type: string }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string }
+        title: { type: string }
+        body: { type: string }
+        read: { type: boolean }
+        relatedId: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    Review:
+      type: object
+      properties:
+        id: { type: string }
+        reviewerId: { type: string }
+        revieweeId: { type: string }
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns API status. Used by Azure Monitor — no auth required.
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  timestamp: { type: string }
+                  uptime: { type: number }
+
+  /api/v1/listings:
+    get:
+      tags: [Listings]
+      summary: Get all open listings
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Array of open listings
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Listing' }
+        '401': { description: Unauthorized }
+
+    post:
+      tags: [Listings]
+      summary: Create a new listing
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, title, description, credits]
+              properties:
+                type: { type: string, enum: [OFFER, REQUEST] }
+                title: { type: string, maxLength: 200 }
+                description: { type: string, maxLength: 2000 }
+                credits: { type: integer, minimum: 1 }
+      responses:
+        '201':
+          description: Listing created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  message: { type: string }
+        '422': { description: Validation errors }
+
+  /api/v1/listings/{id}/close:
+    patch:
+      tags: [Listings]
+      summary: Close a listing
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Listing closed }
+        '401': { description: Unauthorized }
+
+  /api/v1/listings/{id}:
+    delete:
+      tags: [Listings]
+      summary: Delete a listing (Moderator/Admin only)
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Listing deleted }
+        '403': { description: Forbidden — insufficient role }
+
+  /api/v1/chats:
+    get:
+      tags: [Chats]
+      summary: Get user's chats
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Array of chats
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Chat' }
+
+    post:
+      tags: [Chats]
+      summary: Start a new chat
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [listingId, listingTitle]
+              properties:
+                listingId: { type: string }
+                listingTitle: { type: string }
+      responses:
+        '201':
+          description: Chat created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+
+  /api/v1/chats/{chatId}/messages:
+    get:
+      tags: [Chats]
+      summary: Get messages for a chat
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: chatId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Array of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Message' }
+
+    post:
+      tags: [Chats]
+      summary: Send a message
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: chatId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 2000 }
+                recipientId: { type: string }
+      responses:
+        '200': { description: Message sent }
+
+  /api/v1/users/me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+
+    patch:
+      tags: [Users]
+      summary: Update current user profile
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName: { type: string }
+                bio: { type: string, maxLength: 500 }
+      responses:
+        '200': { description: Profile updated }
+
+    put:
+      tags: [Users]
+      summary: Upsert user profile (create or update)
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserProfile' }
+      responses:
+        '200': { description: Profile upserted }
+
+  /api/v1/users/{userId}:
+    get:
+      tags: [Users]
+      summary: Get user by ID
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfile' }
+        '404': { description: User not found }
+
+  /api/v1/users:
+    get:
+      tags: [Users]
+      summary: Get all users (Admin)
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Array of user profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UserProfile' }
+
+  /api/v1/reviews/{userId}:
+    get:
+      tags: [Reviews]
+      summary: Get reviews for a user
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Array of reviews
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Review' }
+
+  /api/v1/reviews:
+    post:
+      tags: [Reviews]
+      summary: Leave a review
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revieweeId, rating, comment]
+              properties:
+                revieweeId: { type: string }
+                rating: { type: integer, minimum: 1, maximum: 5 }
+                comment: { type: string, maxLength: 1000 }
+      responses:
+        '201': { description: Review created }
+        '422': { description: Validation errors }
+
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: Get user notifications
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Array of notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Notification' }
+
+  /api/v1/notifications/{id}/read:
+    put:
+      tags: [Notifications]
+      summary: Mark notification as read
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Notification marked as read }
+
+  /api/v1/notifications/read-all:
+    put:
+      tags: [Notifications]
+      summary: Mark all notifications as read
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200': { description: All notifications marked as read }
+
+  /api/v1/credits/balance:
+    get:
+      tags: [Credits]
+      summary: Get credit balance
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Credit balance
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId: { type: string }
+                  balance: { type: integer }
+
+  /api/v1/credits/history:
+    get:
+      tags: [Credits]
+      summary: Get credit transaction history
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Transaction history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  page: { type: integer }
+                  transactions: { type: array }
+
+  /api/v1/credits/transfer:
+    post:
+      tags: [Credits]
+      summary: Transfer credits to another user
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [toUserId, amount, reason]
+              properties:
+                toUserId: { type: string }
+                amount: { type: integer, minimum: 1 }
+                reason: { type: string, maxLength: 500 }
+      responses:
+        '200': { description: Transfer successful }
+        '400': { description: Cannot transfer to yourself }
+        '402': { description: Insufficient credits }
+
+  /api/v1/insights/leaderboard:
+    get:
+      tags: [Insights]
+      summary: Get weekly leaderboard
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Top 10 helpers this week
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    displayName: { type: string }
+                    avatarUrl: { type: string }
+                    weeklyCredits: { type: integer }
+
+  /api/v1/insights/market:
+    get:
+      tags: [Insights]
+      summary: Get market insights
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Market analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trendingThisWeek: { type: array }
+                  mostWantedCategories: { type: array }
+                  avgCreditsByType: { type: array }
+                  totalListings: { type: integer }
+                  totalExchanges: { type: integer }
+
+  /api/v1/insights/exchange:
+    post:
+      tags: [Insights]
+      summary: Create a QR exchange
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [listingId, sellerId, credits]
+              properties:
+                listingId: { type: string }
+                sellerId: { type: string }
+                credits: { type: integer, minimum: 1 }
+      responses:
+        '201':
+          description: Exchange created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qrCode: { type: string }
+
+  /api/v1/insights/exchange/confirm:
+    post:
+      tags: [Insights]
+      summary: Confirm a QR exchange
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [qrCode]
+              properties:
+                qrCode: { type: string }
+      responses:
+        '200':
+          description: Exchange confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  credits: { type: integer }
+                  otherParty: { type: string }
+        '400': { description: Invalid exchange code }
+
+  /api/v1/upload:
+    post:
+      tags: [Upload]
+      summary: Upload an image
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Image uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string }
+
+  /api/v1/tokens/push:
+    post:
+      tags: [Users]
+      summary: Register push notification token
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200': { description: Token registered }
+
+  /api/v1/admin/audit-log:
+    get:
+      tags: [Admin]
+      summary: Get audit log (Admin only)
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: array
+        '403': { description: Forbidden — Admin role required }

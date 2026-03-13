@@ -1,9 +1,10 @@
 // backend/src/routes/reviews.ts
 
-import { Router, Request, Response } from 'express';
+import { Request, Response, Router } from 'express';
 import { body, param } from 'express-validator';
+import { createReview, getReviews, hasCompletedExchangeBetweenUsers } from '../db';
 import { validate } from '../middleware/validate';
-import { createReview, getReviews } from '../db';
+import { notifyReview } from '../notifyEvent';
 
 export const reviewsRouter = Router();
 
@@ -24,7 +25,17 @@ reviewsRouter.post('/', validate(createReviewRules), async (req: Request, res: R
             return;
         }
 
+        const hasExchange = await hasCompletedExchangeBetweenUsers(req.user!.id, revieweeId.trim());
+        if (!hasExchange) {
+            res.status(403).json({ error: 'You can only review users after a completed exchange' });
+            return;
+        }
+
         const id = await createReview(req.user!.id, revieweeId.trim(), Number(rating), comment);
+
+        // Notify reviewee (fire-and-forget)
+        notifyReview(revieweeId.trim(), req.user!.displayName, Number(rating));
+
         res.status(201).json({ id, message: 'Review submitted' });
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to create review';

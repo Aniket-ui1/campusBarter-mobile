@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head><title>Token Check</title></head>
+<body>
+<h1>Check Frontend Token</h1>
+<p>Open your app at http://localhost:8083</p>
+<p>Then open browser DevTools Console and paste:</p>
+<pre style="background:#f5f5f5;padding:10px;border-radius:4px;">
+// Check what token is being sent
+fetch('http://localhost:8083', {credentials: 'include'})
+  .then(() => {
+    console.log('localStorage token:', localStorage.getItem('campusbarter_token'));
+  });
+
+// Try creating a listing manually
+const token = localStorage.getItem('campusbarter_token');
+console.log('Token:', token);
+
+fetch('https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net/api/v1/listings', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  },
+  body: JSON.stringify({
+    type: 'OFFER',
+    title: 'Test from Console',
+    description: 'Testing API call with stored token',
+    credits: 1
+  })
+})
+.then(r => r.json())
+.then(data => console.log('Response:', data))
+.catch(err => console.error('Error:', err));
+</pre>
+<p><strong>Expected token format:</strong> <code>mock-mock-user@sait.ca</code> or <code>mock-&lt;userId&gt;</code></p>
+<p>If the token is NOT prefixed with <code>mock-</code>, that's your problem!</p>
+</body>
+</html>

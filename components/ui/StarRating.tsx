@@ -19,7 +19,7 @@ export function StarRating({ rating, size = 14, showValue = true, maxStars = 5 }
     }
 
     return (
-        <View style={styles.row}>
+        <View style={styles.row} accessibilityLabel={`Rating: ${rating.toFixed(1)} out of ${maxStars} stars`} accessibilityRole="text">
             {stars}
             {showValue && <Text style={[styles.value, { fontSize: size - 1 }]}>{rating.toFixed(1)}</Text>}
         </View>

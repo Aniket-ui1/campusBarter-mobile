@@ -1,12 +1,12 @@
 // backend/src/routes/listings.ts
 // RBAC: Students create/close their own. Moderators close any. Admins full access.
 
-import { Router, Request, Response } from 'express';
+import { Request, Response, Router } from 'express';
 import { body, param } from 'express-validator';
-import { validate } from '../middleware/validate';
-import { requireRole } from '../middleware/auth';
-import { getOpenListings, createListing, closeListing, deleteListing } from '../db';
+import { closeListing, closeListingAsStaff, createListing, deleteListing, deleteListingAsStaff, getOpenListings } from '../db';
 import { runSmartMatching } from '../matcher';
+import { requireRole } from '../middleware/auth';
+import { validate } from '../middleware/validate';
 
 export const listingsRouter = Router();
 
@@ -15,8 +15,13 @@ listingsRouter.get('/', async (req: Request, res: Response) => {
     try {
         const listings = await getOpenListings();
         res.json(listings);
-    } catch {
-        res.status(500).json({ error: 'Failed to fetch listings' });
+    } catch (err: any) {
+        console.error('[Listings] GET / failed:', err);
+        res.status(500).json({
+            error: 'Failed to fetch listings',
+            details: err.message,
+            v: '1.0.4'
+        });
     }
 });
 
@@ -28,6 +33,7 @@ const createListingRules = [
     body('description').trim().notEmpty().withMessage('Description is required')
         .isLength({ max: 2000 }).withMessage('Description max 2000 characters'),
     body('credits').isInt({ min: 1 }).withMessage('Credits must be a positive integer'),
+    body('category').optional().trim().isLength({ max: 64 }).withMessage('Category max 64 characters'),
 ];
 
 listingsRouter.post('/', validate(createListingRules), async (req: Request, res: Response) => {
@@ -41,6 +47,7 @@ listingsRouter.post('/', validate(createListingRules), async (req: Request, res:
             credits: Number(credits),
             userId: req.user!.id,
             userName: req.user!.displayName,
+            category: req.body.category, // Pass category
         });
 
         // ── Smart Matching ──────────────────────────────────
@@ -56,8 +63,12 @@ listingsRouter.post('/', validate(createListingRules), async (req: Request, res:
         });
 
         res.status(201).json({ id, message: 'Listing created' });
-    } catch {
-        res.status(500).json({ error: 'Failed to create listing' });
+    } catch (err: any) {
+        console.error('[Listings] POST / failed:', err);
+        res.status(500).json({
+            error: 'Failed to create listing',
+            detail: err.message,
+        });
     }
 });
 
@@ -68,7 +79,11 @@ const listingIdRule = [
 
 listingsRouter.patch('/:id/close', validate(listingIdRule), async (req: Request, res: Response) => {
     try {
-        await closeListing(req.params.id, req.user!.id);
+        if (req.user!.role === 'Moderator' || req.user!.role === 'Admin') {
+            await closeListingAsStaff(req.params.id, req.user!.id);
+        } else {
+            await closeListing(req.params.id, req.user!.id);
+        }
         res.json({ message: 'Listing closed' });
     } catch {
         res.status(500).json({ error: 'Failed to close listing' });
@@ -78,8 +93,12 @@ listingsRouter.patch('/:id/close', validate(listingIdRule), async (req: Request,
 // DELETE /api/listings/:id — Moderators and Admins only
 listingsRouter.delete('/:id', requireRole('Moderator', 'Admin'), validate(listingIdRule), async (req: Request, res: Response) => {
     try {
-        await deleteListing(req.params.id, req.user!.id);
-        res.json({ message: 'Listing deleted' });;
+        if (req.user!.role === 'Moderator' || req.user!.role === 'Admin') {
+            await deleteListingAsStaff(req.params.id, req.user!.id);
+        } else {
+            await deleteListing(req.params.id, req.user!.id);
+        }
+        res.json({ message: 'Listing deleted' });
     } catch {
         res.status(500).json({ error: 'Failed to delete listing' });
     }

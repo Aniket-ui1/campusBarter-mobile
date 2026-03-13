@@ -8,6 +8,7 @@
 // Connection string stored in Azure Key Vault → AzureSqlConnectionString
 // ─────────────────────────────────────────────────────────────
 
+import crypto from 'crypto';
 import sql from 'mssql';
 
 // ── Types (same as firestore.ts) ─────────────────────────────
@@ -22,6 +23,7 @@ export interface FSListing {
     userName: string;
     createdAt: string;
     status: 'OPEN' | 'CLOSED';
+    category?: string;
 }
 
 export interface FSMessage {
@@ -38,6 +40,7 @@ export interface FSChat {
     participants: string[];
     lastMessageAt: string;
     lastMessage?: string;
+    unreadCount?: number;
 }
 
 export interface FSNotification {
@@ -51,20 +54,72 @@ export interface FSNotification {
 }
 
 // ── Connection Pool ──────────────────────────────────────────
-// Connection string is loaded from environment (set by Azure Key Vault via App Service)
+// Connection string is loaded from environment (set by Azure Key Vault via App Service).
+// Uses a singleton promise to prevent race conditions when multiple requests
+// call getPool() simultaneously during startup.
 
 let pool: sql.ConnectionPool | null = null;
+let poolPromise: Promise<sql.ConnectionPool> | null = null;
 
-export async function getPool(): Promise<sql.ConnectionPool> {
-    if (pool && pool.connected) return pool;
-
+async function createPool(): Promise<sql.ConnectionPool> {
     const connectionString = process.env.AZURE_SQL_CONNECTION_STRING;
     if (!connectionString) {
         throw new Error('AZURE_SQL_CONNECTION_STRING is not set. Check Azure Key Vault configuration.');
     }
 
-    pool = await sql.connect(connectionString);
-    return pool;
+    // Parse the connection string into a config object, then overlay our settings
+    const parsed = sql.ConnectionPool.parseConnectionString(connectionString);
+    const config: sql.config = {
+        ...parsed,
+        pool: { ...parsed.pool, max: 20, min: 2, idleTimeoutMillis: 30_000 },
+        options: { ...parsed.options, encrypt: true, trustServerCertificate: false },
+        connectionTimeout: 30_000,
+        requestTimeout: 30_000,
+    };
+
+    // Retry up to 3 times with exponential backoff
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const newPool = await new sql.ConnectionPool(config).connect();
+            console.log(`[DB] Connection pool created (attempt ${attempt})`);
+            return newPool;
+        } catch (err: any) {
+            lastError = err;
+            console.error(`[DB] Pool connection attempt ${attempt}/3 failed:`, err.message);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+        }
+    }
+    throw lastError!;
+}
+
+export async function getPool(): Promise<sql.ConnectionPool> {
+    // Fast path: pool already exists and is connected
+    if (pool?.connected) return pool;
+
+    // Singleton promise prevents concurrent callers from creating multiple pools
+    if (!poolPromise) {
+        poolPromise = createPool().then(p => {
+            pool = p;
+            // Reset promise if pool closes unexpectedly so next call reconnects
+            p.on('close', () => { pool = null; poolPromise = null; });
+            return p;
+        }).catch(err => {
+            poolPromise = null; // allow retry on next call
+            throw err;
+        });
+    }
+    return poolPromise;
+}
+
+/** Close the pool gracefully — call on SIGTERM/SIGINT */
+export async function closePool(): Promise<void> {
+    if (pool) {
+        await pool.close();
+        pool = null;
+        poolPromise = null;
+        console.log('[DB] Connection pool closed');
+    }
 }
 
 // ── Audit Logging ────────────────────────────────────────────
@@ -95,21 +150,84 @@ export async function auditLog(
     }
 }
 
+// ── Users ─────────────────────────────────────────────────────
+
+/**
+ * Upsert a user row — called automatically by auth middleware on every request.
+ * This ensures the userId Foreign Key always exists before any INSERT into
+ * Listings, Chats, Messages, Reviews, etc.
+ *
+ * IMPORTANT: Matches on EMAIL (not id) because the same person can have different
+ * ids depending on login method (Azure AD OID vs mock id). Email is the stable
+ * identifier. Returns the DB user's id so the caller can use it for FK references.
+ */
+export async function ensureUserExists(user: {
+    id: string;
+    email: string;
+    displayName: string;
+    role?: string;
+}): Promise<string> {
+    try {
+        const db = await getPool();
+
+        // Match on email (UNIQUE) — handles Azure AD login vs mock login for the same person.
+        // WHEN MATCHED: update display name + last login (user already exists).
+        // WHEN NOT MATCHED: insert new user row.
+        // OUTPUT: always return the actual DB id (may differ from the input id).
+        const result = await db.request()
+            .input('id', sql.NVarChar(128), user.id)
+            .input('email', sql.NVarChar(256), user.email)
+            .input('displayName', sql.NVarChar(128), user.displayName || 'SAIT Student')
+            .input('role', sql.NVarChar(20), user.role || 'Student')
+            .query(`
+                MERGE Users AS target
+                USING (SELECT @email AS email) AS source ON target.email = source.email
+                WHEN MATCHED THEN
+                    UPDATE SET displayName = @displayName, lastLoginAt = GETUTCDATE()
+                WHEN NOT MATCHED THEN
+                    INSERT (id, email, displayName, role, credits)
+                    VALUES (@id, @email, @displayName, @role, 10)
+                OUTPUT inserted.id;
+            `);
+
+        // Return the actual DB user id
+        return result.recordset?.[0]?.id ?? user.id;
+    } catch (err: any) {
+        // This MUST propagate — if the user row isn't created, every subsequent
+        // INSERT (listings, chats, messages) will fail with a FK violation.
+        console.error('[DB] ensureUserExists failed:', err.message);
+        throw err;
+    }
+}
+
 // ── Listings ─────────────────────────────────────────────────
 
 export async function getOpenListings(): Promise<FSListing[]> {
     const db = await getPool();
-    const result = await db.request().query(`
-        SELECT id, type, title, description, credits, userId, userName,
-               createdAt, status
-        FROM   Listings
-        WHERE  status = 'OPEN'
-        ORDER  BY createdAt DESC
-    `);
-    return result.recordset.map((row: Record<string, unknown>) => ({
-        ...row,
-        createdAt: (row.createdAt as Date).toISOString(),
-    } as FSListing));
+    try {
+        const result = await db.request().query(`
+            SELECT id AS id, 
+                   type AS type, 
+                   title AS title, 
+                   description AS description, 
+                   credits AS credits, 
+                   userId AS userId, 
+                   userName AS userName,
+                   category AS category,
+                   createdAt AS createdAt, 
+                   status AS status
+            FROM   Listings
+            WHERE  status = 'OPEN'
+            ORDER  BY createdAt DESC
+        `);
+        return result.recordset.map((row: Record<string, unknown>) => ({
+            ...row,
+            createdAt: row.createdAt ? new Date(row.createdAt as any).toISOString() : new Date().toISOString(),
+        } as FSListing));
+    } catch (err: any) {
+        console.error(`[DB] Failed to fetch open listings:`, err.message);
+        throw err;
+    }
 }
 
 export async function createListing(
@@ -120,20 +238,31 @@ export async function createListing(
     if (!data.description?.trim()) throw new Error('Description is required');
     if (data.credits < 1) throw new Error('Credits must be at least 1');
 
+    console.log(`[DB] Creating listing for user ${data.userId} (userName: ${data.userName})`);
     const db = await getPool();
     const id = crypto.randomUUID();
-    await db.request()
-        .input('id', sql.NVarChar(128), id)
-        .input('type', sql.NVarChar(10), data.type)
-        .input('title', sql.NVarChar(200), data.title.trim())
-        .input('description', sql.NVarChar(2000), data.description.trim())
-        .input('credits', sql.Int, data.credits)
-        .input('userId', sql.NVarChar(128), data.userId)
-        .input('userName', sql.NVarChar(128), data.userName)
-        .query(`
-            INSERT INTO Listings (id, type, title, description, credits, userId, userName)
-            VALUES (@id, @type, @title, @description, @credits, @userId, @userName)
-        `);
+    try {
+        await db.request()
+            .input('id', sql.NVarChar(128), id)
+            .input('type', sql.NVarChar(10), data.type)
+            .input('title', sql.NVarChar(200), data.title.trim())
+            .input('description', sql.NVarChar(2000), data.description.trim())
+            .input('credits', sql.Int, data.credits)
+            .input('userId', sql.NVarChar(128), data.userId)
+            .input('userName', sql.NVarChar(128), data.userName)
+            .input('category', sql.NVarChar(64), data.category || null)
+            .query(`
+                INSERT INTO Listings (id, type, title, description, credits, userId, userName, category)
+                VALUES (@id, @type, @title, @description, @credits, @userId, @userName, @category)
+            `);
+        console.log(`[DB] Successfully created listing ${id}`);
+    } catch (err: any) {
+        console.error(`[DB] Failed to create listing:`, err.message);
+        if (err.message.includes('FOREIGN KEY')) {
+            console.error(`[DB] CRITICAL: User ${data.userId} does not exist in Users table!`);
+        }
+        throw err;
+    }
 
     await auditLog(data.userId, 'CREATE_LISTING', `Listing:${id}`);
     return id;
@@ -151,6 +280,17 @@ export async function closeListing(listingId: string, userId: string): Promise<v
     await auditLog(userId, 'CLOSE_LISTING', `Listing:${listingId}`);
 }
 
+export async function closeListingAsStaff(listingId: string, actorUserId: string): Promise<void> {
+    const db = await getPool();
+    await db.request()
+        .input('id', sql.NVarChar(128), listingId)
+        .query(`
+            UPDATE Listings SET status = 'CLOSED', updatedAt = GETUTCDATE()
+            WHERE id = @id
+        `);
+    await auditLog(actorUserId, 'CLOSE_LISTING_STAFF', `Listing:${listingId}`);
+}
+
 export async function deleteListing(listingId: string, userId: string): Promise<void> {
     const db = await getPool();
     await db.request()
@@ -162,6 +302,16 @@ export async function deleteListing(listingId: string, userId: string): Promise<
     await auditLog(userId, 'DELETE_LISTING', `Listing:${listingId}`);
 }
 
+export async function deleteListingAsStaff(listingId: string, actorUserId: string): Promise<void> {
+    const db = await getPool();
+    await db.request()
+        .input('id', sql.NVarChar(128), listingId)
+        .query(`
+            DELETE FROM Listings WHERE id = @id
+        `);
+    await auditLog(actorUserId, 'DELETE_LISTING_STAFF', `Listing:${listingId}`);
+}
+
 // ── Messages ─────────────────────────────────────────────────
 
 export async function getMessages(chatId: string): Promise<FSMessage[]> {
@@ -169,15 +319,122 @@ export async function getMessages(chatId: string): Promise<FSMessage[]> {
     const result = await db.request()
         .input('chatId', sql.NVarChar(128), chatId)
         .query(`
-            SELECT id, senderId, text, timestamp
-            FROM   Messages
-            WHERE  chatId = @chatId
-            ORDER  BY timestamp ASC
+            SELECT m.id, m.senderId, m.text, m.timestamp,
+                   COALESCE(u.displayName, m.senderId) AS senderName
+            FROM   Messages m
+            LEFT JOIN Users u ON u.id = m.senderId
+            WHERE  m.chatId = @chatId
+            ORDER  BY m.timestamp ASC
         `);
     return result.recordset.map((row: Record<string, unknown>) => ({
-        ...row,
-        timestamp: (row.timestamp as Date).toISOString(),
-    } as FSMessage));
+        id: row.id as string,
+        senderId: row.senderId as string,
+        senderName: row.senderName as string,
+        text: row.text as string,
+        sentAt: (row.timestamp as Date).toISOString(),
+    } as unknown as FSMessage));
+}
+
+export async function getMessagesPage(chatId: string, page = 1, limit = 30): Promise<FSMessage[]> {
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(Math.max(1, limit), 100);
+    const offset = (safePage - 1) * safeLimit;
+    const db = await getPool();
+    const result = await db.request()
+        .input('chatId', sql.NVarChar(128), chatId)
+        .input('offset', sql.Int, offset)
+        .input('limit', sql.Int, safeLimit)
+        .query(`
+            SELECT m.id, m.senderId, m.text, m.timestamp,
+                   COALESCE(u.displayName, m.senderId) AS senderName
+            FROM   Messages m
+            LEFT JOIN Users u ON u.id = m.senderId
+            WHERE  m.chatId = @chatId
+            ORDER  BY m.timestamp DESC, m.id DESC
+            OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+        `);
+    return result.recordset.map((row: Record<string, unknown>) => ({
+        id: row.id as string,
+        senderId: row.senderId as string,
+        senderName: row.senderName as string,
+        text: row.text as string,
+        sentAt: (row.timestamp as Date).toISOString(),
+    } as unknown as FSMessage));
+}
+
+let hasInitiatorColumn: boolean | null = null;
+let chatUserStateEnsured = false;
+
+function buildConversationId(userA: string, userB: string): string {
+    const [leftUserId, rightUserId] = [userA, userB].sort((left, right) => left.localeCompare(right));
+    return `${leftUserId}_${rightUserId}`;
+}
+
+async function ensureChatUserStateTable(): Promise<void> {
+    if (chatUserStateEnsured) return;
+
+    const db = await getPool();
+    await db.request().query(`
+        IF NOT EXISTS (
+            SELECT * FROM sys.objects
+            WHERE object_id = OBJECT_ID(N'[dbo].[ChatUserState]') AND type in (N'U')
+        )
+        BEGIN
+            CREATE TABLE ChatUserState (
+                chatId      NVARCHAR(128) NOT NULL REFERENCES Chats(id) ON DELETE CASCADE,
+                userId      NVARCHAR(128) NOT NULL REFERENCES Users(id),
+                lastReadAt  DATETIME2 NULL,
+                hiddenAt    DATETIME2 NULL,
+                PRIMARY KEY (chatId, userId)
+            );
+
+            CREATE INDEX IX_ChatUserState_UserId ON ChatUserState(userId, hiddenAt, lastReadAt);
+        END
+    `);
+
+    chatUserStateEnsured = true;
+}
+
+async function chatsTableHasInitiatorId(): Promise<boolean> {
+    if (hasInitiatorColumn !== null) return hasInitiatorColumn;
+
+    const db = await getPool();
+    const result = await db.request().query(`
+        SELECT 1 AS hasColumn
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = 'Chats' AND COLUMN_NAME = 'initiatorId'
+    `);
+
+    hasInitiatorColumn = result.recordset.length > 0;
+    return hasInitiatorColumn;
+}
+
+export async function canAccessChat(chatId: string, userId: string): Promise<boolean> {
+    await ensureChatUserStateTable();
+    const db = await getPool();
+    const hasInitiator = await chatsTableHasInitiatorId();
+    const initiatorCheck = hasInitiator ? 'OR c.initiatorId = @userId' : '';
+
+    const result = await db.request()
+        .input('chatId', sql.NVarChar(128), chatId)
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`
+            SELECT TOP 1 1 AS allowed
+            FROM Chats c
+            LEFT JOIN Listings l ON l.id = c.listingId
+            LEFT JOIN ChatParticipants cp ON cp.chatId = c.id AND cp.userId = @userId
+                        LEFT JOIN ChatUserState cus ON cus.chatId = c.id AND cus.userId = @userId
+            WHERE c.id = @chatId
+              AND (
+                    cp.userId IS NOT NULL
+                    OR l.userId = @userId
+                    ${initiatorCheck}
+                    OR c.id IN (SELECT DISTINCT chatId FROM Messages WHERE senderId = @userId)
+                  )
+                            AND (cus.hiddenAt IS NULL OR cus.chatId IS NULL)
+        `);
+
+    return result.recordset.length > 0;
 }
 
 export async function sendMessage(
@@ -187,9 +444,9 @@ export async function sendMessage(
 ): Promise<void> {
     if (!text?.trim()) throw new Error('Message cannot be empty');
 
+    await ensureChatUserStateTable();
     const db = await getPool();
     const msgId = crypto.randomUUID();
-    const now = new Date();
 
     await db.request()
         .input('id', sql.NVarChar(128), msgId)
@@ -203,9 +460,83 @@ export async function sendMessage(
             UPDATE Chats
             SET lastMessageAt = GETUTCDATE(), lastMessage = @text
             WHERE id = @chatId;
+
+            MERGE ChatUserState AS target
+            USING (
+                SELECT cp.chatId, cp.userId
+                FROM ChatParticipants cp
+                WHERE cp.chatId = @chatId
+            ) AS source
+            ON target.chatId = source.chatId AND target.userId = source.userId
+            WHEN MATCHED THEN
+                UPDATE SET
+                    hiddenAt = NULL,
+                    lastReadAt = CASE
+                        WHEN source.userId = @senderId THEN GETUTCDATE()
+                        ELSE target.lastReadAt
+                    END
+            WHEN NOT MATCHED THEN
+                INSERT (chatId, userId, lastReadAt, hiddenAt)
+                VALUES (
+                    source.chatId,
+                    source.userId,
+                    CASE WHEN source.userId = @senderId THEN GETUTCDATE() ELSE NULL END,
+                    NULL
+                );
         `);
 
     await auditLog(senderId, 'SEND_MESSAGE', `Chat:${chatId}`);
+}
+
+export async function markChatAsRead(chatId: string, userId: string): Promise<void> {
+    await ensureChatUserStateTable();
+    const db = await getPool();
+    await db.request()
+        .input('chatId', sql.NVarChar(128), chatId)
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`
+            MERGE ChatUserState AS target
+            USING (SELECT @chatId AS chatId, @userId AS userId) AS source
+            ON target.chatId = source.chatId AND target.userId = source.userId
+            WHEN MATCHED THEN
+                UPDATE SET lastReadAt = GETUTCDATE(), hiddenAt = NULL
+            WHEN NOT MATCHED THEN
+                INSERT (chatId, userId, lastReadAt, hiddenAt)
+                VALUES (@chatId, @userId, GETUTCDATE(), NULL);
+        `);
+}
+
+export async function hideChatForUser(chatId: string, userId: string): Promise<void> {
+    await ensureChatUserStateTable();
+    const db = await getPool();
+    await db.request()
+        .input('chatId', sql.NVarChar(128), chatId)
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`
+            MERGE ChatUserState AS target
+            USING (SELECT @chatId AS chatId, @userId AS userId) AS source
+            ON target.chatId = source.chatId AND target.userId = source.userId
+            WHEN MATCHED THEN
+                UPDATE SET hiddenAt = GETUTCDATE()
+            WHEN NOT MATCHED THEN
+                INSERT (chatId, userId, lastReadAt, hiddenAt)
+                VALUES (@chatId, @userId, NULL, GETUTCDATE());
+        `);
+
+    await auditLog(userId, 'HIDE_CHAT', `Chat:${chatId}`);
+}
+
+export async function getChatParticipantIds(chatId: string): Promise<string[]> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('chatId', sql.NVarChar(128), chatId)
+        .query(`
+            SELECT userId
+            FROM ChatParticipants
+            WHERE chatId = @chatId
+        `);
+
+    return result.recordset.map((row: { userId: string }) => row.userId);
 }
 
 // ── User Profiles ─────────────────────────────────────────────
@@ -220,37 +551,196 @@ export async function getUserProfile(userId: string): Promise<Record<string, unk
 
 export async function updateUserProfile(
     userId: string,
-    updates: Partial<{ displayName: string; bio: string }>
+    updates: Partial<{
+        displayName: string;
+        bio: string;
+        program: string;
+        major: string;
+        semester: number;
+        skills: string[];
+        weaknesses: string[];
+        interests: string[];
+        profileComplete: boolean;
+        avatarUrl: string;
+    }>
 ): Promise<void> {
-    if (!updates.displayName?.trim() && !updates.bio?.trim()) return;
-
     const db = await getPool();
-    await db.request()
-        .input('id', sql.NVarChar(128), userId)
-        .input('displayName', sql.NVarChar(128), updates.displayName?.trim() ?? null)
-        .input('bio', sql.NVarChar(500), updates.bio?.trim() ?? null)
-        .query(`
-            UPDATE Users
-            SET displayName = ISNULL(@displayName, displayName),
-                bio         = ISNULL(@bio, bio)
-            WHERE id = @id
-        `);
+
+    // Build dynamic SET clauses based on what was provided
+    const setClauses: string[] = [];
+    const request = db.request().input('id', sql.NVarChar(128), userId);
+
+    if (updates.displayName?.trim()) {
+        setClauses.push('displayName = @displayName');
+        request.input('displayName', sql.NVarChar(128), updates.displayName.trim());
+    }
+    if (updates.bio !== undefined) {
+        setClauses.push('bio = @bio');
+        request.input('bio', sql.NVarChar(500), updates.bio?.trim() ?? null);
+    }
+    if (updates.program !== undefined) {
+        setClauses.push('program = @program');
+        request.input('program', sql.NVarChar(128), updates.program);
+    }
+    if (updates.semester !== undefined) {
+        setClauses.push('semester = @semester');
+        request.input('semester', sql.Int, updates.semester);
+    }
+    if (updates.profileComplete !== undefined) {
+        setClauses.push('profileComplete = @profileComplete');
+        request.input('profileComplete', sql.Bit, updates.profileComplete ? 1 : 0);
+    }
+    if (updates.avatarUrl !== undefined) {
+        setClauses.push('avatarUrl = @avatarUrl');
+        request.input('avatarUrl', sql.NVarChar(500), updates.avatarUrl);
+    }
+
+    if (setClauses.length === 0) return;
+
+    await request.query(`
+        UPDATE Users
+        SET ${setClauses.join(', ')}
+        WHERE id = @id
+    `);
     await auditLog(userId, 'UPDATE_PROFILE', `User:${userId}`);
+}
+
+/**
+ * Sync user profile to the SQL database.
+ * If the user doesn't exist (first login), they are created with 10 default credits.
+ * If they exist, provided fields are updated.
+ */
+export async function upsertUserProfile(
+    userId: string,
+    data: Partial<{
+        email: string;
+        displayName: string;
+        bio: string;
+        program: string;
+        major: string;
+        semester: number;
+        avatarUrl: string;
+        profileComplete: boolean;
+    }>
+): Promise<void> {
+    const db = await getPool();
+
+    // Check if user exists
+    const existing = await db.request()
+        .input('id', sql.NVarChar(128), userId)
+        .query('SELECT id FROM Users WHERE id = @id');
+
+    if (existing.recordset.length === 0) {
+        console.log(`[DB] Creating NEW user record for ${userId} (${data.email})`);
+        // First time login — CREATE user record
+        // Default credits = 10 (per schema.sql)
+        try {
+            await db.request()
+                .input('id', sql.NVarChar(128), userId)
+                .input('email', sql.NVarChar(256), data.email || 'user@edu.sait.ca')
+                .input('name', sql.NVarChar(128), data.displayName || 'SAIT Student')
+                .input('bio', sql.NVarChar(500), data.bio || null)
+                .input('program', sql.NVarChar(128), data.program || null)
+                .input('semester', sql.Int, data.semester || null)
+                .input('avatarUrl', sql.NVarChar(500), data.avatarUrl || null)
+                .input('profileComplete', sql.Bit, data.profileComplete ? 1 : 0)
+                .query(`
+                    INSERT INTO Users (id, email, displayName, bio, program, semester, avatarUrl, profileComplete)
+                    VALUES (@id, @email, @name, @bio, @program, @semester, @avatarUrl, @profileComplete)
+                `);
+            console.log(`[DB] Successfully created user ${userId}`);
+        } catch (err: any) {
+            console.error(`[DB] Failed to create user ${userId}:`, err.message);
+            throw err;
+        }
+        await auditLog(userId, 'CREATE_USER', `User:${userId}`);
+    } else {
+        console.log(`[DB] Updating existing user record for ${userId}`);
+        await updateUserProfile(userId, data);
+    }
 }
 
 // ── Chats ─────────────────────────────────────────────────────
 
 export async function getChats(userId: string): Promise<Record<string, unknown>[]> {
+    await ensureChatUserStateTable();
     const db = await getPool();
+
+    const hasInitiator = await chatsTableHasInitiatorId();
+
+    if (!hasInitiator) {
+        const legacyResult = await db.request()
+            .input('userId', sql.NVarChar(128), userId)
+            .query(`
+                WITH LegacyChatRows AS (
+                    SELECT c.id, c.listingId, c.listingTitle, c.lastMessageAt, c.lastMessage,
+                           CAST(NULL AS NVARCHAR(128)) AS initiatorId,
+                           l.userId AS listingOwnerId,
+                           COALESCE(lo.displayName, l.userName, 'CampusBarter User') AS otherUserName,
+                           l.userId AS otherUserId,
+                           0 AS unreadCount,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY l.userId
+                               ORDER BY COALESCE(c.lastMessageAt, c.createdAt) DESC, c.createdAt DESC
+                           ) AS pairRank
+                    FROM   Chats c
+                    LEFT JOIN Listings l ON l.id = c.listingId
+                    LEFT JOIN Users lo  ON lo.id = l.userId
+                    LEFT JOIN ChatParticipants cp ON cp.chatId = c.id AND cp.userId = @userId
+                    LEFT JOIN ChatUserState cus ON cus.chatId = c.id AND cus.userId = @userId
+                    WHERE (cp.userId = @userId
+                       OR l.userId = @userId
+                       OR c.id IN (
+                           SELECT DISTINCT chatId FROM Messages WHERE senderId = @userId
+                       ))
+                      AND (cus.hiddenAt IS NULL OR cus.chatId IS NULL)
+                )
+                SELECT id, listingId, listingTitle, lastMessageAt, lastMessage,
+                       initiatorId, listingOwnerId, otherUserName, otherUserId, unreadCount,
+                       CAST(NULL AS NVARCHAR(500)) AS otherUserAvatarUrl
+                FROM LegacyChatRows
+                WHERE pairRank = 1
+                ORDER BY COALESCE(lastMessageAt, GETUTCDATE()) DESC
+            `);
+        return legacyResult.recordset;
+    }
+
     const result = await db.request()
         .input('userId', sql.NVarChar(128), userId)
         .query(`
-            SELECT DISTINCT c.id, c.listingId, c.listingTitle, c.lastMessageAt, c.lastMessage
-            FROM   Chats c
-            INNER JOIN Messages m ON m.chatId = c.id
-            WHERE  m.senderId = @userId
-               OR  c.id IN (SELECT chatId FROM Messages WHERE senderId = @userId)
-            ORDER BY c.lastMessageAt DESC
+                        WITH ChatRows AS (
+                                SELECT c.id, c.listingId, c.listingTitle, c.lastMessageAt, c.lastMessage,
+                                             c.initiatorId,
+                                             l.userId AS listingOwnerId,
+                                             COALESCE(otherUser.displayName, otherParticipant.userId, 'CampusBarter User') AS otherUserName,
+                                             otherParticipant.userId AS otherUserId,
+                                             otherUser.avatarUrl AS otherUserAvatarUrl,
+                                             COUNT(CASE
+                                                        WHEN m.senderId <> @userId
+                                                         AND (cus.lastReadAt IS NULL OR m.timestamp > cus.lastReadAt)
+                                                        THEN 1
+                                             END) AS unreadCount,
+                                             ROW_NUMBER() OVER (
+                                                     PARTITION BY COALESCE(otherParticipant.userId, c.initiatorId, l.userId)
+                                                     ORDER BY COALESCE(c.lastMessageAt, c.createdAt) DESC, c.createdAt DESC
+                                             ) AS pairRank
+                                FROM   Chats c
+                                LEFT JOIN Listings l ON l.id = c.listingId
+                                LEFT JOIN ChatParticipants myParticipant ON myParticipant.chatId = c.id AND myParticipant.userId = @userId
+                                LEFT JOIN ChatParticipants otherParticipant ON otherParticipant.chatId = c.id AND otherParticipant.userId <> @userId
+                                LEFT JOIN Users otherUser ON otherUser.id = otherParticipant.userId
+                                LEFT JOIN ChatUserState cus ON cus.chatId = c.id AND cus.userId = @userId
+                                LEFT JOIN Messages m ON m.chatId = c.id
+                                WHERE  myParticipant.userId = @userId
+                                    AND (cus.hiddenAt IS NULL OR cus.chatId IS NULL)
+                                GROUP BY c.id, c.listingId, c.listingTitle, c.lastMessageAt, c.lastMessage,
+                                                 c.initiatorId, l.userId, otherUser.displayName, otherParticipant.userId, otherUser.avatarUrl, c.createdAt
+                        )
+                        SELECT id, listingId, listingTitle, lastMessageAt, lastMessage,
+                                     initiatorId, listingOwnerId, otherUserName, otherUserId, unreadCount, otherUserAvatarUrl
+                        FROM ChatRows
+                        WHERE pairRank = 1
+                        ORDER BY COALESCE(lastMessageAt, GETUTCDATE()) DESC
         `);
     return result.recordset;
 }
@@ -258,20 +748,198 @@ export async function getChats(userId: string): Promise<Record<string, unknown>[
 export async function createChat(
     listingId: string,
     listingTitle: string,
-    initiatorId: string
+    initiatorId: string,
+    listingOwnerId: string
 ): Promise<string> {
+    await ensureChatUserStateTable();
     const db = await getPool();
-    const chatId = crypto.randomUUID();
+    const chatId = buildConversationId(initiatorId, listingOwnerId);
+    const normalizedListingTitle = (listingTitle || 'Direct conversation').trim().slice(0, 200);
+
+    // Chats.listingId is still FK-constrained to Listings in production.
+    // Resolve a safe, real listingId for direct/profile conversations.
+    let effectiveListingId = listingId?.trim() ?? '';
+    if (effectiveListingId) {
+        const existingListing = await db.request()
+            .input('listingId', sql.NVarChar(128), effectiveListingId)
+            .query(`SELECT TOP 1 id FROM Listings WHERE id = @listingId`);
+        if (existingListing.recordset.length === 0) {
+            effectiveListingId = '';
+        }
+    }
+
+    if (!effectiveListingId) {
+        const fallbackListing = await db.request()
+            .input('ownerId', sql.NVarChar(128), listingOwnerId)
+            .input('initiatorId', sql.NVarChar(128), initiatorId)
+            .query(`
+                SELECT TOP 1 id
+                FROM Listings
+                WHERE userId IN (@ownerId, @initiatorId)
+                ORDER BY
+                    CASE WHEN userId = @ownerId THEN 0 ELSE 1 END,
+                    CASE WHEN status = 'OPEN' THEN 0 ELSE 1 END,
+                    createdAt DESC
+            `);
+
+        if (fallbackListing.recordset.length > 0) {
+            effectiveListingId = String(fallbackListing.recordset[0].id);
+        }
+    }
+
+    if (!effectiveListingId) {
+        const ownerResult = await db.request()
+            .input('ownerId', sql.NVarChar(128), listingOwnerId)
+            .input('initiatorId', sql.NVarChar(128), initiatorId)
+            .query(`
+                SELECT TOP 1 id, displayName
+                FROM Users
+                WHERE id IN (@ownerId, @initiatorId)
+                ORDER BY CASE WHEN id = @ownerId THEN 0 ELSE 1 END
+            `);
+
+        if (ownerResult.recordset.length === 0) {
+            throw new Error('No valid user found to create direct conversation placeholder listing');
+        }
+
+        const owner = ownerResult.recordset[0] as { id: string; displayName?: string };
+        const syntheticListingId = crypto.randomUUID();
+        const syntheticTitle = normalizedListingTitle || 'Direct conversation';
+
+        await db.request()
+            .input('id', sql.NVarChar(128), syntheticListingId)
+            .input('type', sql.NVarChar(10), 'REQUEST')
+            .input('title', sql.NVarChar(200), syntheticTitle)
+            .input('description', sql.NVarChar(2000), 'System-generated placeholder listing for direct conversations.')
+            .input('credits', sql.Int, 1)
+            .input('userId', sql.NVarChar(128), owner.id)
+            .input('userName', sql.NVarChar(128), owner.displayName || 'User')
+            .input('status', sql.NVarChar(10), 'CLOSED')
+            .query(`
+                INSERT INTO Listings (id, type, title, description, credits, userId, userName, status)
+                VALUES (@id, @type, @title, @description, @credits, @userId, @userName, @status)
+            `);
+
+        effectiveListingId = syntheticListingId;
+    }
+
+    const hasInitiator = await chatsTableHasInitiatorId();
+
+    // Create the chat with initiatorId
+    if (hasInitiator) {
+        await db.request()
+            .input('id', sql.NVarChar(128), chatId)
+            .input('listingId', sql.NVarChar(128), effectiveListingId)
+            .input('listingTitle', sql.NVarChar(200), normalizedListingTitle)
+            .input('initiatorId', sql.NVarChar(128), initiatorId)
+            .query(`
+                INSERT INTO Chats (id, listingId, listingTitle, initiatorId, lastMessageAt, lastMessage)
+                VALUES (@id, @listingId, @listingTitle, @initiatorId, GETUTCDATE(), N'Chat started')
+            `);
+    } else {
+        await db.request()
+            .input('id', sql.NVarChar(128), chatId)
+            .input('listingId', sql.NVarChar(128), effectiveListingId)
+            .input('listingTitle', sql.NVarChar(200), normalizedListingTitle)
+            .query(`
+                INSERT INTO Chats (id, listingId, listingTitle, lastMessageAt, lastMessage)
+                VALUES (@id, @listingId, @listingTitle, GETUTCDATE(), N'Chat started')
+            `);
+    }
+
     await db.request()
-        .input('id', sql.NVarChar(128), chatId)
-        .input('listingId', sql.NVarChar(128), listingId)
-        .input('listingTitle', sql.NVarChar(200), listingTitle)
+        .input('chatId', sql.NVarChar(128), chatId)
+        .input('userId', sql.NVarChar(128), initiatorId)
         .query(`
-            INSERT INTO Chats (id, listingId, listingTitle)
-            VALUES (@id, @listingId, @listingTitle)
+            IF NOT EXISTS (
+                SELECT 1 FROM ChatParticipants WHERE chatId = @chatId AND userId = @userId
+            )
+            INSERT INTO ChatParticipants (chatId, userId) VALUES (@chatId, @userId)
         `);
+
+    if (listingOwnerId && listingOwnerId !== initiatorId) {
+        await db.request()
+            .input('chatId', sql.NVarChar(128), chatId)
+            .input('userId', sql.NVarChar(128), listingOwnerId)
+            .query(`
+                IF NOT EXISTS (
+                    SELECT 1 FROM ChatParticipants WHERE chatId = @chatId AND userId = @userId
+                )
+                INSERT INTO ChatParticipants (chatId, userId) VALUES (@chatId, @userId)
+            `);
+    }
+
+    await db.request()
+        .input('chatId', sql.NVarChar(128), chatId)
+        .input('initiatorId', sql.NVarChar(128), initiatorId)
+        .input('listingOwnerId', sql.NVarChar(128), listingOwnerId)
+        .query(`
+            MERGE ChatUserState AS target
+            USING (
+                SELECT @chatId AS chatId, @initiatorId AS userId, GETUTCDATE() AS lastReadAt, CAST(NULL AS DATETIME2) AS hiddenAt
+                UNION ALL
+                SELECT @chatId, @listingOwnerId, NULL, NULL
+            ) AS source
+            ON target.chatId = source.chatId AND target.userId = source.userId
+            WHEN MATCHED THEN
+                UPDATE SET hiddenAt = NULL, lastReadAt = COALESCE(target.lastReadAt, source.lastReadAt)
+            WHEN NOT MATCHED THEN
+                INSERT (chatId, userId, lastReadAt, hiddenAt)
+                VALUES (source.chatId, source.userId, source.lastReadAt, source.hiddenAt);
+        `);
+
+    // Insert a system welcome message so the chat is immediately visible
+    const welcomeId = crypto.randomUUID();
+    await db.request()
+        .input('msgId', sql.NVarChar(128), welcomeId)
+        .input('chatId', sql.NVarChar(128), chatId)
+        .input('senderId', sql.NVarChar(128), initiatorId)
+        .input('text', sql.NVarChar(4000), `Hi! I'm interested in "${normalizedListingTitle}"`)
+        .query(`
+            INSERT INTO Messages (id, chatId, senderId, text)
+            VALUES (@msgId, @chatId, @senderId, @text)
+        `);
+
     await auditLog(initiatorId, 'CREATE_CHAT', `Chat:${chatId}`);
     return chatId;
+}
+
+export async function findExistingChatBetweenUsers(
+    userA: string,
+    userB: string
+): Promise<string | null> {
+    const db = await getPool();
+    const deterministicId = buildConversationId(userA, userB);
+    const existingById = await db.request()
+        .input('chatId', sql.NVarChar(128), deterministicId)
+        .query(`SELECT TOP 1 id FROM Chats WHERE id = @chatId`);
+
+    if (existingById.recordset.length > 0) {
+        return existingById.recordset[0].id as string;
+    }
+
+    const participantMatch = await db.request()
+        .input('userA', sql.NVarChar(128), userA)
+        .input('userB', sql.NVarChar(128), userB)
+        .query(`
+            SELECT TOP 1 c.id
+            FROM Chats c
+            WHERE EXISTS (
+                    SELECT 1 FROM ChatParticipants cp1
+                    WHERE cp1.chatId = c.id AND cp1.userId = @userA
+                )
+              AND EXISTS (
+                    SELECT 1 FROM ChatParticipants cp2
+                    WHERE cp2.chatId = c.id AND cp2.userId = @userB
+                )
+            ORDER BY COALESCE(c.lastMessageAt, c.createdAt) DESC, c.createdAt DESC
+        `);
+
+    if (participantMatch.recordset.length > 0) {
+        return participantMatch.recordset[0].id as string;
+    }
+
+    return null;
 }
 
 // ── Reviews ───────────────────────────────────────────────────
@@ -299,6 +967,25 @@ export async function createReview(
         `);
     await auditLog(reviewerId, 'CREATE_REVIEW', `Review:${reviewId}`);
     return reviewId;
+}
+
+export async function hasCompletedExchangeBetweenUsers(userA: string, userB: string): Promise<boolean> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('userA', sql.NVarChar(128), userA)
+        .input('userB', sql.NVarChar(128), userB)
+        .query(`
+            SELECT TOP 1 1 AS hasExchange
+            FROM Exchanges
+            WHERE status = 'COMPLETED'
+              AND (
+                    (buyerId = @userA AND sellerId = @userB)
+                    OR
+                    (buyerId = @userB AND sellerId = @userA)
+                  )
+        `);
+
+    return result.recordset.length > 0;
 }
 
 export async function getReviews(userId: string): Promise<Record<string, unknown>[]> {
@@ -508,4 +1195,215 @@ export async function findMatchingUsers(params: {
     `);
 
     return result.recordset;
+}
+
+// ── Leaderboard (Task 4) ──────────────────────────────────────
+
+/**
+ * Get top helpers this week — users who earned the most credits
+ * by receiving transfers (i.e., helping others).
+ */
+export async function getWeeklyLeaderboard(limit = 10): Promise<Record<string, unknown>[]> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('limit', sql.Int, limit)
+        .query(`
+            SELECT TOP (@limit)
+                u.id, u.displayName, u.avatarUrl,
+                ISNULL(SUM(tc.amount), 0) AS weeklyCredits
+            FROM   Users u
+            LEFT JOIN TimeCredits tc ON tc.toUserId = u.id
+                AND tc.createdAt >= DATEADD(DAY, -DATEPART(DW, GETUTCDATE()) + 1, CAST(GETUTCDATE() AS DATE))
+            GROUP BY u.id, u.displayName, u.avatarUrl
+            ORDER BY weeklyCredits DESC
+        `);
+    return result.recordset;
+}
+
+// ── Market Insights (Task 7) ──────────────────────────────────
+
+export async function getMarketInsights(): Promise<{
+    trendingThisWeek: Record<string, unknown>[];
+    mostWantedCategories: Record<string, unknown>[];
+    avgCreditsByType: Record<string, unknown>[];
+    totalListings: number;
+    totalExchanges: number;
+}> {
+    const db = await getPool();
+
+    // Trending: most-viewed/recently-posted listings this week
+    const trending = await db.request().query(`
+        SELECT TOP 10 id, type, title, credits, userName, createdAt
+        FROM   Listings
+        WHERE  status = 'OPEN'
+          AND  createdAt >= DATEADD(DAY, -7, GETUTCDATE())
+        ORDER BY createdAt DESC
+    `);
+
+    // Most wanted: top categories in REQUEST listings
+    const mostWanted = await db.request().query(`
+        SELECT TOP 5
+            CASE
+                WHEN LOWER(title) LIKE '%math%' OR LOWER(title) LIKE '%calc%' THEN 'Mathematics'
+                WHEN LOWER(title) LIKE '%code%' OR LOWER(title) LIKE '%program%' THEN 'Programming'
+                WHEN LOWER(title) LIKE '%tutor%' OR LOWER(title) LIKE '%study%' THEN 'Tutoring'
+                WHEN LOWER(title) LIKE '%note%' OR LOWER(title) LIKE '%textbook%' THEN 'Study Materials'
+                WHEN LOWER(title) LIKE '%design%' OR LOWER(title) LIKE '%graphic%' THEN 'Design'
+                ELSE 'Other'
+            END AS category,
+            COUNT(*) AS count
+        FROM  Listings
+        WHERE type = 'REQUEST' AND status = 'OPEN'
+        GROUP BY
+            CASE
+                WHEN LOWER(title) LIKE '%math%' OR LOWER(title) LIKE '%calc%' THEN 'Mathematics'
+                WHEN LOWER(title) LIKE '%code%' OR LOWER(title) LIKE '%program%' THEN 'Programming'
+                WHEN LOWER(title) LIKE '%tutor%' OR LOWER(title) LIKE '%study%' THEN 'Tutoring'
+                WHEN LOWER(title) LIKE '%note%' OR LOWER(title) LIKE '%textbook%' THEN 'Study Materials'
+                WHEN LOWER(title) LIKE '%design%' OR LOWER(title) LIKE '%graphic%' THEN 'Design'
+                ELSE 'Other'
+            END
+        ORDER BY count DESC
+    `);
+
+    // Average credits by type
+    const avgCredits = await db.request().query(`
+        SELECT type, AVG(credits) AS avgCredits, COUNT(*) AS count
+        FROM   Listings WHERE status = 'OPEN'
+        GROUP BY type
+    `);
+
+    // Totals
+    const totals = await db.request().query(`
+        SELECT
+            (SELECT COUNT(*) FROM Listings) AS totalListings,
+            (SELECT COUNT(*) FROM TimeCredits) AS totalExchanges
+    `);
+
+    return {
+        trendingThisWeek: trending.recordset,
+        mostWantedCategories: mostWanted.recordset,
+        avgCreditsByType: avgCredits.recordset,
+        totalListings: totals.recordset[0]?.totalListings ?? 0,
+        totalExchanges: totals.recordset[0]?.totalExchanges ?? 0,
+    };
+}
+
+// ── QR Exchange (Task 3) ──────────────────────────────────────
+
+export async function createExchange(
+    listingId: string,
+    buyerId: string,
+    sellerId: string,
+    credits: number
+): Promise<string> {
+    const db = await getPool();
+    const id = crypto.randomUUID();
+    const qrCode = `CB-${id.slice(0, 8).toUpperCase()}`;
+
+    await db.request()
+        .input('id', sql.NVarChar(128), id)
+        .input('listingId', sql.NVarChar(128), listingId)
+        .input('buyerId', sql.NVarChar(128), buyerId)
+        .input('sellerId', sql.NVarChar(128), sellerId)
+        .input('credits', sql.Int, credits)
+        .input('qrCode', sql.NVarChar(50), qrCode)
+        .query(`
+            INSERT INTO Exchanges (id, listingId, buyerId, sellerId, credits, qrCode, status)
+            VALUES (@id, @listingId, @buyerId, @sellerId, @credits, @qrCode, 'PENDING')
+        `);
+
+    return qrCode;
+}
+
+export async function getListingById(listingId: string): Promise<Record<string, unknown> | null> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('listingId', sql.NVarChar(128), listingId)
+        .query(`
+            SELECT id, userId, credits, status, title
+            FROM Listings
+            WHERE id = @listingId
+        `);
+    return result.recordset[0] ?? null;
+}
+
+export async function getAuditLogEntries(limit = 200): Promise<Record<string, unknown>[]> {
+    const safeLimit = Math.min(Math.max(1, limit), 1000);
+    const db = await getPool();
+    const result = await db.request()
+        .input('limit', sql.Int, safeLimit)
+        .query(`
+            SELECT TOP (@limit)
+                id, userId, action, resource, ipAddress, userAgent, statusCode, timestamp
+            FROM AuditLog
+            ORDER BY timestamp DESC
+        `);
+    return result.recordset;
+}
+
+export async function adminAnonymizeUser(userId: string, actorUserId: string): Promise<boolean> {
+    const db = await getPool();
+    const deletedEmail = `deleted-${userId}@invalid.local`;
+
+    const result = await db.request()
+        .input('id', sql.NVarChar(128), userId)
+        .input('deletedEmail', sql.NVarChar(256), deletedEmail)
+        .query(`
+            UPDATE Users
+            SET
+                email = @deletedEmail,
+                displayName = 'Deleted User',
+                bio = NULL,
+                avatarUrl = NULL,
+                profileComplete = 0,
+                role = 'Student'
+            WHERE id = @id
+        `);
+
+    if ((result.rowsAffected?.[0] ?? 0) < 1) {
+        return false;
+    }
+
+    await auditLog(actorUserId, 'ADMIN_ANONYMIZE_USER', `User:${userId}`);
+    return true;
+}
+
+export async function confirmExchange(qrCode: string, userId: string): Promise<{ credits: number; otherParty: string }> {
+    const db = await getPool();
+
+    // Find the exchange
+    const result = await db.request()
+        .input('qrCode', sql.NVarChar(50), qrCode)
+        .query(`SELECT * FROM Exchanges WHERE qrCode = @qrCode AND status = 'PENDING'`);
+
+    if (result.recordset.length === 0) throw new Error('Exchange not found or already completed');
+
+    const exchange = result.recordset[0];
+    const isBuyer = exchange.buyerId === userId;
+    const isSeller = exchange.sellerId === userId;
+
+    if (!isBuyer && !isSeller) throw new Error('You are not part of this exchange');
+
+    // Mark the user's confirmation
+    const confirmField = isBuyer ? 'buyerConfirmed' : 'sellerConfirmed';
+    await db.request()
+        .input('qrCode', sql.NVarChar(50), qrCode)
+        .query(`UPDATE Exchanges SET ${confirmField} = 1 WHERE qrCode = @qrCode`);
+
+    // Check if both confirmed
+    const updated = await db.request()
+        .input('qrCode', sql.NVarChar(50), qrCode)
+        .query(`SELECT * FROM Exchanges WHERE qrCode = @qrCode`);
+
+    const ex = updated.recordset[0];
+    if (ex.buyerConfirmed && ex.sellerConfirmed) {
+        // Both confirmed — transfer credits
+        await transferCredits(ex.buyerId, ex.sellerId, ex.credits, `Exchange: ${ex.listingId}`);
+        await db.request()
+            .input('qrCode', sql.NVarChar(50), qrCode)
+            .query(`UPDATE Exchanges SET status = 'COMPLETED', completedAt = GETUTCDATE() WHERE qrCode = @qrCode`);
+    }
+
+    return { credits: ex.credits, otherParty: isBuyer ? ex.sellerId : ex.buyerId };
 }

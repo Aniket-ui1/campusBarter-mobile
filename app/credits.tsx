@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { getCreditsBalance, getApiToken } from '@/lib/api';
+import { getCreditsBalance } from '@/lib/api';
 
 interface CreditTransaction {
     id: string;
@@ -126,10 +126,9 @@ export default function CreditsScreen() {
 // Internal helper — not exported from api.ts to keep it clean
 async function fetch_history(): Promise<CreditTransaction[]> {
     try {
-        const { getApiToken } = await import('@/lib/api');
+        const { getApiToken, getApiBase } = await import('@/lib/api');
         const token = getApiToken();
-        const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net';
-        const res = await fetch(`${API_BASE}/api/credits/history`, {
+        const res = await fetch(`${getApiBase()}/api/credits/history`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         if (!res.ok) return [];

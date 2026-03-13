@@ -28,11 +28,7 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Run npm audit (Vulnerability Check)
-        # Level set to 'critical' because HIGH vulnerabilities exist inside
-        # Expo's own internal packages (minimatch, tar) which we cannot patch.
-        # Dependabot alerts will still track and surface HIGH issues.
-        run: npm audit --audit-level=critical
-        continue-on-error: true   # Report but don't block — findings shown in logs
+        run: npm audit --audit-level=high
 
   # ── Step 2: Lint ──────────────────────────────────────────────────
   lint:
@@ -79,6 +75,10 @@ jobs:
         working-directory: ./backend
         # Checks TypeScript without outputting files — catches type errors
 
+      - name: Run Backend Tests
+        run: npm test
+        working-directory: ./backend
+
   # ── Step 4: Deploy (main branch only) ────────────────────────────
   # Builds the backend and deploys to Azure App Service.
   # Requires: AZURE_WEBAPP_PUBLISH_PROFILE secret set in GitHub repo settings
@@ -90,12 +90,13 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: "20"
+          cache: "npm"
 
       - name: Install Backend Dependencies
         run: npm ci

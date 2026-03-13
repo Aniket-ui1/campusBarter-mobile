@@ -22,6 +22,8 @@ import {
     getMessages,
     sendMessage as apiSendMessage,
     startChat as apiStartChat,
+    markChatRead as apiMarkChatRead,
+    deleteChat as apiDeleteChat,
     getNotifications,
     markNotificationRead as apiMarkRead,
     markAllNotificationsRead as apiMarkAllRead,
@@ -46,18 +48,46 @@ export type AppNotification = ApiNotification;
 // FSMessage alias so existing screens don't need changing
 export type FSMessage = ApiMessage;
 
+function dedupeChatsByParticipant(chats: Chat[]): Chat[] {
+    const chatsByParticipant = new Map<string, Chat>();
+
+    for (const chat of chats) {
+        const key = chat.otherUserId || chat.otherUserName || chat.id;
+        const existing = chatsByParticipant.get(key);
+        if (!existing) {
+            chatsByParticipant.set(key, chat);
+            continue;
+        }
+
+        const existingTime = new Date(existing.lastMessageAt || 0).getTime();
+        const nextTime = new Date(chat.lastMessageAt || 0).getTime();
+        if (nextTime >= existingTime) {
+            chatsByParticipant.set(key, chat);
+        }
+    }
+
+    return Array.from(chatsByParticipant.values()).sort((left, right) => {
+        const leftTime = new Date(left.lastMessageAt || 0).getTime();
+        const rightTime = new Date(right.lastMessageAt || 0).getTime();
+        return rightTime - leftTime;
+    });
+}
+
 interface DataContextType {
     listings: Listing[];
-    addListing: (listing: Omit<Listing, "id" | "createdAt" | "status">) => Promise<void>;
+    addListing: (listing: Omit<Listing, "id" | "createdAt" | "status"> & { category?: string }) => Promise<void>;
     getListingById: (id: string) => Listing | undefined;
     closeListing: (id: string) => Promise<void>;
     deleteListing: (id: string) => Promise<void>;
     refreshListings: () => Promise<void>;
 
     chats: Chat[];
-    startChat: (listingId: string, listingTitle: string, userIds: string[]) => Promise<string>;
+    startChat: (listingId: string, listingTitle: string, userIds: string[], listingOwnerId?: string) => Promise<string>;
     sendMessage: (chatId: string, text: string, senderId: string) => Promise<void>;
+    markChatRead: (chatId: string) => Promise<void>;
+    deleteChat: (chatId: string) => Promise<void>;
     getChatById: (chatId: string) => Chat | undefined;
+    loadOlderMessages: (chatId: string, page: number, limit?: number) => Promise<ApiMessage[]>;
     subscribeToMessages: (chatId: string, cb: (msgs: ApiMessage[]) => void) => () => void;
 
     notifications: AppNotification[];
@@ -81,7 +111,7 @@ export const useData = () => {
 // ── Provider ──────────────────────────────────────────────────────
 
 export const DataProvider = ({ children }: { children: React.ReactNode }) => {
-    const { user } = useAuth();
+    const { user, isLoading: authLoading } = useAuth();
     const [listings, setListings] = useState<Listing[]>([]);
     const [chats, setChats] = useState<Chat[]>([]);
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -90,6 +120,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const chatMessages = useRef<Record<string, ApiMessage[]>>({});
     // Callbacks registered by chat screens
     const msgCallbacks = useRef<Record<string, ((msgs: ApiMessage[]) => void)[]>>({});
+    const activeChatSubscriptions = useRef<Record<string, number>>({});
 
     // ── Load listings ─────────────────────────────────────────────
     const refreshListings = useCallback(async () => {
@@ -101,26 +132,36 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, []);
 
+    // Only start fetching listings once auth has fully resolved (token restored from SecureStore).
+    // Without this gate, the very first fetch runs before the token is set, fails silently,
+    // and listings stay empty until the 30-second polling interval fires.
     useEffect(() => {
+        if (authLoading) return; // wait for auth to finish initialising
         void refreshListings();
         const id = setInterval(refreshListings, 30_000); // poll every 30s
         return () => clearInterval(id);
-    }, [refreshListings]);
+    }, [authLoading, refreshListings]);
 
     // ── Load chats ────────────────────────────────────────────────
     const refreshChats = useCallback(async () => {
         if (!user) { setChats([]); return; }
         try {
-            const data = await getChats();
-            setChats(data.map(c => ({ ...c, messages: chatMessages.current[c.id] ?? [] })));
+            const data = await getChats(user.id);
+            const normalizedChats = data.map(c => ({
+                ...c,
+                id: c.conversationId ?? c.id,
+                messages: chatMessages.current[c.conversationId ?? c.id] ?? [],
+            }));
+            setChats(dedupeChatsByParticipant(normalizedChats));
         } catch (e) {
             console.warn("[Data] Could not load chats:", e);
         }
     }, [user?.id]);
 
     useEffect(() => {
+        if (authLoading) return; // wait for auth to resolve before fetching user data
         void refreshChats();
-    }, [refreshChats]);
+    }, [authLoading, refreshChats]);
 
     // ── Load notifications ────────────────────────────────────────
     const refreshNotifications = useCallback(async () => {
@@ -134,15 +175,16 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     }, [user?.id]);
 
     useEffect(() => {
+        if (authLoading) return; // wait for auth to resolve before fetching user data
         void refreshNotifications();
         const id = setInterval(refreshNotifications, 60_000); // poll every 60s
         return () => clearInterval(id);
-    }, [refreshNotifications]);
+    }, [authLoading, refreshNotifications]);
 
     // ── Socket.io: listen for new messages ────────────────────────
     useEffect(() => {
         const cleanup = onNewMessage((msg) => {
-            const { chatId } = msg;
+            const chatId = msg.conversationId ?? msg.chatId;
             // Append to local message cache
             const prev = chatMessages.current[chatId] ?? [];
             const newMsg: ApiMessage = {
@@ -154,15 +196,33 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
             (msgCallbacks.current[chatId] ?? []).forEach(cb =>
                 cb(chatMessages.current[chatId])
             );
-            // Update chat list last message
-            setChats(cs => cs.map(c =>
-                c.id === chatId
-                    ? { ...c, lastMessage: msg.text, lastMessageAt: msg.sentAt }
-                    : c
-            ));
+            // Update chat list preview and unread count, or refresh if the chat is hidden/not loaded.
+            setChats((currentChats) => {
+                const chatExists = currentChats.some((chat) => chat.id === chatId);
+                if (!chatExists) {
+                    void refreshChats();
+                    return currentChats;
+                }
+
+                return dedupeChatsByParticipant(currentChats.map((chat) => {
+                    if (chat.id !== chatId) return chat;
+
+                    const isActive = (activeChatSubscriptions.current[chatId] ?? 0) > 0;
+                    const nextUnreadCount = msg.senderId === user?.id || isActive
+                        ? 0
+                        : (chat.unreadCount ?? 0) + 1;
+
+                    return {
+                        ...chat,
+                        lastMessage: msg.text,
+                        lastMessageAt: msg.sentAt,
+                        unreadCount: nextUnreadCount,
+                    };
+                }));
+            });
         });
         return cleanup;
-    }, []);
+    }, [refreshChats, user?.id]);
 
     const unreadCount = useMemo(
         () => notifications.filter(n => !n.read).length,
@@ -172,15 +232,22 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     // ── Listings API ──────────────────────────────────────────────
 
     const addListing = async (
-        data: Omit<Listing, "id" | "createdAt" | "status">
+        data: Omit<Listing, "id" | "createdAt" | "status"> & { category?: string }
     ) => {
+        // Let creation errors propagate to the caller (post screen shows Alert)
         await apiCreateListing({
             type: data.type,
             title: data.title,
             description: data.description,
             credits: data.credits,
+            category: data.category,
         });
-        await refreshListings(); // refresh feed immediately after posting
+        // Refresh is best-effort — if it fails, the 30s poll will pick up the listing
+        try {
+            await refreshListings();
+        } catch (e) {
+            console.warn("[Data] refreshListings after create failed:", e);
+        }
     };
 
     const getListingById = (id: string) => listings.find(l => l.id === id);
@@ -200,9 +267,28 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const startChat = async (
         listingId: string,
         listingTitle: string,
-        _userIds: string[] // kept for API compat — server infers from token
+        userIds: string[], // kept for API compat — derive other user id when needed
+        listingOwnerId?: string
     ) => {
-        const chatId = await apiStartChat(listingId, listingTitle);
+        const otherUserId = listingOwnerId || userIds.find((id) => id && id !== user?.id);
+        if (!otherUserId) {
+            throw new Error('otherUserId is required to start a conversation');
+        }
+
+        const normalizedListingId = listingId === 'profile' ? '' : listingId;
+
+        let chatId: string;
+        try {
+            chatId = await apiStartChat(normalizedListingId, listingTitle, otherUserId);
+        } catch (error) {
+            // Fallback to direct conversation when listing lookup fails (e.g. stale post id).
+            if ((error as { status?: number }).status === 404 && normalizedListingId) {
+                chatId = await apiStartChat('', listingTitle, otherUserId);
+            } else {
+                throw error;
+            }
+        }
+
         await refreshChats();
         joinChat(chatId);
         return chatId;
@@ -210,10 +296,39 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
     const sendMessage = async (chatId: string, text: string, _senderId: string) => {
         await apiSendMessage(chatId, text);
-        // Optimistic: local update will also arrive via socket
+    };
+
+    const markChatRead = async (chatId: string) => {
+        if (!user?.id) return;
+        await apiMarkChatRead(chatId, user.id);
+        setChats((currentChats) => currentChats.map((chat) =>
+            chat.id === chatId ? { ...chat, unreadCount: 0 } : chat
+        ));
+    };
+
+    const deleteChat = async (chatId: string) => {
+        if (!user?.id) return;
+        await apiDeleteChat(chatId, user.id);
+        delete chatMessages.current[chatId];
+        delete msgCallbacks.current[chatId];
+        delete activeChatSubscriptions.current[chatId];
+        setChats((currentChats) => currentChats.filter((chat) => chat.id !== chatId));
     };
 
     const getChatById = (id: string) => chats.find(c => c.id === id);
+
+    const loadOlderMessages = async (chatId: string, page: number, limit = 30) => {
+        const olderMessages = [...(await getMessages(chatId, page, limit))].reverse();
+        const existingMessages = chatMessages.current[chatId] ?? [];
+        const seenIds = new Set(existingMessages.map((message) => message.id));
+        const merged = [
+            ...olderMessages.filter((message) => !seenIds.has(message.id)),
+            ...existingMessages,
+        ];
+        chatMessages.current[chatId] = merged;
+        (msgCallbacks.current[chatId] ?? []).forEach((cb) => cb(merged));
+        return olderMessages;
+    };
 
     /**
      * Subscribe to real-time messages for a chat room.
@@ -225,13 +340,22 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         cb: (msgs: ApiMessage[]) => void
     ): (() => void) => {
         // Load history
-        getMessages(chatId).then(msgs => {
-            chatMessages.current[chatId] = msgs;
-            cb(msgs);
-        }).catch(console.warn);
+        getMessages(chatId, 1, 30).then((msgs) => {
+            const orderedMessages = [...msgs].reverse();
+            chatMessages.current[chatId] = orderedMessages;
+            cb(orderedMessages);
+        }).catch((error) => {
+            console.warn('[Data] getMessages failed:', error);
+            chatMessages.current[chatId] = [];
+            cb([]);
+        });
 
         // Join socket room
         joinChat(chatId);
+        activeChatSubscriptions.current[chatId] = (activeChatSubscriptions.current[chatId] ?? 0) + 1;
+        void markChatRead(chatId).catch((error) => {
+            console.warn('[Data] markChatRead failed:', error);
+        });
 
         // Register callback
         if (!msgCallbacks.current[chatId]) msgCallbacks.current[chatId] = [];
@@ -239,6 +363,10 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
         return () => {
             leaveChat(chatId);
+            activeChatSubscriptions.current[chatId] = Math.max(
+                (activeChatSubscriptions.current[chatId] ?? 1) - 1,
+                0
+            );
             msgCallbacks.current[chatId] = (msgCallbacks.current[chatId] ?? [])
                 .filter(fn => fn !== cb);
         };
@@ -275,7 +403,10 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 chats,
                 startChat,
                 sendMessage,
+                markChatRead,
+                deleteChat,
                 getChatById,
+                loadOlderMessages,
                 subscribeToMessages,
                 notifications,
                 unreadCount,

@@ -13,7 +13,7 @@ export function Input({ label, error, icon, containerStyle, style, ...rest }: Pr
     const [focused, setFocused] = useState(false);
 
     return (
-        <View style={[styles.container, containerStyle]}>
+        <View style={[styles.container, containerStyle]} accessible={false}>
             {label && <Text style={styles.label}>{label}</Text>}
             <View
                 style={[
@@ -26,12 +26,14 @@ export function Input({ label, error, icon, containerStyle, style, ...rest }: Pr
                 <TextInput
                     style={[styles.input, style]}
                     placeholderTextColor={AppColors.textMuted}
+                    accessibilityLabel={label || rest.placeholder}
+                    accessibilityHint={error ? `Error: ${error}` : undefined}
                     onFocus={(e) => { setFocused(true); rest.onFocus?.(e); }}
                     onBlur={(e) => { setFocused(false); rest.onBlur?.(e); }}
                     {...rest}
                 />
             </View>
-            {error && <Text style={styles.error}>{error}</Text>}
+            {error && <Text style={styles.error} accessibilityRole="alert">{error}</Text>}
         </View>
     );
 }

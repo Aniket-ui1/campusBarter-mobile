@@ -4,49 +4,88 @@
 // Hosted on Azure App Service (Node 22, Linux)
 // ─────────────────────────────────────────────────────────────
 
-import http from 'http';
-import express from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
+import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { verifyAzureAdToken, requireRole } from './middleware/auth';
-import { auditLog } from './db';
+import helmet from 'helmet';
+import http from 'http';
+import { auditLog, closePool, getAuditLogEntries } from './db';
+import { requireRole, verifyAzureAdToken } from './middleware/auth';
 import { initSocketServer } from './socket';
 import { setIO } from './socketInstance';
 
 // Route handlers
-import { listingsRouter } from './routes/listings';
 import { chatsRouter } from './routes/chats';
-import { usersRouter } from './routes/users';
-import { healthRouter } from './routes/health';
-import { reviewsRouter } from './routes/reviews';
-import { notificationsRouter } from './routes/notifications';
+import { registerChatRoutes } from './routes/chat';
+import { conversationsRouter } from './routes/conversations';
 import { creditsRouter } from './routes/credits';
-import { uploadRouter } from './routes/upload';
+import { healthRouter } from './routes/health';
+import { insightsRouter } from './routes/insights';
+import { listingsRouter } from './routes/listings';
+import { notificationsRouter } from './routes/notifications';
+import { reviewsRouter } from './routes/reviews';
 import { tokensRouter } from './routes/tokens';
+import { uploadRouter } from './routes/upload';
+import { usersRouter } from './routes/users';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const isDevEnvironment = process.env.NODE_ENV === 'development';
 
 // ── Security Middleware ───────────────────────────────────────
 
-// Sets secure HTTP headers (XSS protection, HSTS, etc.)
-app.use(helmet());
-
-// CORS — only allow requests from the app bundle
-app.use(cors({
-    origin: [
-        'https://campusbarter.azurestaticapps.net',
-        'exp://*',
-    ],
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Authorization', 'Content-Type'],
+// Strict security headers (CSP, HSTS, X-Frame-Options, etc.)
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", 'data:', 'https://campusbarterstg.blob.core.windows.net'],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            frameAncestors: ["'none'"],     // Prevent clickjacking
+            formAction: ["'self'"],
+            upgradeInsecureRequests: [],
+        },
+    },
+    crossOriginEmbedderPolicy: false,       // Required for mobile clients
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
 }));
 
-// Rate limiting — max 100 requests per 15 minutes per IP
+// Explicit X-Content-Type-Options (belt-and-suspenders with Helmet)
+app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+});
+
+// CORS — allow app origin plus local development clients.
+const allowedOrigins: Array<string | RegExp> = [
+    'https://campusbarter.azurestaticapps.net',
+    'http://localhost:3999',
+    'http://localhost:8081',
+    'http://localhost:8082',
+    'http://localhost:8083',
+    /^exp:\/\/.*/,
+];
+
+app.use(cors({
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'x-dev-user-id', 'x-dev-email', 'x-dev-name', 'x-dev-role'],
+    credentials: true,
+}));
+
+// Rate limiting — 2000 requests per 15 minutes per IP.
+// We need headroom for: Socket.IO handshake+polling (~20 req), real-time
+// data polling (listings/chats/notifications), and actual user actions.
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 2000,
     message: { error: 'Too many requests. Please try again later.' },
     standardHeaders: true,
     legacyHeaders: false,
@@ -65,25 +104,65 @@ app.use(async (req: express.Request, res: express.Response, next: express.NextFu
     next();
 });
 
-// ── Routes ───────────────────────────────────────────────────
+// ── API v1 Routes ────────────────────────────────────────────
 
 // Health check — no auth required (used by Azure Monitor)
 app.use('/health', healthRouter);
 
-// All other routes require a valid Azure AD token
+// All v1 routes require a valid Azure AD token
+app.use('/api/v1', verifyAzureAdToken);
+app.use('/api/v1/listings', listingsRouter);
+app.use('/api/v1/chats', chatsRouter);
+app.use('/api/v1/conversations', conversationsRouter);
+app.use('/api/v1/users', usersRouter);
+app.use('/api/v1/reviews', reviewsRouter);
+app.use('/api/v1/notifications', notificationsRouter);
+app.use('/api/v1/credits', creditsRouter);
+app.use('/api/v1/upload', uploadRouter);
+app.use('/api/v1/tokens', tokensRouter);
+app.use('/api/v1/insights', insightsRouter);
+
+// Admin-only audit log
+app.get('/api/v1/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
+    try {
+        const limit = Math.max(1, Math.min(1000, Number(req.query.limit) || 200));
+        const logs = await getAuditLogEntries(limit);
+        res.json({ count: logs.length, logs });
+    } catch {
+        res.status(500).json({ error: 'Failed to fetch audit log entries' });
+    }
+});
+
+// ── Backward-Compatible Deprecated /api/* Routes ─────────────
+// Old /api/* paths still work but return deprecation headers.
+// Will be removed in a future release.
+const deprecationMiddleware = (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+    res.setHeader('Deprecation', 'true');
+    res.setHeader('Sunset', '2026-09-01');
+    res.setHeader('Link', '</api/v1>; rel="successor-version"');
+    next();
+};
+app.use('/api', deprecationMiddleware);
 app.use('/api', verifyAzureAdToken);
 app.use('/api/listings', listingsRouter);
 app.use('/api/chats', chatsRouter);
+app.use('/api/conversations', conversationsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/reviews', reviewsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/credits', creditsRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/tokens', tokensRouter);
+app.use('/api/insights', insightsRouter);
 
-// Admin-only audit log
 app.get('/api/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
-    res.json({ message: 'Audit log endpoint — Phase 6 implementation' });
+    try {
+        const limit = Math.max(1, Math.min(1000, Number(req.query.limit) || 200));
+        const logs = await getAuditLogEntries(limit);
+        res.json({ count: logs.length, logs });
+    } catch {
+        res.status(500).json({ error: 'Failed to fetch audit log entries' });
+    }
 });
 
 // ── Error Handler ────────────────────────────────────────────
@@ -100,8 +179,26 @@ const httpServer = http.createServer(app);
 const io = initSocketServer(httpServer);
 setIO(io); // Register singleton so route files can emit without circular imports
 
+// ── Chat System v2 routes ─────────────────────────────────────
+// Registered AFTER http server is created so getIO() is available.
+// Mounts at both /api/chat/* and /api/v1/chat/* (see routes/chat.ts).
+registerChatRoutes(app);
+
 httpServer.listen(PORT, () => {
     console.log(`CampusBarter API + WebSocket running on port ${PORT}`);
 });
 
+// ── Graceful shutdown ────────────────────────────────────────
+// Close the SQL pool cleanly when the process is terminated
+// (Azure App Service sends SIGTERM before restarting).
+async function shutdown() {
+    console.log('[Server] Shutting down…');
+    httpServer.close();
+    await closePool();
+    process.exit(0);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
 export default app;
+

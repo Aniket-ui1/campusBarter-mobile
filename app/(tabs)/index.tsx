@@ -11,16 +11,28 @@ import { Avatar } from '@/components/ui/Avatar';
 import { useData } from '@/context/DataContext';
 import { getRecommendedUsers, MatchedUser } from '@/lib/matching';
 import { CATEGORIES } from '@/constants/categories';
+import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { unreadCount, listings } = useData();
+  const { unreadCount, listings, refreshListings } = useData();
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
   const [matches, setMatches] = useState<MatchedUser[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const activeListings = listings.filter((l) => l.status === 'OPEN');
   const myListingsCount = listings.filter((l) => l.userId === user?.id).length;
+
+  // Stop loading once listings arrive OR after 3s timeout (for empty feeds)
+  useEffect(() => {
+    if (listings.length > 0) {
+      setIsLoading(false);
+      return;
+    }
+    const timer = setTimeout(() => setIsLoading(false), 3000);
+    return () => clearTimeout(timer);
+  }, [listings]);
 
   useEffect(() => {
     if (!user?.id || !user.profileComplete) return;
@@ -30,13 +42,15 @@ export default function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    const tasks: Promise<any>[] = [refreshListings()];
     if (user?.id) {
-      try {
-        const m = await getRecommendedUsers(user.id, user.skills ?? [], user.weaknesses ?? [], user.interests ?? []);
-        setMatches(m);
-      } catch { }
+      tasks.push(
+        getRecommendedUsers(user.id, user.skills ?? [], user.weaknesses ?? [], user.interests ?? [])
+          .then(setMatches).catch(() => {})
+      );
     }
-    await new Promise((r) => setTimeout(r, 400));
+    await Promise.all(tasks);
+    await new Promise((r) => setTimeout(r, 200));
     setRefreshing(false);
   };
 
@@ -46,7 +60,8 @@ export default function HomeScreen() {
 
       {/* Header */}
       <View style={styles.header}>
-        <Pressable style={styles.headerLeft} onPress={() => router.push('/(tabs)/profile')}>
+        <Pressable style={styles.headerLeft} onPress={() => router.push('/(tabs)/profile')}
+          accessibilityRole="button" accessibilityLabel="View your profile">
           <Avatar name={user?.displayName || 'User'} uri={user?.avatarUrl} size={42} />
           <View>
             <Text style={styles.greeting}>Welcome back 👋</Text>
@@ -54,7 +69,8 @@ export default function HomeScreen() {
           </View>
         </Pressable>
         <View style={styles.headerRight}>
-          <Pressable style={styles.iconBtn} onPress={() => router.push('/notifications')}>
+          <Pressable style={styles.iconBtn} onPress={() => router.push('/notifications')}
+            accessibilityRole="button" accessibilityLabel={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}>
             <Ionicons name="notifications-outline" size={21} color={AppColors.text} />
             {unreadCount > 0 && (
               <View style={styles.notifBadge}>
@@ -76,7 +92,8 @@ export default function HomeScreen() {
           <View style={styles.heroContent}>
             <Text style={styles.heroTitle}>Trade skills{'\n'}with students 🎓</Text>
             <Text style={styles.heroSubtitle}>Teach what you know, learn what you don&apos;t</Text>
-            <Pressable style={styles.heroBtn} onPress={() => router.push('/(tabs)/search')}>
+            <Pressable style={styles.heroBtn} onPress={() => router.push('/(tabs)/search')}
+              accessibilityRole="button" accessibilityLabel="Explore skills">
               <Text style={styles.heroBtnText}>Explore Skills</Text>
               <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
             </Pressable>
@@ -98,6 +115,22 @@ export default function HomeScreen() {
               <Text style={styles.heroPillLabel}>Trending</Text>
             </View>
           </View>
+        </Animated.View>
+
+        {/* ── Phase 6: Quick Access Cards ─────────────────── */}
+        <Animated.View entering={FadeInDown.delay(130).duration(400)} style={{ flexDirection: 'row', gap: 8, marginBottom: Spacing.lg }}>
+          <Pressable style={[styles.quickCard, { backgroundColor: '#FFD700' }]} onPress={() => router.push('/leaderboard' as any)}>
+            <Text style={styles.quickEmoji}>🏆</Text>
+            <Text style={styles.quickLabel}>Leaderboard</Text>
+          </Pressable>
+          <Pressable style={[styles.quickCard, { backgroundColor: '#6366F1' }]} onPress={() => router.push('/insights' as any)}>
+            <Text style={styles.quickEmoji}>📊</Text>
+            <Text style={styles.quickLabel}>Insights</Text>
+          </Pressable>
+          <Pressable style={[styles.quickCard, { backgroundColor: AppColors.primary }]} onPress={() => router.push('/exchange' as any)}>
+            <Text style={styles.quickEmoji}>🔄</Text>
+            <Text style={styles.quickLabel}>Exchange</Text>
+          </Pressable>
         </Animated.View>
 
         {/* Categories */}
@@ -150,33 +183,37 @@ export default function HomeScreen() {
         {/* Feed */}
         <Animated.View entering={FadeInDown.delay(250).duration(400)} style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>🔥 Trending Skills</Text>
-          <Pressable style={styles.seeAllPill} onPress={() => router.push('/(tabs)/search')}>
+          <Pressable style={styles.seeAllPill} onPress={() => router.push('/(tabs)/search')}
+            accessibilityRole="button" accessibilityLabel="See all skills">
             <Text style={styles.seeAllText}>See all</Text>
             <Ionicons name="arrow-forward" size={12} color={AppColors.primary} />
           </Pressable>
         </Animated.View>
 
-        {activeListings.map((listing, i) => (
-          <Animated.View key={listing.id} entering={FadeInDown.delay(300 + i * 50).duration(400)}>
-            <Card
-              title={listing.title}
-              userName={listing.userName}
-              description={listing.description}
-              credits={listing.credits}
-              createdAt={listing.createdAt}
-              onPress={() => router.push({ pathname: '/skill/[id]', params: { id: listing.id } })}
-              onConnect={() => router.push({ pathname: '/skill/[id]', params: { id: listing.id } })}
-              style={{ marginBottom: Spacing.md }}
-            />
-          </Animated.View>
-        ))}
-
-        {activeListings.length === 0 && (
+        {isLoading ? (
+          <SkeletonLoader variant="card" count={3} />
+        ) : activeListings.length > 0 ? (
+          activeListings.map((listing, i) => (
+            <Animated.View key={listing.id} entering={FadeInDown.delay(300 + i * 50).duration(400)}>
+              <Card
+                title={listing.title}
+                userName={listing.userName}
+                description={listing.description}
+                credits={listing.credits}
+                createdAt={listing.createdAt}
+                onPress={() => router.push({ pathname: '/skill/[id]', params: { id: listing.id } })}
+                onConnect={() => router.push({ pathname: '/skill/[id]', params: { id: listing.id } })}
+                style={{ marginBottom: Spacing.md }}
+              />
+            </Animated.View>
+          ))
+        ) : (
           <View style={styles.emptyFeed}>
             <Text style={styles.emptyEmoji}>🌱</Text>
             <Text style={styles.emptyTitle}>No skills posted yet</Text>
             <Text style={styles.emptyDesc}>Be the first to share your talent!</Text>
-            <Pressable style={styles.heroBtn} onPress={() => router.push('/(tabs)/post')}>
+            <Pressable style={styles.heroBtn} onPress={() => router.push('/(tabs)/post')}
+              accessibilityRole="button" accessibilityLabel="Post a skill">
               <Ionicons name="add" size={18} color="#FFFFFF" />
               <Text style={styles.heroBtnText}>Post a Skill</Text>
             </Pressable>
@@ -293,4 +330,12 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 48 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: AppColors.text },
   emptyDesc: { fontSize: 14, color: AppColors.textMuted },
+
+  // Phase 6 quick access
+  quickCard: {
+    flex: 1, borderRadius: Radii.md, paddingVertical: 12,
+    alignItems: 'center', gap: 4,
+  },
+  quickEmoji: { fontSize: 20 },
+  quickLabel: { fontSize: 11, fontWeight: '700', color: '#FFF' },
 });

@@ -1,15 +1,36 @@
 # CampusBarter — Azure Infrastructure Documentation
 
+## Two-Tenant Architecture
+
+CampusBarter uses **two Azure AD tenants** — this is normal and expected for Entra External ID (CIAM):
+
+| Tenant | What it holds | Why |
+|---|---|---|
+| **Default tenant** (your Azure subscription) | App Service, SQL Server, SQL Database, Key Vault, Blob Storage, Application Insights | Infrastructure lives in your subscription |
+| **CampusBarter CIAM tenant** (`25cf3e13-f550-42d6-b0a9-366ae872b929`) | App Registration, Users, Authentication flows | Entra External ID creates a separate tenant for customer identity |
+
+**How they connect:** The CIAM tenant issues JWT tokens when users log in. The App Service (in your default tenant) validates those tokens using the CIAM tenant's JWKS keys. No cross-tenant admin access is needed — just the tenant ID and client ID.
+
+| CIAM Setting | Value |
+|---|---|
+| **Tenant ID** | `25cf3e13-f550-42d6-b0a9-366ae872b929` |
+| **Client ID** | `c25cd73c-5917-4e99-9906-49c6e77124e1` |
+| **CIAM domain** | `campusbarter.ciamlogin.com` |
+| **Token issuer** | `https://25cf3e13-f550-42d6-b0a9-366ae872b929.ciamlogin.com/25cf3e13-f550-42d6-b0a9-366ae872b929/v2.0` |
+| **JWKS keys** | `https://25cf3e13-f550-42d6-b0a9-366ae872b929.ciamlogin.com/25cf3e13-f550-42d6-b0a9-366ae872b929/discovery/v2.0/keys` |
+
+---
+
 ## Resource Group
 | Property | Value |
 |---|---|
 | **Name** | `campusbarter-rg` |
 | **Region** | Canada Central (Calgary-closest) |
-| **Purpose** | Single container for all CampusBarter Azure resources |
+| **Purpose** | Single container for all CampusBarter Azure resources (in Default tenant) |
 
 ---
 
-## Resources
+## Resources (Default Tenant)
 
 ### 1. Azure SQL Database
 | Property | Value |
@@ -21,8 +42,9 @@
 | **Firewall** | Allow only App Service IP — block all public access |
 | **Backup** | Geo-redundant, 7-day retention |
 
-**Tables:** Users, Listings, Chats, ChatParticipants, Messages, Notifications, AuditLog, Reviews  
-**Schema file:** `infrastructure/schema.sql`
+**Tables:** Users, Listings, Chats, ChatParticipants, ChatUserState, Messages, Notifications, AuditLog, Reviews  
+**Schema file:** `infrastructure/schema.sql`  
+**Chat merge migration:** `infrastructure/chat_conversation_merge.sql`
 
 ---
 

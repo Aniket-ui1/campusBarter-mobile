@@ -48,6 +48,7 @@ export default function PostScreen() {
                 credits: 1,
                 userId: user.id,
                 userName: user.displayName || user.name,
+                category: category,
             });
 
             Alert.alert(
@@ -57,6 +58,9 @@ export default function PostScreen() {
             );
             setTitle(''); setDescription(''); setCategory('');
             setLocation('online'); setTags(''); setIsDraft(false); setErrors({});
+
+            // Navigation: Go to My Listings so user sees their new post immediately
+            router.push('/my-listings');
         } catch (err) {
             Alert.alert('Error', 'Failed to publish. Please try again.');
         } finally {

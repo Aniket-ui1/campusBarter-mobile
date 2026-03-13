@@ -3,8 +3,8 @@
 // PUT /api/notifications/:id/read  — mark one as read
 // PUT /api/notifications/read-all  — mark all as read
 
-import { Router, Request, Response } from 'express';
-import { getNotifications, markNotificationRead, markAllNotificationsRead } from '../db';
+import { Request, Response, Router } from 'express';
+import { getNotifications, markAllNotificationsRead, markNotificationRead } from '../db';
 
 export const notificationsRouter = Router();
 
@@ -13,7 +13,8 @@ notificationsRouter.get('/', async (req: Request, res: Response) => {
     try {
         const notifications = await getNotifications(req.user!.id);
         res.json(notifications);
-    } catch {
+    } catch (err: any) {
+        console.error('[Notifications] GET / failed:', err.message);
         res.status(500).json({ error: 'Failed to fetch notifications' });
     }
 });

@@ -1,6 +1,5 @@
 import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import { AppColors } from '@/constants/theme';
 
 type Props = {
     name: string;
@@ -34,12 +33,18 @@ export function Avatar({ name, uri, size = 40 }: Props) {
             <Image
                 source={{ uri }}
                 style={[styles.image, { width: size, height: size, borderRadius }]}
+                accessibilityLabel={`${name}'s avatar`}
+                accessibilityRole="image"
             />
         );
     }
 
     return (
-        <View style={[styles.avatar, { width: size, height: size, borderRadius, backgroundColor: bg }]}>
+        <View
+            style={[styles.avatar, { width: size, height: size, borderRadius, backgroundColor: bg }]}
+            accessibilityLabel={`${name}'s avatar`}
+            accessibilityRole="image"
+        >
             <Text style={[styles.initials, { fontSize }]}>{getInitials(name)}</Text>
         </View>
     );

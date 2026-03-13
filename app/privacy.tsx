@@ -26,13 +26,13 @@ export default function PrivacyScreen() {
                     <Text style={styles.subhead}>How We Use Your Data{'\n'}</Text>
                     Your data is used to: operate the app, display your profile and listings, facilitate messaging and skill exchanges, generate aggregate analytics, and improve our services.{'\n\n'}
                     <Text style={styles.subhead}>Data Sharing{'\n'}</Text>
-                    We do not sell or share your personal information with third parties. We use Firebase (Google Cloud) for data storage and authentication, which processes data under their own privacy policies and with appropriate data processing agreements.{'\n\n'}
+                    We do not sell or share your personal information with third parties. We use Microsoft Azure for data storage and authentication, which processes data under their own privacy policies and with appropriate data processing agreements.{'\n\n'}
                     <Text style={styles.subhead}>Your Rights{'\n'}</Text>
                     Under PIPEDA, you have the right to: access your personal data, request correction of inaccurate data, withdraw consent and delete your account, and file a complaint with the Privacy Commissioner of Canada. To exercise these rights, use the &apos;Delete Account&apos; option in Settings or contact us.{'\n\n'}
                     <Text style={styles.subhead}>Data Retention{'\n'}</Text>
                     We retain your data while your account is active. Upon deletion, all personal data is removed within 30 days. Anonymized usage data may be retained for analytics.{'\n\n'}
                     <Text style={styles.subhead}>Security{'\n'}</Text>
-                    We use encryption in transit (TLS) and at rest, Firebase security rules, and role-based access to protect your data.
+                    We use encryption in transit (TLS) and at rest, Azure AD authentication, and role-based access to protect your data.
                 </Text>
             </ScrollView>
         </View>
