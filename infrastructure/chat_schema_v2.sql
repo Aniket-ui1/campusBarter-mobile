@@ -102,8 +102,22 @@ END
 ELSE
     PRINT 'UserPushTokens table already exists — skipped';
 
--- ── 5. Verify ────────────────────────────────────────────────
+-- ── 5. Add lastSeenAt to Users (for online/offline status) ────
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'Users' AND COLUMN_NAME = 'lastSeenAt'
+)
+BEGIN
+    ALTER TABLE Users ADD lastSeenAt DATETIME2 NULL;
+    PRINT 'Added lastSeenAt column to Users table';
+END
+ELSE
+    PRINT 'lastSeenAt column already exists — skipped';
+
+-- ── 6. Verify ────────────────────────────────────────────────
 SELECT TABLE_NAME, CREATE_DATE
 FROM   sys.tables
 WHERE  name IN ('Conversations','ConversationMessages','UserPushTokens')
 ORDER  BY CREATE_DATE;
+
+SELECT 'Users.lastSeenAt' AS column_name, 'Added' AS status;
