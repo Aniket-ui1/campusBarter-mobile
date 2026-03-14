@@ -59,8 +59,8 @@ router.post('/conversations',
             const [p1, p2] = [currentUserId, otherUserId].sort();
             await db.request()
                 .input('id', sql.NVarChar(300), convId)
-                .input('p1', sql.NVarChar(200), p1)
-                .input('p2', sql.NVarChar(200), p2)
+                .input('p1', sql.NVarChar(128), p1)
+                .input('p2', sql.NVarChar(128), p2)
                 .query(`
                     INSERT INTO Conversations (conversationId, participant1Id, participant2Id)
                     VALUES (@id, @p1, @p2)
@@ -85,7 +85,7 @@ router.get('/conversations', async (req: Request, res: Response) => {
     try {
         const db = await getPool();
         const result = await db.request()
-            .input('uid', sql.NVarChar(200), userId)
+            .input('uid', sql.NVarChar(128), userId)
             .query(`
                 SELECT
                     c.conversationId,
@@ -148,8 +148,8 @@ router.get('/search',
         try {
             const db = await getPool();
             const result = await db.request()
-                .input('uid', sql.NVarChar(200), userId)
-                .input('q',   sql.NVarChar(200), `%${q}%`)
+                .input('uid', sql.NVarChar(128), userId)
+                .input('q',   sql.NVarChar(128), `%${q}%`)
                 .query(`
                     SELECT TOP 20 m.messageId, m.conversationId, m.senderId,
                                   m.textContent, m.createdAt,
@@ -189,7 +189,7 @@ router.get('/:convId/search',
             // Verify user is a participant
             const check = await db.request()
                 .input('cid', sql.NVarChar(300), convId)
-                .input('uid', sql.NVarChar(200), userId)
+                .input('uid', sql.NVarChar(128), userId)
                 .query(`
                     SELECT 1 FROM Conversations
                     WHERE conversationId = @cid
@@ -204,7 +204,7 @@ router.get('/:convId/search',
             // Search within this conversation
             const result = await db.request()
                 .input('cid', sql.NVarChar(300), convId)
-                .input('q',   sql.NVarChar(200), `%${q}%`)
+                .input('q',   sql.NVarChar(128), `%${q}%`)
                 .query(`
                     SELECT m.messageId, m.conversationId, m.senderId,
                            m.textContent, m.createdAt,
@@ -238,7 +238,7 @@ router.post('/push-token',
         try {
             const db = await getPool();
             await db.request()
-                .input('uid',   sql.NVarChar(200), userId)
+                .input('uid',   sql.NVarChar(128), userId)
                 .input('token', sql.NVarChar(400), String(pushToken).trim())
                 .input('plat',  sql.NVarChar(20),  platform ?? null)
                 .query(`
@@ -276,7 +276,7 @@ router.get('/:convId/messages',
             // Security: verify requester is a participant
             const check = await db.request()
                 .input('cid', sql.NVarChar(300), convId)
-                .input('uid', sql.NVarChar(200), userId)
+                .input('uid', sql.NVarChar(128), userId)
                 .query(`
                     SELECT 1 FROM Conversations
                     WHERE conversationId = @cid
@@ -343,7 +343,7 @@ router.post('/:convId/messages',
             // Security: verify sender is a participant
             const check = await db.request()
                 .input('cid', sql.NVarChar(300), convId)
-                .input('uid', sql.NVarChar(200), senderId)
+                .input('uid', sql.NVarChar(128), senderId)
                 .query(`
                     SELECT 1 FROM Conversations
                     WHERE conversationId = @cid
@@ -361,11 +361,11 @@ router.post('/:convId/messages',
             await db.request()
                 .input('mid',   sql.NVarChar(128), messageId)
                 .input('cid',   sql.NVarChar(300), convId)
-                .input('sid',   sql.NVarChar(200), senderId)
+                .input('sid',   sql.NVarChar(128), senderId)
                 .input('type',  sql.NVarChar(20),  messageType)
                 .input('text',  sql.NVarChar(2000), safeText)
                 .input('murl',  sql.NVarChar(500),  mediaUrl  ?? null)
-                .input('mname', sql.NVarChar(200),  mediaName ?? null)
+                .input('mname', sql.NVarChar(128),  mediaName ?? null)
                 .query(`
                     INSERT INTO ConversationMessages
                         (messageId, conversationId, senderId, messageType, textContent, mediaUrl, mediaName)
@@ -376,7 +376,7 @@ router.post('/:convId/messages',
             await db.request()
                 .input('cid', sql.NVarChar(300), convId)
                 .input('msg', sql.NVarChar(500),  preview)
-                .input('sid', sql.NVarChar(200),  senderId)
+                .input('sid', sql.NVarChar(128),  senderId)
                 .query(`
                     UPDATE Conversations
                     SET lastMessage = @msg, lastMessageTime = GETUTCDATE(), lastSenderId = @sid
@@ -429,7 +429,7 @@ router.put('/:convId/read',
             const db = await getPool();
             await db.request()
                 .input('cid', sql.NVarChar(300), convId)
-                .input('uid', sql.NVarChar(200), userId)
+                .input('uid', sql.NVarChar(128), userId)
                 .query(`
                     UPDATE ConversationMessages
                     SET isRead = 1, readAt = GETUTCDATE()
@@ -465,7 +465,7 @@ router.delete('/:convId',
             // Verify participant before allowing delete
             const existing = await db.request()
                 .input('cid', sql.NVarChar(300), convId)
-                .input('uid', sql.NVarChar(200), userId)
+                .input('uid', sql.NVarChar(128), userId)
                 .query(`
                     SELECT deletedFor FROM Conversations
                     WHERE conversationId = @cid
@@ -511,7 +511,7 @@ router.get('/status/:userId',
                 // Fetch lastSeenAt from database
                 const db = await getPool();
                 const result = await db.request()
-                    .input('uid', sql.NVarChar(200), targetUserId)
+                    .input('uid', sql.NVarChar(128), targetUserId)
                     .query(`SELECT lastSeenAt FROM Users WHERE id = @uid`);
                 
                 if (result.recordset.length > 0) {

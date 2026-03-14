@@ -123,7 +123,7 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
             try {
                 const db = await getPool();
                 await db.request()
-                    .input('uid', sql.NVarChar(200), socket.userId)
+                    .input('uid', sql.NVarChar(128), socket.userId)
                     .query(`
                         UPDATE Users
                         SET lastSeenAt = GETUTCDATE()
@@ -214,7 +214,7 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
                 try {
                     const db = await getPool();
                     await db.request()
-                        .input('uid', sql.NVarChar(200), socket.userId)
+                        .input('uid', sql.NVarChar(128), socket.userId)
                         .query(`
                             UPDATE Users
                             SET lastSeenAt = GETUTCDATE()
