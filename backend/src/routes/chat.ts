@@ -13,6 +13,7 @@ import { getPool } from '../db';
 import { verifyAzureAdToken } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { notifyOtherParticipant } from '../services/pushService';
+import { isUserOnline } from '../socket';
 import { getIO } from '../socketInstance';
 
 const router = Router();
@@ -163,6 +164,62 @@ router.get('/search',
             res.json({ results: result.recordset });
         } catch (e: any) {
             console.error('[Chat] GET /search:', e.message);
+            res.status(500).json({ error: e.message });
+        }
+    }
+);
+
+// ── GET /api/chat/:convId/search ──────────────────────────────
+// Search within a specific conversation.
+router.get('/:convId/search',
+    validate([
+        param('convId').trim().notEmpty(),
+        query('q')
+            .trim().notEmpty().withMessage('q is required')
+            .isLength({ max: 200 }).withMessage('q too long'),
+    ]),
+    async (req: Request, res: Response) => {
+        const userId = req.user!.id;
+        const convId = req.params.convId;
+        const q = String(req.query.q).trim();
+
+        try {
+            const db = await getPool();
+
+            // Verify user is a participant
+            const check = await db.request()
+                .input('cid', sql.NVarChar(300), convId)
+                .input('uid', sql.NVarChar(200), userId)
+                .query(`
+                    SELECT 1 FROM Conversations
+                    WHERE conversationId = @cid
+                      AND (participant1Id = @uid OR participant2Id = @uid)
+                `);
+
+            if (check.recordset.length === 0) {
+                res.status(403).json({ error: 'Forbidden' });
+                return;
+            }
+
+            // Search within this conversation
+            const result = await db.request()
+                .input('cid', sql.NVarChar(300), convId)
+                .input('q',   sql.NVarChar(200), `%${q}%`)
+                .query(`
+                    SELECT m.messageId, m.conversationId, m.senderId,
+                           m.textContent, m.createdAt,
+                           COALESCE(u.displayName, m.senderId) AS senderName
+                    FROM ConversationMessages m
+                    LEFT JOIN Users u ON u.id = m.senderId
+                    WHERE m.conversationId = @cid
+                      AND m.textContent LIKE @q
+                      AND m.isDeleted = 0
+                    ORDER BY m.createdAt DESC
+                `);
+
+            res.json({ results: result.recordset });
+        } catch (e: any) {
+            console.error('[Chat] GET /:convId/search:', e.message);
             res.status(500).json({ error: e.message });
         }
     }
@@ -435,6 +492,99 @@ router.delete('/:convId',
             res.json({ success: true });
         } catch (e: any) {
             console.error('[Chat] DELETE /:convId:', e.message);
+            res.status(500).json({ error: e.message });
+        }
+    }
+);
+
+// ── GET /api/chat/status/:userId ──────────────────────────────
+// Check if a user is online and when they were last seen.
+router.get('/status/:userId',
+    validate([param('userId').trim().notEmpty()]),
+    async (req: Request, res: Response) => {
+        const targetUserId = req.params.userId;
+        try {
+            const isOnline = isUserOnline(targetUserId);
+            
+            let lastSeenAt: Date | null = null;
+            if (!isOnline) {
+                // Fetch lastSeenAt from database
+                const db = await getPool();
+                const result = await db.request()
+                    .input('uid', sql.NVarChar(200), targetUserId)
+                    .query(`SELECT lastSeenAt FROM Users WHERE id = @uid`);
+                
+                if (result.recordset.length > 0) {
+                    lastSeenAt = result.recordset[0].lastSeenAt;
+                }
+            }
+            
+            res.json({
+                isOnline,
+                lastSeenAt
+            });
+        } catch (e: any) {
+            console.error('[Chat] GET /status/:userId:', e.message);
+            res.status(500).json({ error: e.message });
+        }
+    }
+);
+
+// ── DELETE /api/chat/message/:messageId ───────────────────────
+// Delete a message for current user or for everyone.
+router.delete('/message/:messageId',
+    validate([
+        param('messageId').trim().notEmpty(),
+        body('deleteForEveryone').optional().isBoolean(),
+    ]),
+    async (req: Request, res: Response) => {
+        const userId = req.user!.id;
+        const messageId = req.params.messageId;
+        const deleteForEveryone = req.body.deleteForEveryone === true;
+
+        try {
+            const db = await getPool();
+
+            // Security: verify the sender is the current user
+            const message = await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .query(`
+                    SELECT messageId, conversationId, senderId
+                    FROM ConversationMessages
+                    WHERE messageId = @mid
+                `);
+
+            if (message.recordset.length === 0) {
+                res.status(404).json({ error: 'Message not found' });
+                return;
+            }
+
+            const { conversationId, senderId } = message.recordset[0];
+            if (senderId !== userId) {
+                res.status(403).json({ error: 'Can only delete your own messages' });
+                return;
+            }
+
+            // Mark message as deleted
+            await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .query(`
+                    UPDATE ConversationMessages
+                    SET isDeleted = 1
+                    WHERE messageId = @mid
+                `);
+
+            // If deleteForEveryone, emit socket event to all participants
+            if (deleteForEveryone) {
+                const io = getIO();
+                if (io) {
+                    io.to(conversationId).emit('message_deleted', { messageId, conversationId });
+                }
+            }
+
+            res.json({ success: true, messageId });
+        } catch (e: any) {
+            console.error('[Chat] DELETE /message/:messageId:', e.message);
             res.status(500).json({ error: e.message });
         }
     }
