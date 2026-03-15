@@ -1,23 +1,23 @@
+import { Avatar } from '@/components/ui/Avatar';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
+import { getUserById } from '@/lib/api';
+import { chatApi } from '@/services/chatApi';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { Avatar } from '@/components/ui/Avatar';
-import { Badge } from '@/components/ui/Badge';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
-import { chatApi } from '@/services/chatApi';
-import { getUserById } from '@/lib/api';
 
 export default function UserProfileScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
     const { user: currentUser } = useAuth();
-    const { listings, startChat } = useData();
+    const { listings } = useData();
     const [profile, setProfile] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
@@ -39,19 +39,9 @@ export default function UserProfileScreen() {
             const convId = (conv as any)?.conversation?.conversationId ?? (conv as any)?.conversationId;
             if (!convId) throw new Error('Invalid conversation response');
             router.push({ pathname: '/chat/[id]', params: { id: convId } });
-        } catch {
-            try {
-                const listingForChat = userListings[0];
-                const legacyChatId = await startChat(
-                    listingForChat?.id ?? '',
-                    listingForChat?.title ?? `Chat with ${profile?.displayName || 'User'}`,
-                    [currentUser.id, id],
-                    id
-                );
-                router.push({ pathname: '/chat/[id]', params: { id: legacyChatId } });
-            } catch {
-                Alert.alert('Error', 'Could not start chat.');
-            }
+        } catch (error) {
+            const message = (error as { message?: string })?.message ?? 'Could not start chat.';
+            Alert.alert('Error', message);
         }
     };
 

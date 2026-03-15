@@ -9,8 +9,17 @@
 import http from 'http';
 import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
+import sql from 'mssql';
 import { Socket, Server as SocketServer } from 'socket.io';
-import { canAccessChat } from './db';
+import { canAccessChat, getPool } from './db';
+
+// ── In-memory map of connected users for online status ─────────
+const connectedUsers = new Map<string, boolean>();
+
+/** Check if a user is currently online (has an active socket connection). */
+export function isUserOnline(userId: string): boolean {
+    return connectedUsers.has(userId);
+}
 
 // ── JWKS client — must match auth.ts (CIAM tenant, NOT login.microsoftonline.com) ──
 const TENANT_ID = process.env.AZURE_AD_TENANT_ID ?? '';
@@ -42,12 +51,20 @@ interface AuthenticatedSocket extends Socket {
 
 // ── Initialise Socket.io ──────────────────────────────────────
 export function initSocketServer(httpServer: http.Server): SocketServer {
+    const allowedOrigins = [
+        'https://campusbarter.azurestaticapps.net',
+        'exp://*',
+    ];
+    
+    // Allow localhost in development
+    if (process.env.NODE_ENV === 'development' || process.env.ALLOW_LOCALHOST === 'true') {
+        allowedOrigins.push('http://localhost:*');
+        allowedOrigins.push('http://192.168.*:*');
+    }
+    
     const io = new SocketServer(httpServer, {
         cors: {
-            origin: [
-                'https://campusbarter.azurestaticapps.net',
-                'exp://*',
-            ],
+            origin: allowedOrigins,
             methods: ['GET', 'POST'],
         },
         // Allow 1MB payloads (same limit as REST API)
@@ -96,10 +113,25 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
     });
 
     // ── Connection handler ─────────────────────────────────────
-    io.on('connection', (socket: AuthenticatedSocket) => {
+    io.on('connection', async (socket: AuthenticatedSocket) => {
         console.log(`[Socket] Connected: ${socket.userId} (${socket.displayName})`);
         if (socket.userId) {
             socket.join(`user:${socket.userId}`);
+            
+            // ── Track online status and update lastSeenAt ────────
+            connectedUsers.set(socket.userId, true);
+            try {
+                const db = await getPool();
+                await db.request()
+                    .input('uid', sql.NVarChar(128), socket.userId)
+                    .query(`
+                        UPDATE Users
+                        SET lastSeenAt = GETUTCDATE()
+                        WHERE id = @uid
+                    `);
+            } catch (e) {
+                console.error('[Socket] Failed to update lastSeenAt on connect:', (e as Error).message);
+            }
         }
 
         const joinConversationRoom = async (conversationId: string) => {
@@ -175,8 +207,23 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
             }
         });
 
-        socket.on('disconnect', () => {
+        socket.on('disconnect', async () => {
             console.log(`[Socket] Disconnected: ${socket.userId}`);
+            if (socket.userId) {
+                connectedUsers.delete(socket.userId);
+                try {
+                    const db = await getPool();
+                    await db.request()
+                        .input('uid', sql.NVarChar(128), socket.userId)
+                        .query(`
+                            UPDATE Users
+                            SET lastSeenAt = GETUTCDATE()
+                            WHERE id = @uid
+                        `);
+                } catch (e) {
+                    console.error('[Socket] Failed to update lastSeenAt on disconnect:', (e as Error).message);
+                }
+            }
         });
     });
 

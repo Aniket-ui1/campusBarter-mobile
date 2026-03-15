@@ -8,8 +8,9 @@ import {
     createTypingEmitter,
     joinConversation,
     leaveConversation,
-    onReceiveMessage,
+    onMessageDeleted,
     onMessagesSeen,
+    onReceiveMessage,
     onUserTyping,
 } from '@/services/socketService';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,7 +44,24 @@ function formatDateLabel(iso: string): string {
     yesterday.setDate(yesterday.getDate() - 1);
     if (d.toDateString() === today.toDateString()) return 'Today';
     if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatLastSeen(iso: string | null): string | null {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (d.toDateString() === today.toDateString()) {
+        return `last seen today at ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+    }
+    if (d.toDateString() === yesterday.toDateString()) {
+        return 'last seen yesterday';
+    }
+    return `last seen ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 }
 
 function needsDateSep(msgs: ChatMessage[], index: number): boolean {
@@ -51,6 +69,27 @@ function needsDateSep(msgs: ChatMessage[], index: number): boolean {
     const a = new Date(msgs[index].createdAt).toDateString();
     const b = new Date(msgs[index + 1].createdAt).toDateString();
     return a !== b;
+}
+
+function getMessageTimestamp(message: Pick<ChatMessage, 'createdAt'>): number {
+    const parsed = new Date(message.createdAt).getTime();
+    return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function sortMessagesNewestFirst(messages: ChatMessage[]): ChatMessage[] {
+    return [...messages].sort((left, right) => {
+        const timeDiff = getMessageTimestamp(right) - getMessageTimestamp(left);
+        if (timeDiff !== 0) return timeDiff;
+        return right.messageId.localeCompare(left.messageId);
+    });
+}
+
+function mergeMessages(messages: ChatMessage[]): ChatMessage[] {
+    const unique = new Map<string, ChatMessage>();
+    for (const message of messages) {
+        unique.set(message.messageId, message);
+    }
+    return sortMessagesNewestFirst(Array.from(unique.values()));
 }
 
 // ── Component ─────────────────────────────────────────────────────
@@ -78,10 +117,25 @@ export default function ChatScreen() {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
     const [loadingOlder, setLoadingOlder] = useState(false);
+    const [onlineStatus, setOnlineStatus] = useState<{ isOnline: boolean; lastSeenText: string | null }>({
+        isOnline: false,
+        lastSeenText: null,
+    });
+    const [isSearching, setIsSearching] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
+    const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
 
+    const searchDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const listRef = useRef<FlatList>(null);
     const typingEmitter = useRef<ReturnType<typeof createTypingEmitter> | null>(null);
+
+    const scrollToLatest = useCallback((animated = true) => {
+        requestAnimationFrame(() => {
+            listRef.current?.scrollToOffset({ offset: 0, animated });
+        });
+    }, []);
 
     const mapLegacyMessage = useCallback((m: FSMessage): ChatMessage => ({
         messageId: m.id,
@@ -104,7 +158,7 @@ export default function ChatScreen() {
         if (!isLegacyMode) {
             try {
                 const data = await chatApi.getMessages(id, p);
-                const msgs = data.messages ?? [];
+                const msgs = sortMessagesNewestFirst(data.messages ?? []);
                 if (p === 1) {
                     setMessages(msgs);
                     setHasMore(msgs.length >= 30);
@@ -115,7 +169,7 @@ export default function ChatScreen() {
                         if (otherMsg?.senderId && !recipientId) setRecipientId(otherMsg.senderId);
                     }
                 } else {
-                    setMessages(prev => [...msgs, ...prev]);
+                    setMessages(prev => mergeMessages([...prev, ...msgs]));
                     setHasMore(msgs.length >= 30);
                 }
                 return;
@@ -127,7 +181,7 @@ export default function ChatScreen() {
 
         try {
             const legacyMsgs = await loadOlderMessages(id, p, 30);
-            const mapped = legacyMsgs.map(mapLegacyMessage);
+            const mapped = sortMessagesNewestFirst(legacyMsgs.map(mapLegacyMessage));
             if (p === 1) {
                 setMessages(mapped);
                 setHasMore(mapped.length >= 30);
@@ -138,7 +192,7 @@ export default function ChatScreen() {
                     if (!recipientId && legacyChat.otherUserId) setRecipientId(legacyChat.otherUserId);
                 }
             } else {
-                setMessages(prev => [...mapped, ...prev]);
+                setMessages(prev => mergeMessages([...prev, ...mapped]));
                 setHasMore(mapped.length >= 30);
             }
         } catch {
@@ -160,13 +214,63 @@ export default function ChatScreen() {
         void chatApi.markRead(id).catch(() => undefined);
     }, [id, isLegacyMode, markChatRead]);
 
+    // ── Fetch online status ──────────────────────────────────────
+    useEffect(() => {
+        if (!recipientId || isLegacyMode) return;
+        
+        void (async () => {
+            try {
+                const status = await chatApi.getUserStatus(recipientId);
+                if (status.isOnline) {
+                    setOnlineStatus({ isOnline: true, lastSeenText: null });
+                } else {
+                    const lastSeen = formatLastSeen(status.lastSeenAt);
+                    setOnlineStatus({ isOnline: false, lastSeenText: lastSeen });
+                }
+            } catch {
+                // Fail silently  — status is optional
+            }
+        })();
+    }, [recipientId, isLegacyMode]);
+
+    // ── Search with debounce ─────────────────────────────────────
+    useEffect(() => {
+        if (!isSearching) return;
+        
+        if (searchDebounceTimer.current) clearTimeout(searchDebounceTimer.current);
+
+        if (!searchQuery.trim()) {
+            setSearchResults([]);
+            setHighlightedMessageId(null);
+            return;
+        }
+
+        searchDebounceTimer.current = setTimeout(() => {
+            void (async () => {
+                try {
+                    const result = await chatApi.searchConversation(id, searchQuery);
+                    setSearchResults(result.results as ChatMessage[]);
+                    if (result.results && result.results.length > 0) {
+                        setHighlightedMessageId((result.results[0] as ChatMessage).messageId);
+                    }
+                } catch {
+                    setSearchResults([]);
+                }
+            })();
+        }, 300);
+
+        return () => {
+            if (searchDebounceTimer.current) clearTimeout(searchDebounceTimer.current);
+        };
+    }, [searchQuery, isSearching, id]);
+
     // ── Socket: join room & subscribe to messages ────────────────
     useEffect(() => {
         if (!id) return;
 
         if (isLegacyMode) {
             const unsubLegacy = subscribeToMessages(id, (legacyMsgs) => {
-                setMessages(legacyMsgs.map(mapLegacyMessage));
+                setMessages(sortMessagesNewestFirst(legacyMsgs.map(mapLegacyMessage)));
             });
             return () => {
                 unsubLegacy();
@@ -179,10 +283,10 @@ export default function ChatScreen() {
         const unsubMsg = onReceiveMessage((msg) => {
             if (msg.conversationId !== id) return;
             setMessages(prev => {
-                // Dedup by messageId
                 if (prev.some(m => m.messageId === msg.messageId)) return prev;
-                return [...prev, msg as ChatMessage];
+                return mergeMessages([msg as ChatMessage, ...prev]);
             });
+            scrollToLatest();
             void chatApi.markRead(id).catch(() => undefined);
         });
 
@@ -200,12 +304,22 @@ export default function ChatScreen() {
             typingTimer.current = setTimeout(() => setTypingName(null), 3000);
         });
 
+        const unsubDeleted = onMessageDeleted(({ messageId: deletedMessageId, conversationId: deletedConvId }) => {
+            if (deletedConvId !== id) return;
+            setMessages(prev => prev.map(m =>
+                m.messageId === deletedMessageId
+                    ? { ...m, isDeleted: true, textContent: null }
+                    : m
+            ));
+        });
+
         return () => {
             leaveConversation(id);
             typingEmitter.current?.cleanup();
             unsubMsg();
             unsubSeen();
             unsubTyping();
+            unsubDeleted();
         };
     }, [id, isLegacyMode, user?.id, user?.displayName, subscribeToMessages, mapLegacyMessage]);
 
@@ -229,7 +343,8 @@ export default function ChatScreen() {
             isDeleted:      false,
             createdAt:      new Date().toISOString(),
         };
-        setMessages(prev => [...prev, optimisticMsg]);
+        setMessages(prev => mergeMessages([optimisticMsg, ...prev]));
+        scrollToLatest(false);
         setText('');
         setSending(true);
 
@@ -239,10 +354,22 @@ export default function ChatScreen() {
                 setMessages(prev => prev.filter(m => m.messageId !== optimisticMsg.messageId));
                 await loadMessages(1);
             } else {
-                const { message } = await chatApi.sendMessage(id, t);
-                setMessages(prev => prev.map(m =>
-                    m.messageId === optimisticMsg.messageId ? message : m
-                ));
+                const { message } = await chatApi.sendMessage(id, t, {
+                    id: user.id,
+                    name: user.displayName,
+                });
+                const stableMessage: ChatMessage = {
+                    ...message,
+                    messageId: message.messageId || optimisticMsg.messageId,
+                    senderId: message.senderId || user.id,
+                    senderName: message.senderName || user.displayName,
+                    textContent: message.textContent ?? t,
+                    createdAt: message.createdAt || optimisticMsg.createdAt,
+                };
+                setMessages(prev => mergeMessages(prev.map(m =>
+                    m.messageId === optimisticMsg.messageId ? stableMessage : m
+                )));
+                scrollToLatest(false);
             }
         } catch (error) {
             setMessages(prev => prev.filter(m => m.messageId !== optimisticMsg.messageId));
@@ -304,28 +431,98 @@ export default function ChatScreen() {
                             styles.bubble,
                             isMe ? styles.bubbleMe : styles.bubbleThem,
                             isOptimistic && styles.bubbleOptimistic,
+                            item.isDeleted && styles.bubbleDeleted,
+                            highlightedMessageId === item.messageId && styles.bubbleHighlighted,
                         ]}
-                        onLongPress={() => Alert.alert('Message', item.textContent ?? '', [
-                            { text: 'Copy', onPress: () => { } },
-                            { text: 'Cancel', style: 'cancel' },
-                        ])}
+                        onLongPress={() => {
+                            if (item.isDeleted) return;
+                            
+                            if (isMe) {
+                                // Sent by me — show both delete options
+                                Alert.alert('Delete message', 'Choose how to delete this message', [
+                                    {
+                                        text: 'Delete for me',
+                                        onPress: async () => {
+                                            try {
+                                                await chatApi.deleteMessage(item.messageId, false);
+                                                setMessages(prev => prev.map(m =>
+                                                    m.messageId === item.messageId
+                                                        ? { ...m, isDeleted: true, textContent: null }
+                                                        : m
+                                                ));
+                                            } catch (e) {
+                                                Alert.alert('Error', 'Failed to delete message');
+                                            }
+                                        },
+                                        style: 'default',
+                                    },
+                                    {
+                                        text: 'Delete for everyone',
+                                        onPress: async () => {
+                                            try {
+                                                await chatApi.deleteMessage(item.messageId, true);
+                                                setMessages(prev => prev.map(m =>
+                                                    m.messageId === item.messageId
+                                                        ? { ...m, isDeleted: true, textContent: null }
+                                                        : m
+                                                ));
+                                            } catch (e) {
+                                                Alert.alert('Error', 'Failed to delete message for everyone');
+                                            }
+                                        },
+                                        style: 'destructive',
+                                    },
+                                    { text: 'Cancel', style: 'cancel' },
+                                ]);
+                            } else {
+                                // Received message — only delete for me
+                                Alert.alert('Delete message', 'Delete this message?', [
+                                    {
+                                        text: 'Delete for me',
+                                        onPress: async () => {
+                                            try {
+                                                await chatApi.deleteMessage(item.messageId, false);
+                                                setMessages(prev => prev.map(m =>
+                                                    m.messageId === item.messageId
+                                                        ? { ...m, isDeleted: true, textContent: null }
+                                                        : m
+                                                ));
+                                            } catch (e) {
+                                                Alert.alert('Error', 'Failed to delete message');
+                                            }
+                                        },
+                                        style: 'destructive',
+                                    },
+                                    { text: 'Cancel', style: 'cancel' },
+                                ]);
+                            }
+                        }}
                     >
-                        {/* Sender name (group-chat style for received messages) */}
-                        {!isMe && (
-                            <Text style={styles.senderName}>{item.senderName || otherName}</Text>
-                        )}
+                        {/* Show deleted placeholder or message content */}
+                        {item.isDeleted ? (
+                            <Text style={[styles.bubbleText, styles.deletedText]}>
+                                This message was deleted
+                            </Text>
+                        ) : (
+                            <>
+                                {/* Sender name (group-chat style for received messages) */}
+                                {!isMe && (
+                                    <Text style={styles.senderName}>{item.senderName || otherName}</Text>
+                                )}
 
-                        {/* Message text */}
-                        <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
-                            {item.textContent}
-                        </Text>
+                                {/* Message text */}
+                                <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
+                                    {item.textContent}
+                                </Text>
+                            </>
+                        )}
 
                         {/* Time + tick */}
                         <View style={styles.meta}>
                             <Text style={[styles.time, isMe && styles.timeMe]}>
                                 {formatTime(msgTime)}
                             </Text>
-                            {isMe && (
+                            {isMe && !item.isDeleted && (
                                 <Ionicons
                                     name={isOptimistic ? 'checkmark' : (item.isRead ? 'checkmark-done' : 'checkmark')}
                                     size={13}
@@ -364,6 +561,13 @@ export default function ChatScreen() {
                         <Text style={styles.headerName} numberOfLines={1}>{otherName}</Text>
                         {typingName ? (
                             <Text style={styles.typingText}>typing…</Text>
+                        ) : onlineStatus.isOnline ? (
+                            <View style={styles.onlineStatus}>
+                                <View style={styles.onlineDot} />
+                                <Text style={styles.onlineText}>online</Text>
+                            </View>
+                        ) : onlineStatus.lastSeenText ? (
+                            <Text style={styles.headerSub}>{onlineStatus.lastSeenText}</Text>
                         ) : (
                             <Text style={styles.headerSub}>CampusBarter</Text>
                         )}
@@ -372,6 +576,10 @@ export default function ChatScreen() {
 
                 {/* Header actions */}
                 <View style={styles.headerActions}>
+                    <Pressable style={styles.headerIcon} hitSlop={10}
+                        onPress={() => setIsSearching(!isSearching)}>
+                        <Ionicons name="search" size={20} color="#FFF" />
+                    </Pressable>
                     <Pressable style={styles.headerIcon} hitSlop={10}
                         onPress={() => Alert.alert('Coming soon', 'Voice calls will be available in a future update.')}>
                         <Ionicons name="call-outline" size={20} color="#FFF" />
@@ -382,6 +590,33 @@ export default function ChatScreen() {
                     </Pressable>
                 </View>
             </View>
+
+            {/* Search bar */}
+            {isSearching && (
+                <View style={styles.searchBar}>
+                    <Pressable style={styles.searchCloseBtn} onPress={() => {
+                        setIsSearching(false);
+                        setSearchQuery('');
+                        setSearchResults([]);
+                        setHighlightedMessageId(null);
+                    }}>
+                        <Ionicons name="close" size={20} color={AppColors.textMuted} />
+                    </Pressable>
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search messages"
+                        placeholderTextColor={AppColors.textMuted}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        autoFocus
+                    />
+                    {searchResults.length > 0 && (
+                        <Text style={styles.searchResultCount}>
+                            {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'}
+                        </Text>
+                    )}
+                </View>
+            )}
 
             {/* Chat wallpaper background + messages */}
             <KeyboardAvoidingView
@@ -410,6 +645,7 @@ export default function ChatScreen() {
                             keyExtractor={item => item.messageId}
                             renderItem={renderMessage}
                             inverted
+                            maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: 10 }}
                             onEndReached={handleLoadOlder}
                             onEndReachedThreshold={0.2}
                             ListFooterComponent={loadingOlder ? (
@@ -516,6 +752,22 @@ const styles = StyleSheet.create({
     typingText: {
         fontSize: 11, color: '#90EE90', marginTop: 1, fontStyle: 'italic',
     },
+    onlineStatus: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginTop: 1,
+    },
+    onlineDot: {
+        width: 7,
+        height: 7,
+        borderRadius: 3.5,
+        backgroundColor: '#90EE90',
+    },
+    onlineText: {
+        fontSize: 11,
+        color: '#90EE90',
+    },
     headerActions: {
         flexDirection: 'row', gap: 4,
     },
@@ -554,6 +806,39 @@ const styles = StyleSheet.create({
     },
     dateSepText: { fontSize: 11, color: '#555', fontWeight: '600' },
 
+    // Search bar
+    searchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        backgroundColor: '#F0F0F0',
+        borderBottomWidth: 1,
+        borderBottomColor: '#E0E0E0',
+    },
+    searchCloseBtn: {
+        width: 36,
+        height: 36,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 15,
+        color: '#111',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 20,
+        height: 36,
+    },
+    searchResultCount: {
+        fontSize: 12,
+        color: AppColors.textMuted,
+        fontWeight: '500',
+    },
+
     // Message bubbles
     bubbleRow: {
         flexDirection: 'row',
@@ -589,6 +874,19 @@ const styles = StyleSheet.create({
     },
     bubbleOptimistic: {
         opacity: 0.75,
+    },
+    bubbleDeleted: {
+        backgroundColor: 'rgba(200, 200, 200, 0.3)',
+    },
+    bubbleHighlighted: {
+        borderWidth: 2,
+        borderColor: AppColors.primary,
+        backgroundColor: 'rgba(26, 92, 56, 0.1)',
+    },
+    deletedText: {
+        color: '#999',
+        fontStyle: 'italic',
+        fontSize: 13,
     },
     senderName: {
         fontSize: 12,

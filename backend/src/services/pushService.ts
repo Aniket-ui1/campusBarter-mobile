@@ -19,7 +19,7 @@ async function getTokensForUser(userId: string): Promise<string[]> {
     try {
         const db = await getPool();
         const result = await db.request()
-            .input('uid', sql.NVarChar(200), userId)
+            .input('uid', sql.NVarChar(128), userId)
             .query('SELECT pushToken FROM UserPushTokens WHERE userId = @uid');
         return result.recordset.map((r: { pushToken: string }) => r.pushToken);
     } catch {
@@ -75,7 +75,7 @@ export async function notifyOtherParticipant(
     try {
         const result = await pool.request()
             .input('cid', sql.NVarChar(300), conversationId)
-            .input('sid', sql.NVarChar(200), senderId)
+            .input('sid', sql.NVarChar(128), senderId)
             .query(`
                 SELECT u.displayName AS senderName,
                        CASE

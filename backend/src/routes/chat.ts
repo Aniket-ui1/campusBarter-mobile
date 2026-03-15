@@ -13,6 +13,7 @@ import { getPool } from '../db';
 import { verifyAzureAdToken } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { notifyOtherParticipant } from '../services/pushService';
+import { isUserOnline } from '../socket';
 import { getIO } from '../socketInstance';
 
 const router = Router();
@@ -58,8 +59,8 @@ router.post('/conversations',
             const [p1, p2] = [currentUserId, otherUserId].sort();
             await db.request()
                 .input('id', sql.NVarChar(300), convId)
-                .input('p1', sql.NVarChar(200), p1)
-                .input('p2', sql.NVarChar(200), p2)
+                .input('p1', sql.NVarChar(128), p1)
+                .input('p2', sql.NVarChar(128), p2)
                 .query(`
                     INSERT INTO Conversations (conversationId, participant1Id, participant2Id)
                     VALUES (@id, @p1, @p2)
@@ -84,7 +85,7 @@ router.get('/conversations', async (req: Request, res: Response) => {
     try {
         const db = await getPool();
         const result = await db.request()
-            .input('uid', sql.NVarChar(200), userId)
+            .input('uid', sql.NVarChar(128), userId)
             .query(`
                 SELECT
                     c.conversationId,
@@ -147,8 +148,8 @@ router.get('/search',
         try {
             const db = await getPool();
             const result = await db.request()
-                .input('uid', sql.NVarChar(200), userId)
-                .input('q',   sql.NVarChar(200), `%${q}%`)
+                .input('uid', sql.NVarChar(128), userId)
+                .input('q',   sql.NVarChar(128), `%${q}%`)
                 .query(`
                     SELECT TOP 20 m.messageId, m.conversationId, m.senderId,
                                   m.textContent, m.createdAt,
@@ -168,6 +169,62 @@ router.get('/search',
     }
 );
 
+// ── GET /api/chat/:convId/search ──────────────────────────────
+// Search within a specific conversation.
+router.get('/:convId/search',
+    validate([
+        param('convId').trim().notEmpty(),
+        query('q')
+            .trim().notEmpty().withMessage('q is required')
+            .isLength({ max: 200 }).withMessage('q too long'),
+    ]),
+    async (req: Request, res: Response) => {
+        const userId = req.user!.id;
+        const convId = req.params.convId;
+        const q = String(req.query.q).trim();
+
+        try {
+            const db = await getPool();
+
+            // Verify user is a participant
+            const check = await db.request()
+                .input('cid', sql.NVarChar(300), convId)
+                .input('uid', sql.NVarChar(128), userId)
+                .query(`
+                    SELECT 1 FROM Conversations
+                    WHERE conversationId = @cid
+                      AND (participant1Id = @uid OR participant2Id = @uid)
+                `);
+
+            if (check.recordset.length === 0) {
+                res.status(403).json({ error: 'Forbidden' });
+                return;
+            }
+
+            // Search within this conversation
+            const result = await db.request()
+                .input('cid', sql.NVarChar(300), convId)
+                .input('q',   sql.NVarChar(128), `%${q}%`)
+                .query(`
+                    SELECT m.messageId, m.conversationId, m.senderId,
+                           m.textContent, m.createdAt,
+                           COALESCE(u.displayName, m.senderId) AS senderName
+                    FROM ConversationMessages m
+                    LEFT JOIN Users u ON u.id = m.senderId
+                    WHERE m.conversationId = @cid
+                      AND m.textContent LIKE @q
+                      AND m.isDeleted = 0
+                    ORDER BY m.createdAt DESC
+                `);
+
+            res.json({ results: result.recordset });
+        } catch (e: any) {
+            console.error('[Chat] GET /:convId/search:', e.message);
+            res.status(500).json({ error: e.message });
+        }
+    }
+);
+
 // ── POST /api/chat/push-token ─────────────────────────────────
 // Register an Expo push token for the current user.
 router.post('/push-token',
@@ -181,7 +238,7 @@ router.post('/push-token',
         try {
             const db = await getPool();
             await db.request()
-                .input('uid',   sql.NVarChar(200), userId)
+                .input('uid',   sql.NVarChar(128), userId)
                 .input('token', sql.NVarChar(400), String(pushToken).trim())
                 .input('plat',  sql.NVarChar(20),  platform ?? null)
                 .query(`
@@ -219,7 +276,7 @@ router.get('/:convId/messages',
             // Security: verify requester is a participant
             const check = await db.request()
                 .input('cid', sql.NVarChar(300), convId)
-                .input('uid', sql.NVarChar(200), userId)
+                .input('uid', sql.NVarChar(128), userId)
                 .query(`
                     SELECT 1 FROM Conversations
                     WHERE conversationId = @cid
@@ -286,7 +343,7 @@ router.post('/:convId/messages',
             // Security: verify sender is a participant
             const check = await db.request()
                 .input('cid', sql.NVarChar(300), convId)
-                .input('uid', sql.NVarChar(200), senderId)
+                .input('uid', sql.NVarChar(128), senderId)
                 .query(`
                     SELECT 1 FROM Conversations
                     WHERE conversationId = @cid
@@ -304,11 +361,11 @@ router.post('/:convId/messages',
             await db.request()
                 .input('mid',   sql.NVarChar(128), messageId)
                 .input('cid',   sql.NVarChar(300), convId)
-                .input('sid',   sql.NVarChar(200), senderId)
+                .input('sid',   sql.NVarChar(128), senderId)
                 .input('type',  sql.NVarChar(20),  messageType)
                 .input('text',  sql.NVarChar(2000), safeText)
                 .input('murl',  sql.NVarChar(500),  mediaUrl  ?? null)
-                .input('mname', sql.NVarChar(200),  mediaName ?? null)
+                .input('mname', sql.NVarChar(128),  mediaName ?? null)
                 .query(`
                     INSERT INTO ConversationMessages
                         (messageId, conversationId, senderId, messageType, textContent, mediaUrl, mediaName)
@@ -319,7 +376,7 @@ router.post('/:convId/messages',
             await db.request()
                 .input('cid', sql.NVarChar(300), convId)
                 .input('msg', sql.NVarChar(500),  preview)
-                .input('sid', sql.NVarChar(200),  senderId)
+                .input('sid', sql.NVarChar(128),  senderId)
                 .query(`
                     UPDATE Conversations
                     SET lastMessage = @msg, lastMessageTime = GETUTCDATE(), lastSenderId = @sid
@@ -372,7 +429,7 @@ router.put('/:convId/read',
             const db = await getPool();
             await db.request()
                 .input('cid', sql.NVarChar(300), convId)
-                .input('uid', sql.NVarChar(200), userId)
+                .input('uid', sql.NVarChar(128), userId)
                 .query(`
                     UPDATE ConversationMessages
                     SET isRead = 1, readAt = GETUTCDATE()
@@ -408,7 +465,7 @@ router.delete('/:convId',
             // Verify participant before allowing delete
             const existing = await db.request()
                 .input('cid', sql.NVarChar(300), convId)
-                .input('uid', sql.NVarChar(200), userId)
+                .input('uid', sql.NVarChar(128), userId)
                 .query(`
                     SELECT deletedFor FROM Conversations
                     WHERE conversationId = @cid
@@ -435,6 +492,99 @@ router.delete('/:convId',
             res.json({ success: true });
         } catch (e: any) {
             console.error('[Chat] DELETE /:convId:', e.message);
+            res.status(500).json({ error: e.message });
+        }
+    }
+);
+
+// ── GET /api/chat/status/:userId ──────────────────────────────
+// Check if a user is online and when they were last seen.
+router.get('/status/:userId',
+    validate([param('userId').trim().notEmpty()]),
+    async (req: Request, res: Response) => {
+        const targetUserId = req.params.userId;
+        try {
+            const isOnline = isUserOnline(targetUserId);
+            
+            let lastSeenAt: Date | null = null;
+            if (!isOnline) {
+                // Fetch lastSeenAt from database
+                const db = await getPool();
+                const result = await db.request()
+                    .input('uid', sql.NVarChar(128), targetUserId)
+                    .query(`SELECT lastSeenAt FROM Users WHERE id = @uid`);
+                
+                if (result.recordset.length > 0) {
+                    lastSeenAt = result.recordset[0].lastSeenAt;
+                }
+            }
+            
+            res.json({
+                isOnline,
+                lastSeenAt
+            });
+        } catch (e: any) {
+            console.error('[Chat] GET /status/:userId:', e.message);
+            res.status(500).json({ error: e.message });
+        }
+    }
+);
+
+// ── DELETE /api/chat/message/:messageId ───────────────────────
+// Delete a message for current user or for everyone.
+router.delete('/message/:messageId',
+    validate([
+        param('messageId').trim().notEmpty(),
+        body('deleteForEveryone').optional().isBoolean(),
+    ]),
+    async (req: Request, res: Response) => {
+        const userId = req.user!.id;
+        const messageId = req.params.messageId;
+        const deleteForEveryone = req.body.deleteForEveryone === true;
+
+        try {
+            const db = await getPool();
+
+            // Security: verify the sender is the current user
+            const message = await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .query(`
+                    SELECT messageId, conversationId, senderId
+                    FROM ConversationMessages
+                    WHERE messageId = @mid
+                `);
+
+            if (message.recordset.length === 0) {
+                res.status(404).json({ error: 'Message not found' });
+                return;
+            }
+
+            const { conversationId, senderId } = message.recordset[0];
+            if (senderId !== userId) {
+                res.status(403).json({ error: 'Can only delete your own messages' });
+                return;
+            }
+
+            // Mark message as deleted
+            await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .query(`
+                    UPDATE ConversationMessages
+                    SET isDeleted = 1
+                    WHERE messageId = @mid
+                `);
+
+            // If deleteForEveryone, emit socket event to all participants
+            if (deleteForEveryone) {
+                const io = getIO();
+                if (io) {
+                    io.to(conversationId).emit('message_deleted', { messageId, conversationId });
+                }
+            }
+
+            res.json({ success: true, messageId });
+        } catch (e: any) {
+            console.error('[Chat] DELETE /message/:messageId:', e.message);
             res.status(500).json({ error: e.message });
         }
     }

@@ -8,8 +8,8 @@
 import {
     connectSocket,
     disconnectSocket,
-    emitTyping,
     emitStopTyping,
+    emitTyping,
     getSocket,
     joinChat,
     leaveChat,
@@ -18,7 +18,7 @@ import {
 } from '../lib/socket';
 import type { ChatMessage } from './chatApi';
 
-export type {  };
+export type { };
 
 // ─ types for v2 socket events ─────────────────────────────────
 export interface ConversationUpdatedPayload {
@@ -31,6 +31,11 @@ export interface ConversationUpdatedPayload {
 export interface MessageSeenPayload {
     conversationId: string;
     readByUserId: string;
+}
+
+export interface MessageDeletedPayload {
+    messageId: string;
+    conversationId: string;
 }
 
 // ── Connect / Disconnect ──────────────────────────────────────
@@ -55,8 +60,8 @@ export function onReceiveMessage(
 ): () => void {
     return onNewMessage((raw) => {
         handler({
-            messageId:      (raw as any).messageId ?? (raw as any).id,
-            conversationId: raw.conversationId,
+            messageId:      (raw as any).messageId ?? (raw as any).id ?? `sock-${(raw as any).sentAt ?? Date.now()}-${raw.senderId}`,
+            conversationId: raw.conversationId ?? (raw as any).chatId,
             senderId:       raw.senderId,
             senderName:     raw.senderName,
             messageType:    (raw as any).messageType ?? 'text',
@@ -65,7 +70,7 @@ export function onReceiveMessage(
             mediaName:      (raw as any).mediaName ?? null,
             isRead:         false,
             isDeleted:      false,
-            createdAt:      raw.sentAt ?? new Date().toISOString(),
+            createdAt:      (raw as any).createdAt ?? raw.sentAt ?? new Date().toISOString(),
         });
     });
 }
@@ -94,9 +99,18 @@ export function onMessagesSeen(
     return () => sock.off('messages_seen', handler);
 }
 
+/** Subscribe to "message deleted" events. Returns unsubscribe fn. */
+export function onMessageDeleted(
+    handler: (payload: MessageDeletedPayload) => void
+): () => void {
+    const sock = getSocket() ?? connectSocket();
+    sock.on('message_deleted', handler);
+    return () => sock.off('message_deleted', handler);
+}
+
 // ── Typing indicators ─────────────────────────────────────────
 /** Emit typing-start to server. */
-export { emitTyping as emitTypingStart, emitStopTyping, onTyping as onUserTyping };
+export { emitStopTyping, emitTyping as emitTypingStart, onTyping as onUserTyping };
 
 /** Emit typing-stop after debounce. Returns cleanup fn. */
 export function createTypingEmitter(conversationId: string): {
