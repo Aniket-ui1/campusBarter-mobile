@@ -5,7 +5,7 @@
 // Uses the same token mechanism as lib/api.ts.
 // ─────────────────────────────────────────────────────────────
 
-import { getApiBase, getApiToken } from '../lib/api';
+import { getApiBase, getApiToken, getDevUser } from '../lib/api';
 
 export interface Conversation {
     conversationId: string;
@@ -38,10 +38,37 @@ export interface ChatMessage {
     createdAt: string;
 }
 
-function authHeaders(): Record<string, string> {
+function getTokenWithFallback(): string | null {
     const token = getApiToken();
+    if (token) return token;
+    
+    // Web refresh fallback: recover token from localStorage when in-memory state is lost
+    if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem('campusbarter_token');
+    }
+    
+    return null;
+}
+
+function authHeaders(): Record<string, string> {
+    const token = getTokenWithFallback();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+
+        // When using a mock token (local dev), also send x-dev-* headers
+        // so the backend dev bypass can identify the user without JWT.
+        if (token.startsWith('mock-')) {
+            const devUser = getDevUser();
+            if (devUser) {
+                headers['x-dev-user-id'] = devUser.id;
+                headers['x-dev-email'] = devUser.email;
+                headers['x-dev-name'] = devUser.name;
+            }
+        }
+    }
+    
     return headers;
 }
 

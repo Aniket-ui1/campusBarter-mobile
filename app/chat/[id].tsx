@@ -97,7 +97,7 @@ export default function ChatScreen() {
     const { id, recipientId: paramRecipientId, recipientName: paramRecipientName }
         = useLocalSearchParams<{ id: string; recipientId?: string; recipientName?: string }>();
     const router = useRouter();
-    const { user } = useAuth();
+    const { user, isLoading: authLoading } = useAuth();
     const {
         getChatById,
         loadOlderMessages,
@@ -201,8 +201,11 @@ export default function ChatScreen() {
     }, [id, isLegacyMode, paramRecipientName, user?.id, recipientId, loadOlderMessages, mapLegacyMessage, getChatById]);
 
     useEffect(() => {
-        void loadMessages(1);
-    }, [loadMessages]);
+        // ✓ Only load messages after auth is ready
+        if (!authLoading) {
+            void loadMessages(1);
+        }
+    }, [loadMessages, authLoading]);
 
     // ── Mark as read ─────────────────────────────────────────────
     useEffect(() => {
@@ -399,6 +402,18 @@ export default function ChatScreen() {
         }
     };
 
+    // ── Handle back button with proper navigation stack ─────────
+    // When you refresh /chat/[id], the navigation stack might be empty.
+    // This ensures the back button always works.
+    const handleBack = () => {
+        if (router.canGoBack()) {
+            router.back();
+        } else {
+            // If no previous screen, go to chats list
+            router.push('/(tabs)/chats');
+        }
+    };
+
     // ── Render message bubble ────────────────────────────────────
     const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
         const isMe = item.senderId === user?.id;
@@ -545,7 +560,7 @@ export default function ChatScreen() {
 
             {/* WhatsApp-style header */}
             <View style={styles.header}>
-                <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
+                <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={12}>
                     <Ionicons name="arrow-back" size={22} color="#FFF" />
                 </Pressable>
 

@@ -1,12 +1,13 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { Avatar } from '@/components/ui/Avatar';
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
 import { type Conversation, chatApi } from '@/services/chatApi';
 import { onConversationUpdated } from '@/services/socketService';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 function formatTime(dateStr?: string): string {
     if (!dateStr) return '';
@@ -21,6 +22,7 @@ function formatTime(dateStr?: string): string {
 
 export default function ChatsScreen() {
     const router = useRouter();
+    const { isLoading: authLoading } = useAuth();
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [refreshing, setRefreshing] = useState(false);
 
@@ -36,9 +38,12 @@ export default function ChatsScreen() {
         }
     }, []);
 
+    // ✓ Only load conversations after auth is ready
     useEffect(() => {
-        void loadConversations();
-    }, [loadConversations]);
+        if (!authLoading) {
+            void loadConversations();
+        }
+    }, [loadConversations, authLoading]);
 
     // Real-time: update conversation preview when a new message arrives
     useEffect(() => {

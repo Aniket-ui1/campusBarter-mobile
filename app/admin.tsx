@@ -2,6 +2,9 @@
 // Only visible when user.role === 'Admin' or 'Moderator'
 // Lists reported listings, allows deletion, shows audit log, user list
 
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { getApiBase, resolveAuthToken } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -10,14 +13,11 @@ import {
     ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import { getApiToken, getApiBase } from '@/lib/api';
 
 type Tab = 'listings' | 'users' | 'audit';
 
 async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const token = getApiToken();
+    const token = resolveAuthToken();
     const res = await fetch(`${getApiBase()}${path}`, {
         ...options,
         headers: {

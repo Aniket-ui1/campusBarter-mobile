@@ -1,5 +1,8 @@
 // app/exchange.tsx — QR Code Exchange Verification (Task 3)
 
+import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { resolveAuthToken } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -8,8 +11,6 @@ import {
     StyleSheet, Text, View,
 } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { getApiToken } from '@/lib/api';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL
     ?? 'https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net';
@@ -18,6 +19,7 @@ type Mode = 'generate' | 'scan' | 'result';
 
 export default function ExchangeScreen() {
     const router = useRouter();
+    const { isLoading: authLoading } = useAuth();
     const params = useLocalSearchParams<{ listingId?: string; sellerId?: string; credits?: string }>();
 
     const [mode, setMode] = useState<Mode>('generate');
@@ -31,7 +33,7 @@ export default function ExchangeScreen() {
         if (params.listingId && params.sellerId && params.credits) {
             handleGenerate();
         }
-    }, []);
+    }, [params.listingId, params.sellerId, params.credits]);
 
     const handleGenerate = async () => {
         if (!params.listingId || !params.sellerId || !params.credits) {
@@ -40,7 +42,7 @@ export default function ExchangeScreen() {
         }
         setLoading(true);
         try {
-            const token = getApiToken();
+            const token = resolveAuthToken();
             const res = await fetch(`${API_BASE}/api/v1/insights/exchange`, {
                 method: 'POST',
                 headers: {
@@ -67,7 +69,7 @@ export default function ExchangeScreen() {
         if (!code.trim()) return;
         setLoading(true);
         try {
-            const token = getApiToken();
+            const token = resolveAuthToken();
             const res = await fetch(`${API_BASE}/api/v1/insights/exchange/confirm`, {
                 method: 'POST',
                 headers: {

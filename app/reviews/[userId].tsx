@@ -3,6 +3,10 @@
 // Link from profile → /reviews/[userId]
 // After exchange confirmed → prompt both users to leave a review.
 
+import { EmptyState } from '@/components/ui/EmptyState';
+import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { getApiBase, resolveAuthToken } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -11,10 +15,6 @@ import {
     ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import { getApiToken, getApiBase } from '@/lib/api';
-import { EmptyState } from '@/components/ui/EmptyState';
 
 
 interface Review {
@@ -62,7 +62,7 @@ export default function ReviewsScreen() {
 
     const loadReviews = async () => {
         try {
-            const token = getApiToken();
+            const token = resolveAuthToken();
             const res = await fetch(`${getApiBase()}/api/reviews/${userId}`, {
                 headers: token ? { Authorization: `Bearer ${token}` } : {},
             });
@@ -82,7 +82,7 @@ export default function ReviewsScreen() {
         if (!newComment.trim()) { Alert.alert('Please write a review comment'); return; }
         setSubmitting(true);
         try {
-            const token = getApiToken();
+            const token = resolveAuthToken();
             const res = await fetch(`${getApiBase()}/api/reviews`, {
                 method: 'POST',
                 headers: {

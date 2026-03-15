@@ -15,8 +15,18 @@ const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? AZURE_URL;
 
 let _token: string | null = null;
 
+const TOKEN_KEY = "campusbarter_token";
+const DEV_USER_KEY = "campusbarter_devuser";
+
 export function setApiToken(token: string) { _token = token; }
-export function clearApiToken() { _token = null; }
+export function clearApiToken() {
+    _token = null;
+    // Also clear from localStorage
+    if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(TOKEN_KEY);
+        window.localStorage.removeItem(DEV_USER_KEY);
+    }
+}
 export function getApiToken() { return _token; }
 export function getApiBase() { return API_BASE; }
 
@@ -34,9 +44,32 @@ let _devUser: { id: string; email: string; name: string } | null = null;
 
 export function setDevUser(info: { id: string; email: string; name: string }) {
     _devUser = info;
+    // Persist to localStorage for web page refresh recovery
+    if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(DEV_USER_KEY, JSON.stringify(info));
+    }
 }
 
-function resolveAuthToken(): string | null {
+export function getDevUser() {
+    if (_devUser) return _devUser;
+    
+    // Web refresh fallback: recover dev user from localStorage
+    if (typeof window !== 'undefined' && window.localStorage) {
+        try {
+            const stored = window.localStorage.getItem(DEV_USER_KEY);
+            if (stored) {
+                _devUser = JSON.parse(stored);
+                return _devUser;
+            }
+        } catch {
+            // Ignore parse errors
+        }
+    }
+    
+    return null;
+}
+
+export function resolveAuthToken(): string | null {
     if (_token) return _token;
 
     // Web refresh fallback: recover token from localStorage when in-memory state is lost.

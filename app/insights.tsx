@@ -1,12 +1,13 @@
 // app/insights.tsx — Market Insights Dashboard (Task 7)
 
+import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { resolveAuthToken } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { getApiToken } from '@/lib/api';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL
     ?? 'https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net';
@@ -28,13 +29,17 @@ const BAR_COLORS = [AppColors.primary, '#6366F1', '#F59E0B', '#10B981', '#EF4444
 
 export default function InsightsScreen() {
     const router = useRouter();
+    const { isLoading: authLoading } = useAuth();
     const [data, setData] = useState<InsightsData | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // ✓ Only load insights after auth is ready
+        if (authLoading) return;
+
         (async () => {
             try {
-                const token = getApiToken();
+                const token = resolveAuthToken();
                 const res = await fetch(`${API_BASE}/api/v1/insights/market`, {
                     headers: token ? { Authorization: `Bearer ${token}` } : {},
                 });
@@ -45,7 +50,7 @@ export default function InsightsScreen() {
                 setLoading(false);
             }
         })();
-    }, []);
+    }, [authLoading]);
 
     const maxCat = data?.mostWantedCategories?.[0]?.count ?? 1;
 

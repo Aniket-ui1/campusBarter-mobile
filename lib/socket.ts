@@ -7,7 +7,6 @@
 import { io, Socket } from 'socket.io-client';
 import { getApiBase, getApiToken } from './api';
 
-
 let _socket: Socket | null = null;
 const joinedRooms = new Set<string>();
 const messageHandlers = new Set<(msg: {
@@ -19,6 +18,18 @@ const messageHandlers = new Set<(msg: {
     sentAt: string;
 }) => void>();
 const typingHandlers = new Set<(data: { conversationId?: string; userId: string; displayName: string }) => void>();
+
+function getTokenWithFallback(): string | null {
+    const token = getApiToken();
+    if (token) return token;
+    
+    // Web refresh fallback: recover token from localStorage when in-memory state is lost
+    if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem('campusbarter_token');
+    }
+    
+    return null;
+}
 
 function normalizeMessage(msg: {
     conversationId?: string;
@@ -61,8 +72,8 @@ export function connectSocket(): Socket {
 
     _socket = io(getApiBase(), {
         // Use a callback so socket.io reads the CURRENT token on every (re)connect,
-        // instead of capturing a stale/null value at construction time.
-        auth: (cb) => cb({ token: getApiToken() }),
+        // including fallback to localStorage for web page refreshes.
+        auth: (cb) => cb({ token: getTokenWithFallback() }),
         transports: ['websocket'],
         reconnectionAttempts: 5,
         reconnectionDelay: 2000,

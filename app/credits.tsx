@@ -1,12 +1,12 @@
 // app/credits.tsx — Time Credits Screen (Task 7)
 
+import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
+import { getCreditsBalance } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { getCreditsBalance } from '@/lib/api';
 
 interface CreditTransaction {
     id: string;
@@ -126,8 +126,8 @@ export default function CreditsScreen() {
 // Internal helper — not exported from api.ts to keep it clean
 async function fetch_history(): Promise<CreditTransaction[]> {
     try {
-        const { getApiToken, getApiBase } = await import('@/lib/api');
-        const token = getApiToken();
+        const { resolveAuthToken, getApiBase } = await import('@/lib/api');
+        const token = resolveAuthToken();
         const res = await fetch(`${getApiBase()}/api/credits/history`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
         });

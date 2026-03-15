@@ -1,13 +1,14 @@
 // app/leaderboard.tsx — Weekly Credits Leaderboard (Task 4)
 
+import { Avatar } from '@/components/ui/Avatar';
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { resolveAuthToken } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { Avatar } from '@/components/ui/Avatar';
-import { getApiToken } from '@/lib/api';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL
     ?? 'https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net';
@@ -24,13 +25,17 @@ const RANK_EMOJI = ['🥇', '🥈', '🥉'];
 
 export default function LeaderboardScreen() {
     const router = useRouter();
+    const { isLoading: authLoading } = useAuth();
     const [data, setData] = useState<LeaderEntry[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // ✓ Only load leaderboard after auth is ready
+        if (authLoading) return;
+
         (async () => {
             try {
-                const token = getApiToken();
+                const token = resolveAuthToken();
                 const res = await fetch(`${API_BASE}/api/v1/insights/leaderboard`, {
                     headers: token ? { Authorization: `Bearer ${token}` } : {},
                 });
@@ -41,7 +46,7 @@ export default function LeaderboardScreen() {
                 setLoading(false);
             }
         })();
-    }, []);
+    }, [authLoading]);
 
     return (
         <View style={styles.container}>
