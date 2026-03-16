@@ -8,7 +8,7 @@ import { chatApi } from "../../services/chatApi";
 
 export default function ListingDetail() {
     const { id } = useLocalSearchParams();
-    const { getListingById, startChat } = useData();
+    const { getListingById, startChat, reportListing } = useData();
     const { user } = useAuth();
     const listing = getListingById(id as string);
     const router = useRouter();
@@ -31,6 +31,7 @@ export default function ListingDetail() {
             return;
         }
 
+<<<<<<< Updated upstream
         try {
             const conv = await chatApi.findOrCreate(listing.userId);
             const convId = (conv as any)?.conversation?.conversationId ?? (conv as any)?.conversationId;
@@ -44,6 +45,59 @@ export default function ListingDetail() {
                 Alert.alert("Error", "Could not start chat.");
             }
         }
+=======
+        if (listing.status === "CLOSED") {
+            Alert.alert("Exchange closed", "This listing has already been completed.");
+            return;
+        }
+
+        const chatId = startChat(listing.id, listing.title, [
+            { id: user.id, name: user.name },
+            { id: listing.userId, name: listing.userName },
+        ]);
+        router.push(`/chat/${chatId}`);
+>>>>>>> Stashed changes
+    };
+
+    const submitReport = (reason: string) => {
+        if (!user) {
+            Alert.alert("Login required", "You must be logged in to report a listing.");
+            return;
+        }
+
+        reportListing(listing.id, user.id, user.name, reason);
+        Alert.alert("Report submitted", "Thank you. An admin will review this listing.");
+    };
+
+    const handleReportListing = () => {
+        if (!user) {
+            Alert.alert("Login required", "You must be logged in to report a listing.");
+            return;
+        }
+
+        if (user.id === listing.userId) {
+            Alert.alert("Not allowed", "You cannot report your own listing.");
+            return;
+        }
+
+        Alert.alert("Report listing", "Select a reason:", [
+            {
+                text: "Spam",
+                onPress: () => submitReport("Spam or duplicate listing"),
+            },
+            {
+                text: "Inappropriate",
+                onPress: () => submitReport("Inappropriate or offensive content"),
+            },
+            {
+                text: "Suspicious",
+                onPress: () => submitReport("Suspicious or misleading behavior"),
+            },
+            {
+                text: "Cancel",
+                style: "cancel",
+            },
+        ]);
     };
 
     return (
@@ -79,8 +133,17 @@ export default function ListingDetail() {
 
             <Pressable style={styles.contactButton} onPress={handleContact}>
                 <Ionicons name="chatbubble-ellipses-outline" size={24} color="white" />
-                <Text style={styles.contactButtonText}>Contact {listing.userName}</Text>
+                <Text style={styles.contactButtonText}>
+                    {listing.status === "CLOSED" ? "Exchange Completed" : `Contact ${listing.userName}`}
+                </Text>
             </Pressable>
+
+            {user?.id !== listing.userId && (
+                <Pressable style={styles.reportButton} onPress={handleReportListing}>
+                    <Ionicons name="flag-outline" size={22} color="#d32f2f" />
+                    <Text style={styles.reportButtonText}>Report Listing</Text>
+                </Pressable>
+            )}
         </ScrollView>
     );
 }
@@ -193,5 +256,23 @@ const styles = StyleSheet.create({
         color: "white",
         fontSize: 18,
         fontWeight: "bold",
+    },
+    reportButton: {
+        marginTop: -10,
+        marginBottom: 40,
+        borderWidth: 1,
+        borderColor: "#f3c4c4",
+        backgroundColor: "#fff5f5",
+        flexDirection: "row",
+        justifyContent: "center",
+        alignItems: "center",
+        gap: 8,
+        padding: 14,
+        borderRadius: 14,
+    },
+    reportButtonText: {
+        color: "#d32f2f",
+        fontWeight: "700",
+        fontSize: 16,
     },
 });

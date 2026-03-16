@@ -1,21 +1,12 @@
-// app/login.tsx
 import { Link } from "expo-router";
-import { useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import React, { useState } from "react";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const { login, isLoading, loginWithMicrosoft } = useAuth();
+  const { login, isLoading } = useAuth();
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -25,20 +16,15 @@ export default function Login() {
     await login(email, password);
   };
 
-  const handleMicrosoftLogin = async () => {
-    await loginWithMicrosoft();
-  };
-
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>CampusBarter Login</Text>
-      <Text style={styles.subtitle}>
-        Sign in with your SAIT Microsoft account to continue
-      </Text>
+      <Text style={styles.title}>Welcome Back</Text>
+      <Text style={styles.subtitle}>Sign in to continue bartering</Text>
+      <Text style={styles.hint}>Admin demo account: admin@sait.ca</Text>
 
       <View style={styles.form}>
         <TextInput
-          placeholder="SAIT Email (@sait.ca / @edu.sait.ca)"
+          placeholder="SAIT Email"
           style={styles.input}
           keyboardType="email-address"
           autoCapitalize="none"
@@ -54,27 +40,11 @@ export default function Login() {
           onChangeText={setPassword}
         />
 
-        <Pressable
-          style={styles.button}
-          onPress={handleLogin}
-          disabled={isLoading}
-        >
+        <Pressable style={styles.button} onPress={handleLogin} disabled={isLoading}>
           {isLoading ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Text style={styles.buttonText}>Sign In (temporary)</Text>
-          )}
-        </Pressable>
-
-        <Pressable
-          style={[styles.button, styles.msButton]}
-          onPress={handleMicrosoftLogin}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <Text style={styles.buttonText}>Sign in with Microsoft</Text>
+            <Text style={styles.buttonText}>Sign In</Text>
           )}
         </Pressable>
 
@@ -103,13 +73,20 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center",
     marginBottom: 8,
-    color: "#d32f2f",
+    color: "#d32f2f", // SAIT Red-ish
   },
   subtitle: {
     fontSize: 16,
     textAlign: "center",
-    marginBottom: 40,
+    marginBottom: 8,
     color: "#666",
+  },
+  hint: {
+    textAlign: "center",
+    color: "#0056b3",
+    marginBottom: 28,
+    fontSize: 13,
+    fontWeight: "600",
   },
   form: {
     gap: 16,
@@ -123,20 +100,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#f9f9f9",
   },
   button: {
-    backgroundColor: "#0056b3",
+    backgroundColor: "#0056b3", // SAIT Blue-ish
     padding: 16,
     borderRadius: 12,
     alignItems: "center",
     marginTop: 8,
   },
-  msButton: {
-    backgroundColor: "#2f2f2f",
-  },
   buttonText: {
     color: "white",
     fontWeight: "600",
     fontSize: 16,
-    textAlign: "center",
   },
   footer: {
     flexDirection: "row",

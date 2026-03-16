@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
 import React from 'react';
+<<<<<<< Updated upstream
 import { Platform, StyleSheet, View } from 'react-native';
 import { AppColors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
@@ -9,6 +10,19 @@ import ProfileSetupOverlay from '@/components/ProfileSetupOverlay';
 export default function TabLayout() {
   const { user } = useAuth();
   if (!user) return <Redirect href="/(auth)/welcome" />;
+=======
+
+import { HapticTab } from '@/components/haptic-tab';
+import { IconSymbol } from '@/components/ui/icon-symbol';
+import { Colors } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+
+export default function TabLayout() {
+  const colorScheme = useColorScheme();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+>>>>>>> Stashed changes
 
   return (
     <>
@@ -36,6 +50,7 @@ export default function TabLayout() {
       >
         <Tabs.Screen name="index" options={{
           title: 'Home',
+<<<<<<< Updated upstream
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeWrap : undefined}>
               <Ionicons name={focused ? 'home' : 'home-outline'} size={22} color={color} />
@@ -78,6 +93,34 @@ export default function TabLayout() {
         <Tabs.Screen name="explore" options={{ href: null }} />
       </Tabs>
     </>
+=======
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: 'Chat',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="message.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: 'Admin',
+          href: isAdmin ? undefined : null,
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="shield.fill" color={color} />,
+        }}
+      />
+    </Tabs>
+>>>>>>> Stashed changes
   );
 }
 

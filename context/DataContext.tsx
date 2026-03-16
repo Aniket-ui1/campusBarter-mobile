@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 // context/DataContext.tsx
 // ─────────────────────────────────────────────────────────────────
 // All app data (listings, chats, notifications) now fetched from
@@ -71,10 +72,104 @@ function dedupeChatsByParticipant(chats: Chat[]): Chat[] {
         const rightTime = new Date(right.lastMessageAt || 0).getTime();
         return rightTime - leftTime;
     });
+=======
+import React, { createContext, useContext, useState } from "react";
+
+export interface Listing {
+    id: string;
+    type: "OFFER" | "REQUEST";
+    title: string;
+    description: string;
+    credits: number;
+    userId: string;
+    userName: string;
+    createdAt: string;
+    status: "OPEN" | "CLOSED";
+}
+
+interface Message {
+    id: string;
+    senderId: string;
+    text: string;
+    timestamp: string;
+}
+
+export interface Chat {
+    id: string;
+    listingId: string;
+    listingTitle: string;
+    participants: string[];
+    participantNames: Record<string, string>;
+    messages: Message[];
+    exchangeConfirmedAt?: string;
+    exchangeConfirmedBy?: string;
+}
+
+export interface Review {
+    id: string;
+    exchangeId: string;
+    reviewerId: string;
+    reviewerName: string;
+    revieweeId: string;
+    revieweeName: string;
+    rating: number;
+    comment: string;
+    createdAt: string;
+}
+
+export interface PendingReview {
+    exchangeId: string;
+    listingId: string;
+    listingTitle: string;
+    revieweeId: string;
+    revieweeName: string;
+}
+
+export interface ListingReport {
+    id: string;
+    listingId: string;
+    listingTitle: string;
+    listingOwnerId: string;
+    listingOwnerName: string;
+    reportedById: string;
+    reportedByName: string;
+    reason: string;
+    createdAt: string;
+    status: "OPEN" | "RESOLVED";
+    resolvedAt?: string;
+    resolvedById?: string;
+}
+
+export interface AuditLogEntry {
+    id: string;
+    action: "REPORT_LISTING" | "DELETE_LISTING";
+    actorId: string;
+    actorName: string;
+    targetType: "LISTING";
+    targetId: string;
+    details: string;
+    createdAt: string;
+}
+
+interface ChatParticipant {
+    id: string;
+    name: string;
+}
+
+interface ReviewSubmission {
+    exchangeId: string;
+    reviewerId: string;
+    reviewerName: string;
+    revieweeId: string;
+    revieweeName: string;
+    rating: number;
+    comment: string;
+>>>>>>> Stashed changes
 }
 
 interface DataContextType {
     listings: Listing[];
+<<<<<<< Updated upstream
     addListing: (listing: Omit<Listing, "id" | "createdAt" | "status"> & { category?: string }) => Promise<void>;
     getListingById: (id: string) => Listing | undefined;
     closeListing: (id: string) => Promise<void>;
@@ -96,11 +191,34 @@ interface DataContextType {
     markRead: (notifId: string) => Promise<void>;
     markAllRead: () => Promise<void>;
     refreshNotifications: () => Promise<void>;
+=======
+    chats: Chat[];
+    reviews: Review[];
+    reports: ListingReport[];
+    auditLog: AuditLogEntry[];
+    addListing: (listing: Omit<Listing, "id" | "createdAt" | "status" | "userName">) => void;
+    getListingById: (id: string) => Listing | undefined;
+    startChat: (listingId: string, listingTitle: string, participants: ChatParticipant[]) => string;
+    sendMessage: (chatId: string, text: string, senderId: string) => void;
+    getChatById: (chatId: string) => Chat | undefined;
+    confirmExchange: (chatId: string, confirmedById: string) => void;
+    getPendingReviewsForUser: (userId: string) => PendingReview[];
+    getPendingReviewForExchange: (exchangeId: string, userId: string) => PendingReview | undefined;
+    submitReview: (review: ReviewSubmission) => void;
+    getReviewsForUser: (userId: string) => Review[];
+    getAverageRatingForUser: (userId: string) => number;
+    reportListing: (listingId: string, reportedById: string, reportedByName: string, reason: string) => void;
+    deleteListingAsAdmin: (listingId: string, adminId: string, adminName: string) => void;
+>>>>>>> Stashed changes
 }
 
 // ── Context ───────────────────────────────────────────────────────
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
+
+const createId = () => Math.random().toString(36).slice(2, 10);
+
+const seededAt = new Date().toISOString();
 
 export const useData = () => {
     const ctx = useContext(DataContext);
@@ -108,12 +226,68 @@ export const useData = () => {
     return ctx;
 };
 
+<<<<<<< Updated upstream
 // ── Provider ──────────────────────────────────────────────────────
+=======
+const MOCK_LISTINGS: Listing[] = [
+    {
+        id: "1",
+        type: "OFFER",
+        title: "Math Tutoring (Calculus I)",
+        description: "I can help with derivatives and integrals. Available evenings.",
+        credits: 1,
+        userId: "user2",
+        userName: "MathWhiz",
+        createdAt: new Date().toISOString(),
+        status: "OPEN",
+    },
+    {
+        id: "2",
+        type: "REQUEST",
+        title: "Moving Help",
+        description: "Need help moving a couch this Saturday.",
+        credits: 2,
+        userId: "user3",
+        userName: "MoverNeeded",
+        createdAt: new Date().toISOString(),
+        status: "OPEN",
+    },
+];
+>>>>>>> Stashed changes
+
+const MOCK_REPORTS: ListingReport[] = [
+    {
+        id: createId(),
+        listingId: "2",
+        listingTitle: "Moving Help",
+        listingOwnerId: "user3",
+        listingOwnerName: "MoverNeeded",
+        reportedById: "user2",
+        reportedByName: "MathWhiz",
+        reason: "Possible duplicate listing spam.",
+        createdAt: seededAt,
+        status: "OPEN",
+    },
+];
+
+const MOCK_AUDIT_LOG: AuditLogEntry[] = [
+    {
+        id: createId(),
+        action: "REPORT_LISTING",
+        actorId: "user2",
+        actorName: "MathWhiz",
+        targetType: "LISTING",
+        targetId: "2",
+        details: "Reported listing \"Moving Help\": Possible duplicate listing spam.",
+        createdAt: seededAt,
+    },
+];
 
 export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const { user, isLoading: authLoading } = useAuth();
     const [listings, setListings] = useState<Listing[]>([]);
     const [chats, setChats] = useState<Chat[]>([]);
+<<<<<<< Updated upstream
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
     // Ref map: chatId → message array (for socket updates)
@@ -389,12 +563,287 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const markAllRead = async () => {
         await apiMarkAllRead();
         setNotifications(ns => ns.map(n => ({ ...n, read: true })));
+=======
+    const [reviews, setReviews] = useState<Review[]>([]);
+    const [reports, setReports] = useState<ListingReport[]>(MOCK_REPORTS);
+    const [auditLog, setAuditLog] = useState<AuditLogEntry[]>(MOCK_AUDIT_LOG);
+
+    const appendAuditLog = (entry: Omit<AuditLogEntry, "id" | "createdAt">) => {
+        setAuditLog((currentLogs) => [
+            {
+                id: createId(),
+                ...entry,
+                createdAt: new Date().toISOString(),
+            },
+            ...currentLogs,
+        ]);
+    };
+
+    const addListing = (newListing: Omit<Listing, "id" | "createdAt" | "status" | "userName">) => {
+        const listing: Listing = {
+            ...newListing,
+            id: createId(),
+            createdAt: new Date().toISOString(),
+            status: "OPEN",
+            userName: "Me",
+        };
+
+        setListings((currentListings) => [listing, ...currentListings]);
+    };
+
+    const getListingById = (id: string) => listings.find((listing) => listing.id === id);
+
+    const startChat = (listingId: string, listingTitle: string, participants: ChatParticipant[]) => {
+        const participantIds = participants.map((participant) => participant.id);
+        const existingChat = chats.find(
+            (chat) =>
+                chat.listingId === listingId &&
+                chat.participants.length === participantIds.length &&
+                participantIds.every((participantId) => chat.participants.includes(participantId))
+        );
+
+        if (existingChat) {
+            return existingChat.id;
+        }
+
+        const participantNames = participants.reduce<Record<string, string>>((accumulator, participant) => {
+            accumulator[participant.id] = participant.name;
+            return accumulator;
+        }, {});
+
+        const newChat: Chat = {
+            id: createId(),
+            listingId,
+            listingTitle,
+            participants: participantIds,
+            participantNames,
+            messages: [],
+        };
+
+        setChats((currentChats) => [newChat, ...currentChats]);
+        return newChat.id;
+    };
+
+    const sendMessage = (chatId: string, text: string, senderId: string) => {
+        setChats((currentChats) =>
+            currentChats.map((chat) => {
+                if (chat.id !== chatId) {
+                    return chat;
+                }
+
+                return {
+                    ...chat,
+                    messages: [
+                        ...chat.messages,
+                        {
+                            id: createId(),
+                            senderId,
+                            text,
+                            timestamp: new Date().toISOString(),
+                        },
+                    ],
+                };
+            })
+        );
+    };
+
+    const getChatById = (chatId: string) => chats.find((chat) => chat.id === chatId);
+
+    const confirmExchange = (chatId: string, confirmedById: string) => {
+        const targetChat = chats.find((chat) => chat.id === chatId);
+
+        if (!targetChat || targetChat.exchangeConfirmedAt) {
+            return;
+        }
+
+        const confirmedAt = new Date().toISOString();
+
+        setChats((currentChats) =>
+            currentChats.map((chat) =>
+                chat.id === chatId
+                    ? {
+                            ...chat,
+                            exchangeConfirmedAt: confirmedAt,
+                            exchangeConfirmedBy: confirmedById,
+                        }
+                    : chat
+            )
+        );
+
+        setListings((currentListings) =>
+            currentListings.map((listing) =>
+                listing.id === targetChat.listingId
+                    ? {
+                            ...listing,
+                            status: "CLOSED",
+                        }
+                    : listing
+            )
+        );
+    };
+
+    const getPendingReviewsForUser = (userId: string) =>
+        chats.flatMap((chat) => {
+            if (!chat.exchangeConfirmedAt || !chat.participants.includes(userId)) {
+                return [];
+            }
+
+            return chat.participants
+                .filter((participantId) => participantId !== userId)
+                .filter(
+                    (participantId) =>
+                        !reviews.some(
+                            (review) =>
+                                review.exchangeId === chat.id &&
+                                review.reviewerId === userId &&
+                                review.revieweeId === participantId
+                        )
+                )
+                .map((participantId) => ({
+                    exchangeId: chat.id,
+                    listingId: chat.listingId,
+                    listingTitle: chat.listingTitle,
+                    revieweeId: participantId,
+                    revieweeName: chat.participantNames[participantId] ?? "Campus Barter user",
+                }));
+        });
+
+    const getPendingReviewForExchange = (exchangeId: string, userId: string) =>
+        getPendingReviewsForUser(userId).find((review) => review.exchangeId === exchangeId);
+
+    const submitReview = (reviewSubmission: ReviewSubmission) => {
+        setReviews((currentReviews) => {
+            const alreadySubmitted = currentReviews.some(
+                (review) =>
+                    review.exchangeId === reviewSubmission.exchangeId &&
+                    review.reviewerId === reviewSubmission.reviewerId &&
+                    review.revieweeId === reviewSubmission.revieweeId
+            );
+
+            if (alreadySubmitted) {
+                return currentReviews;
+            }
+
+            const nextReview: Review = {
+                id: createId(),
+                ...reviewSubmission,
+                comment: reviewSubmission.comment.trim(),
+                createdAt: new Date().toISOString(),
+            };
+
+            return [nextReview, ...currentReviews];
+        });
+    };
+
+    const getReviewsForUser = (userId: string) =>
+        reviews
+            .filter((review) => review.revieweeId === userId)
+            .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+    const getAverageRatingForUser = (userId: string) => {
+        const userReviews = getReviewsForUser(userId);
+
+        if (userReviews.length === 0) {
+            return 0;
+        }
+
+        const total = userReviews.reduce((sum, review) => sum + review.rating, 0);
+        return total / userReviews.length;
+    };
+
+    const reportListing = (listingId: string, reportedById: string, reportedByName: string, reason: string) => {
+        const listing = listings.find((candidateListing) => candidateListing.id === listingId);
+
+        if (!listing || listing.userId === reportedById) {
+            return;
+        }
+
+        const normalizedReason = reason.trim();
+        if (!normalizedReason) {
+            return;
+        }
+
+        const duplicateOpenReport = reports.some(
+            (report) =>
+                report.listingId === listingId &&
+                report.reportedById === reportedById &&
+                report.status === "OPEN"
+        );
+
+        if (duplicateOpenReport) {
+            return;
+        }
+
+        const report: ListingReport = {
+            id: createId(),
+            listingId,
+            listingTitle: listing.title,
+            listingOwnerId: listing.userId,
+            listingOwnerName: listing.userName,
+            reportedById,
+            reportedByName,
+            reason: normalizedReason,
+            createdAt: new Date().toISOString(),
+            status: "OPEN",
+        };
+
+        setReports((currentReports) => [report, ...currentReports]);
+
+        appendAuditLog({
+            action: "REPORT_LISTING",
+            actorId: reportedById,
+            actorName: reportedByName,
+            targetType: "LISTING",
+            targetId: listingId,
+            details: `Reported listing "${listing.title}": ${normalizedReason}`,
+        });
+    };
+
+    const deleteListingAsAdmin = (listingId: string, adminId: string, adminName: string) => {
+        const listingToDelete = listings.find((candidateListing) => candidateListing.id === listingId);
+
+        if (!listingToDelete) {
+            return;
+        }
+
+        setListings((currentListings) =>
+            currentListings.filter((listing) => listing.id !== listingId)
+        );
+
+        setChats((currentChats) =>
+            currentChats.filter((chat) => chat.listingId !== listingId)
+        );
+
+        const resolvedAt = new Date().toISOString();
+        setReports((currentReports) =>
+            currentReports.map((report) =>
+                report.listingId === listingId && report.status === "OPEN"
+                    ? {
+                        ...report,
+                        status: "RESOLVED",
+                        resolvedAt,
+                        resolvedById: adminId,
+                    }
+                    : report
+            )
+        );
+
+        appendAuditLog({
+            action: "DELETE_LISTING",
+            actorId: adminId,
+            actorName: adminName,
+            targetType: "LISTING",
+            targetId: listingId,
+            details: `Deleted listing "${listingToDelete.title}" owned by ${listingToDelete.userName}.`,
+        });
+>>>>>>> Stashed changes
     };
 
     return (
         <DataContext.Provider
             value={{
                 listings,
+<<<<<<< Updated upstream
                 addListing,
                 getListingById,
                 closeListing: handleCloseListing,
@@ -416,6 +865,26 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 refreshNotifications,
             }}
         >
+=======
+                chats,
+                reviews,
+                reports,
+                auditLog,
+                addListing,
+                getListingById,
+                startChat,
+                sendMessage,
+                getChatById,
+                confirmExchange,
+                getPendingReviewsForUser,
+                getPendingReviewForExchange,
+                submitReview,
+                getReviewsForUser,
+                getAverageRatingForUser,
+                reportListing,
+                deleteListingAsAdmin,
+            }}>
+>>>>>>> Stashed changes
             {children}
         </DataContext.Provider>
     );

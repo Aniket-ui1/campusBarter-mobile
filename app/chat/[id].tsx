@@ -15,6 +15,7 @@ import {
 } from '@/services/socketService';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+<<<<<<< Updated upstream
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -28,6 +29,12 @@ import {
     TextInput,
     View,
 } from 'react-native';
+=======
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useAuth } from '../../context/AuthContext';
+import { useData } from '../../context/DataContext';
+>>>>>>> Stashed changes
 
 // ── Helpers ──────────────────────────────────────────────────────
 function formatTime(iso: string): string {
@@ -94,6 +101,7 @@ function mergeMessages(messages: ChatMessage[]): ChatMessage[] {
 
 // ── Component ─────────────────────────────────────────────────────
 export default function ChatScreen() {
+<<<<<<< Updated upstream
     const { id, recipientId: paramRecipientId, recipientName: paramRecipientName }
         = useLocalSearchParams<{ id: string; recipientId?: string; recipientName?: string }>();
     const router = useRouter();
@@ -199,6 +207,24 @@ export default function ChatScreen() {
             setLoading(false);
         }
     }, [id, isLegacyMode, paramRecipientName, user?.id, recipientId, loadOlderMessages, mapLegacyMessage, getChatById]);
+=======
+    const { id } = useLocalSearchParams();
+    const { getChatById, sendMessage, confirmExchange, getPendingReviewForExchange } = useData();
+    const { user } = useAuth();
+    const [text, setText] = useState('');
+    const flatListRef = useRef<FlatList>(null);
+    const router = useRouter();
+
+    const chat = getChatById(id as string);
+    const pendingReview = chat && user ? getPendingReviewForExchange(chat.id, user.id) : undefined;
+    const otherParticipantName = chat && user
+        ? chat.participants
+            .filter(participantId => participantId !== user.id)
+            .map(participantId => chat.participantNames[participantId])
+            .filter(Boolean)
+            .join(', ')
+        : 'the other user';
+>>>>>>> Stashed changes
 
     useEffect(() => {
         void loadMessages(1);
@@ -214,6 +240,7 @@ export default function ChatScreen() {
         void chatApi.markRead(id).catch(() => undefined);
     }, [id, isLegacyMode, markChatRead]);
 
+<<<<<<< Updated upstream
     // ── Fetch online status ──────────────────────────────────────
     useEffect(() => {
         if (!recipientId || isLegacyMode) return;
@@ -345,6 +372,48 @@ export default function ChatScreen() {
         };
         setMessages(prev => mergeMessages([optimisticMsg, ...prev]));
         scrollToLatest(false);
+=======
+    const handleLeaveReview = () => {
+        router.push(`/reviews/${chat.id}`);
+    };
+
+    const handleConfirmExchange = () => {
+        if (!user) {
+            return;
+        }
+
+        Alert.alert(
+            'Confirm exchange',
+            'This will close the listing and prompt both users to leave a review.',
+            [
+                {
+                    text: 'Cancel',
+                    style: 'cancel',
+                },
+                {
+                    text: 'Confirm',
+                    onPress: () => {
+                        confirmExchange(chat.id, user.id);
+                        Alert.alert('Exchange confirmed', 'You can leave a review for the other user now.', [
+                            {
+                                text: 'Leave review',
+                                onPress: handleLeaveReview,
+                            },
+                            {
+                                text: 'Later',
+                                style: 'cancel',
+                            },
+                        ]);
+                    },
+                },
+            ]
+        );
+    };
+
+    const handleSend = () => {
+        if (!text.trim() || !user) return;
+        sendMessage(chat.id, text, user.id);
+>>>>>>> Stashed changes
         setText('');
         setSending(true);
 
@@ -545,8 +614,59 @@ export default function ChatScreen() {
 
             {/* WhatsApp-style header */}
             <View style={styles.header}>
+<<<<<<< Updated upstream
                 <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
                     <Ionicons name="arrow-back" size={22} color="#FFF" />
+=======
+                <Text style={styles.headerTitle}>{chat.listingTitle}</Text>
+            </View>
+
+            <FlatList
+                ref={flatListRef}
+                data={chat.messages}
+                renderItem={renderMessage}
+                keyExtractor={item => item.id}
+                contentContainerStyle={styles.list}
+                ListHeaderComponent={
+                    pendingReview ? (
+                        <View style={styles.reviewPromptCard}>
+                            <View style={styles.reviewPromptCopy}>
+                                <Text style={styles.reviewPromptTitle}>Exchange completed</Text>
+                                <Text style={styles.reviewPromptText}>
+                                    Leave a review for {pendingReview.revieweeName} to close out this barter.
+                                </Text>
+                            </View>
+                            <Pressable style={styles.reviewPromptButton} onPress={handleLeaveReview}>
+                                <Text style={styles.reviewPromptButtonText}>Leave Review</Text>
+                            </Pressable>
+                        </View>
+                    ) : chat.exchangeConfirmedAt ? (
+                        <View style={styles.exchangeStatusCard}>
+                            <Ionicons name="checkmark-circle" size={22} color="#2e7d32" />
+                            <Text style={styles.exchangeStatusText}>
+                                Exchange confirmed with {otherParticipantName}. Your review has been submitted.
+                            </Text>
+                        </View>
+                    ) : (
+                        <Pressable style={styles.exchangeButton} onPress={handleConfirmExchange}>
+                            <Ionicons name="checkmark-circle-outline" size={22} color="white" />
+                            <Text style={styles.exchangeButtonText}>Confirm Exchange</Text>
+                        </Pressable>
+                    )
+                }
+                ListEmptyComponent={<Text style={styles.emptyConversation}>No messages yet. Start the conversation here.</Text>}
+            />
+
+            <View style={styles.inputContainer}>
+                <TextInput
+                    style={styles.input}
+                    placeholder="Type a message..."
+                    value={text}
+                    onChangeText={setText}
+                />
+                <Pressable onPress={handleSend} style={styles.sendButton}>
+                    <Ionicons name="send" size={24} color="white" />
+>>>>>>> Stashed changes
                 </Pressable>
 
                 <Pressable
@@ -720,6 +840,7 @@ const styles = StyleSheet.create({
 
     // Header
     header: {
+<<<<<<< Updated upstream
         backgroundColor: '#1A5C38',
         flexDirection: 'row',
         alignItems: 'center',
@@ -738,13 +859,142 @@ const styles = StyleSheet.create({
     },
     headerCenter: {
         flex: 1,
+=======
+        padding: 16,
+        backgroundColor: 'white',
+        borderBottomWidth: 1,
+        borderBottomColor: '#eee',
+        elevation: 2,
+    },
+    headerTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        textAlign: 'center',
+    },
+    list: {
+        padding: 16,
+        paddingBottom: 20,
+        gap: 12,
+    },
+    exchangeButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: '#2e7d32',
+        paddingVertical: 14,
+        borderRadius: 14,
+        marginBottom: 8,
+    },
+    exchangeButtonText: {
+        color: 'white',
+        fontWeight: '700',
+        fontSize: 16,
+    },
+    exchangeStatusCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        backgroundColor: '#e8f5e9',
+        borderRadius: 14,
+        padding: 14,
+        marginBottom: 8,
+    },
+    exchangeStatusText: {
+        flex: 1,
+        color: '#1b5e20',
+        fontWeight: '600',
+        lineHeight: 20,
+    },
+    reviewPromptCard: {
+        backgroundColor: '#fff8e1',
+        borderRadius: 14,
+        padding: 16,
+        marginBottom: 8,
+        gap: 14,
+    },
+    reviewPromptCopy: {
+        gap: 6,
+    },
+    reviewPromptTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#7a4f01',
+    },
+    reviewPromptText: {
+        color: '#8a6d1d',
+        lineHeight: 20,
+    },
+    reviewPromptButton: {
+        alignSelf: 'flex-start',
+        backgroundColor: '#f57c00',
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+    },
+    reviewPromptButtonText: {
+        color: 'white',
+        fontWeight: '700',
+    },
+    messageBubble: {
+        maxWidth: '80%',
+        padding: 12,
+        borderRadius: 16,
+        marginBottom: 8,
+    },
+    myMessage: {
+        alignSelf: 'flex-end',
+        backgroundColor: '#007bff',
+        borderBottomRightRadius: 4,
+    },
+    theirMessage: {
+        alignSelf: 'flex-start',
+        backgroundColor: 'white',
+        borderBottomLeftRadius: 4,
+        borderWidth: 1,
+        borderColor: '#eee',
+    },
+    messageText: {
+        fontSize: 16,
+    },
+    myMessageText: {
+        color: 'white',
+    },
+    theirMessageText: {
+        color: '#333',
+    },
+    timestamp: {
+        fontSize: 10,
+        marginTop: 4,
+        alignSelf: 'flex-end',
+        opacity: 0.7,
+    },
+    inputContainer: {
+>>>>>>> Stashed changes
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
     },
+<<<<<<< Updated upstream
     headerText: { flex: 1 },
     headerName: {
         fontSize: 16, fontWeight: '700', color: '#FFF',
+=======
+    emptyConversation: {
+        textAlign: 'center',
+        color: '#666',
+        marginTop: 24,
+    },
+    input: {
+        flex: 1,
+        backgroundColor: '#f9f9f9',
+        borderRadius: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        fontSize: 16,
+        borderWidth: 1,
+        borderColor: '#eee',
+>>>>>>> Stashed changes
     },
     headerSub: {
         fontSize: 11, color: 'rgba(255,255,255,0.65)', marginTop: 1,

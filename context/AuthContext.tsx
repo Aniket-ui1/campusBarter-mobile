@@ -1,6 +1,5 @@
-// context/AuthContext.tsx
-import * as AuthSession from "expo-auth-session";
 import { router } from "expo-router";
+<<<<<<< Updated upstream
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 
@@ -40,12 +39,16 @@ import {
 import azureConfig from "../config/azureConfig";
 import { setApiToken, clearApiToken, setDevUser, registerPushToken, upsertUserProfile, getUserById, updateMyProfile } from "../lib/api";
 import { connectSocket, disconnectSocket } from "../lib/socket";
+=======
+import React, { createContext, useContext, useEffect, useState } from "react";
+>>>>>>> Stashed changes
 
-WebBrowser.maybeCompleteAuthSession();
+export type UserRole = "ADMIN" | "STUDENT";
 
 // ── User type — covers every field used across all screens ───────
 
 export interface User {
+<<<<<<< Updated upstream
     id: string;
     /** Primary display name shown in the UI */
     name: string;
@@ -79,6 +82,23 @@ export interface SignUpData {
     campus?: string;
     bio?: string;
 
+=======
+  id: string;
+  name: string;
+  email: string;
+  bio?: string;
+  credits: number;
+  role: UserRole;
+}
+
+interface AuthContextType {
+  user: User | null;
+  users: User[];
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  logout: () => void;
+>>>>>>> Stashed changes
 }
 
 // ── Context type — all methods past + present ─────────────────────
@@ -120,6 +140,54 @@ const TOKEN_KEY = "campusbarter_token";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const createId = () => Math.random().toString(36).slice(2, 10);
+
+const isValidSaitEmail = (email: string) =>
+  email.endsWith("@edu.sait.ca") || email.endsWith("@sait.ca");
+
+const resolveRoleFromEmail = (email: string): UserRole =>
+  email.startsWith("admin@") ? "ADMIN" : "STUDENT";
+
+const defaultNameFromEmail = (email: string) => {
+  const localPart = email.split("@")[0] ?? "student";
+  const cleaned = localPart.replace(/[._-]+/g, " ").trim();
+  if (!cleaned) {
+    return "SAIT Student";
+  }
+
+  return cleaned
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
+
+const MOCK_USERS: User[] = [
+  {
+    id: "admin1",
+    name: "Campus Admin",
+    email: "admin@sait.ca",
+    credits: 999,
+    bio: "Platform administrator account",
+    role: "ADMIN",
+  },
+  {
+    id: "user2",
+    name: "MathWhiz",
+    email: "mathwhiz@edu.sait.ca",
+    credits: 5,
+    bio: "Calculus tutor",
+    role: "STUDENT",
+  },
+  {
+    id: "user3",
+    name: "MoverNeeded",
+    email: "moverneeded@edu.sait.ca",
+    credits: 2,
+    bio: "Happy to trade campus help",
+    role: "STUDENT",
+  },
+];
+
 export const useAuth = () => {
     const context = useContext(AuthContext);
     if (!context) {
@@ -128,6 +196,7 @@ export const useAuth = () => {
     return context;
 };
 
+<<<<<<< Updated upstream
 // ── JWT decode helper ─────────────────────────────────────────────
 
 function decodeJwtPayload(token: string): Record<string, any> {
@@ -193,6 +262,89 @@ function makeUser(
 }
 
 // ── Email domain guard ────────────────────────────────────────────
+=======
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [users, setUsers] = useState<User[]>(MOCK_USERS);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Check for persisted user (mock)
+  useEffect(() => {
+    // In a real app, check AsyncStorage here
+  }, []);
+
+  const login = async (email: string, password: string) => {
+    setIsLoading(true);
+    // Simulate API call
+    setTimeout(() => {
+      const normalizedEmail = email.trim().toLowerCase();
+
+      if (isValidSaitEmail(normalizedEmail)) {
+        const existingUser = users.find(
+          (knownUser) => knownUser.email.toLowerCase() === normalizedEmail
+        );
+
+        if (existingUser) {
+          setUser(existingUser);
+        } else {
+          const createdUser: User = {
+            id: createId(),
+            name: defaultNameFromEmail(normalizedEmail),
+            email: normalizedEmail,
+            credits: 3,
+            bio: "SAIT student ready to barter!",
+            role: resolveRoleFromEmail(normalizedEmail),
+          };
+
+          setUsers((currentUsers) => [createdUser, ...currentUsers]);
+          setUser(createdUser);
+        }
+
+        router.replace("/(tabs)");
+      } else {
+        alert("Invalid SAIT email or password");
+      }
+
+      setIsLoading(false);
+    }, 1000);
+  };
+
+  const register = async (name: string, email: string, password: string) => {
+    setIsLoading(true);
+    setTimeout(() => {
+      const normalizedEmail = email.trim().toLowerCase();
+
+      if (isValidSaitEmail(normalizedEmail)) {
+        const existingUser = users.find(
+          (knownUser) => knownUser.email.toLowerCase() === normalizedEmail
+        );
+
+        if (existingUser) {
+          alert("An account with this email already exists. Please sign in.");
+          setIsLoading(false);
+          return;
+        }
+
+        const newUser: User = {
+          id: createId(),
+          name,
+          email: normalizedEmail,
+          credits: 3, // Default starting credits
+          bio: "",
+          role: "STUDENT",
+        };
+
+        setUsers((currentUsers) => [newUser, ...currentUsers]);
+        setUser(newUser);
+        router.replace("/(tabs)");
+      } else {
+        alert("Registration failed. Please use a valid SAIT email.");
+      }
+
+      setIsLoading(false);
+    }, 1000);
+  };
+>>>>>>> Stashed changes
 
 function isSaitEmail(email: string) {
     const lower = email.toLowerCase().trim();
@@ -203,6 +355,7 @@ function isSaitEmail(email: string) {
     );
 }
 
+<<<<<<< Updated upstream
 // ── Provider ─────────────────────────────────────────────────────
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -606,4 +759,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             {children}
         </AuthContext.Provider>
     );
+=======
+  return (
+    <AuthContext.Provider value={{ user, users, isLoading, login, register, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+>>>>>>> Stashed changes
 };

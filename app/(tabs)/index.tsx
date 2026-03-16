@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -12,9 +13,18 @@ import { useData } from '@/context/DataContext';
 import { getRecommendedUsers, MatchedUser } from '@/lib/matching';
 import { CATEGORIES } from '@/constants/categories';
 import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
+=======
+import { Ionicons } from "@expo/vector-icons";
+import { Link } from "expo-router";
+import React, { useState } from "react";
+import { FlatList, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useAuth } from "../../context/AuthContext";
+import { Listing, useData } from "../../context/DataContext";
+>>>>>>> Stashed changes
 
 export default function HomeScreen() {
   const { user } = useAuth();
+<<<<<<< Updated upstream
   const { unreadCount, listings, refreshListings } = useData();
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
@@ -23,6 +33,11 @@ export default function HomeScreen() {
 
   const activeListings = listings.filter((l) => l.status === 'OPEN');
   const myListingsCount = listings.filter((l) => l.userId === user?.id).length;
+=======
+  const [filter, setFilter] = useState<'OFFER' | 'REQUEST'>('OFFER');
+
+  const filteredListings = listings.filter(l => l.type === filter && l.status === 'OPEN');
+>>>>>>> Stashed changes
 
   // Stop loading once listings arrive OR after 3s timeout (for empty feeds)
   useEffect(() => {
