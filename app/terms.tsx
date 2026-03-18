@@ -8,14 +8,6 @@ export default function TermsScreen() {
     const router = useRouter();
     return (
         <View style={styles.container}>
-            <View style={styles.statusSpacer} />
-            <View style={styles.header}>
-                <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={22} color={AppColors.text} />
-                </Pressable>
-                <Text style={styles.headerTitle}>Terms of Service</Text>
-                <View style={{ width: 40 }} />
-            </View>
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
                 <Text style={styles.heading}>CampusBarter Terms of Service</Text>
                 <Text style={styles.updated}>Last Updated: January 2025</Text>
@@ -43,10 +35,6 @@ export default function TermsScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: AppColors.background },
-    statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.xl, marginBottom: Spacing.xl },
-    backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: AppColors.surface, alignItems: 'center', justifyContent: 'center' },
-    headerTitle: { fontSize: 17, fontWeight: '700', color: AppColors.text },
     scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40 },
     heading: { fontSize: 22, fontWeight: '900', color: AppColors.text, marginBottom: 4 },
     updated: { fontSize: 12, color: AppColors.textMuted, marginBottom: Spacing.xl },

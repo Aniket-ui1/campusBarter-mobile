@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React from 'react';
+import { useRouter, useNavigation } from 'expo-router';
+import React, { useCallback } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { useData } from '@/context/DataContext';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { useFocusEffect } from '@react-navigation/native';
 
 const ICON_MAP: Record<string, { name: string; color: string }> = {
     request: { name: 'hand-left-outline', color: AppColors.primary },
@@ -17,7 +18,16 @@ const ICON_MAP: Record<string, { name: string; color: string }> = {
 
 export default function NotificationsScreen() {
     const router = useRouter();
+    const navigation = useNavigation();
     const { notifications, markRead, markAllRead, unreadCount } = useData();
+
+    useFocusEffect(
+        useCallback(() => {
+            navigation.setOptions({
+                headerShown: true,
+            });
+        }, [navigation])
+    );
 
     const handlePress = async (notif: typeof notifications[0]) => {
         if (!notif.read) {
@@ -31,21 +41,6 @@ export default function NotificationsScreen() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.statusSpacer} />
-            <View style={styles.header}>
-                <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={22} color={AppColors.text} />
-                </Pressable>
-                <Text style={styles.headerTitle}>Notifications</Text>
-                {unreadCount > 0 ? (
-                    <Pressable style={styles.markAllBtn} onPress={markAllRead}>
-                        <Text style={styles.markAllText}>Mark all read</Text>
-                    </Pressable>
-                ) : (
-                    <View style={{ width: 40 }} />
-                )}
-            </View>
-
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
                 {notifications.length === 0 ? (
                     <EmptyState
@@ -83,21 +78,6 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: AppColors.background },
-    statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
-    header: {
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: Spacing.xl, marginBottom: Spacing.lg,
-    },
-    backBtn: {
-        width: 40, height: 40, borderRadius: 12,
-        backgroundColor: AppColors.surface, alignItems: 'center', justifyContent: 'center',
-    },
-    headerTitle: { fontSize: 17, fontWeight: '700', color: AppColors.text },
-    markAllBtn: {
-        paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-        backgroundColor: AppColors.primary + '15',
-    },
-    markAllText: { fontSize: 11, fontWeight: '600', color: AppColors.primary },
     scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40, gap: Spacing.sm },
     card: {
         flexDirection: 'row', alignItems: 'center', gap: Spacing.md,

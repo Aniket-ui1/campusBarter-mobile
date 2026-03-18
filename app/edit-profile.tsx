@@ -69,15 +69,6 @@ export default function EditProfileScreen() {
 
     return (
         <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <View style={styles.statusSpacer} />
-            <View style={styles.header}>
-                <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={22} color={AppColors.text} />
-                </Pressable>
-                <Text style={styles.headerTitle}>Edit Profile</Text>
-                <View style={{ width: 40 }} />
-            </View>
-
             <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 {/* Avatar + Photo Picker */}
                 <View style={styles.avatarSection}>
@@ -176,16 +167,6 @@ export default function EditProfileScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: AppColors.background },
-    statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
-    header: {
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: Spacing.xl, marginBottom: Spacing.xl,
-    },
-    backBtn: {
-        width: 40, height: 40, borderRadius: 12,
-        backgroundColor: AppColors.surface, alignItems: 'center', justifyContent: 'center',
-    },
-    headerTitle: { fontSize: 17, fontWeight: '700', color: AppColors.text },
     scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 60 },
     avatarSection: { alignItems: 'center', gap: Spacing.md, marginBottom: Spacing['2xl'] },
     changePhotoBtn: {

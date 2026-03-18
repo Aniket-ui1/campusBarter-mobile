@@ -8,14 +8,6 @@ export default function AboutScreen() {
     const router = useRouter();
     return (
         <View style={styles.container}>
-            <View style={styles.statusSpacer} />
-            <View style={styles.header}>
-                <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={22} color={AppColors.text} />
-                </Pressable>
-                <Text style={styles.headerTitle}>About</Text>
-                <View style={{ width: 40 }} />
-            </View>
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
                 <View style={styles.logoSection}>
                     <View style={styles.logoCircle}><Text style={{ fontSize: 32 }}>🌐</Text></View>
@@ -52,10 +44,6 @@ export default function AboutScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: AppColors.background },
-    statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.xl, marginBottom: Spacing.xl },
-    backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: AppColors.surface, alignItems: 'center', justifyContent: 'center' },
-    headerTitle: { fontSize: 17, fontWeight: '700', color: AppColors.text },
     scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40, alignItems: 'center' },
     logoSection: { alignItems: 'center', marginBottom: Spacing['2xl'] },
     logoCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: AppColors.surface, borderWidth: 1.5, borderColor: AppColors.border, alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.md },

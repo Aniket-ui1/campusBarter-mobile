@@ -29,15 +29,6 @@ export default function RateScreen() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.statusSpacer} />
-            <View style={styles.header}>
-                <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="close" size={22} color={AppColors.text} />
-                </Pressable>
-                <Text style={styles.headerTitle}>Rate & Review</Text>
-                <View style={{ width: 40 }} />
-            </View>
-
             <ScrollView contentContainerStyle={styles.scroll}>
                 <Text style={styles.label}>How was your experience with {userName || 'this user'}?</Text>
                 <View style={styles.stars}>
@@ -58,10 +49,6 @@ export default function RateScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: AppColors.background },
-    statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.xl, marginBottom: Spacing.xl },
-    backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: AppColors.surface, alignItems: 'center', justifyContent: 'center' },
-    headerTitle: { fontSize: 17, fontWeight: '700', color: AppColors.text },
     scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40, gap: Spacing.xl },
     label: { fontSize: 16, color: AppColors.text, fontWeight: '600', textAlign: 'center' },
     stars: { flexDirection: 'row', justifyContent: 'center', gap: 8 },

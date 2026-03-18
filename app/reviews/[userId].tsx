@@ -8,13 +8,14 @@ import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { getApiBase, resolveAuthToken } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator, Alert, Modal, Platform, Pressable,
     ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useFocusEffect } from '@react-navigation/native';
 
 
 interface Review {
@@ -47,6 +48,7 @@ function StarRow({ rating, size = 16, interactive = false, onSelect }: {
 export default function ReviewsScreen() {
     const { userId } = useLocalSearchParams<{ userId: string }>();
     const router = useRouter();
+    const navigation = useNavigation();
     const { user } = useAuth();
 
     const [reviews, setReviews] = useState<Review[]>([]);
@@ -75,6 +77,14 @@ export default function ReviewsScreen() {
             setLoading(false);
         }
     };
+
+    useFocusEffect(
+        useCallback(() => {
+            navigation.setOptions({
+                headerShown: true,
+            });
+        }, [navigation])
+    );
 
     useEffect(() => { void loadReviews(); }, [userId]);
 

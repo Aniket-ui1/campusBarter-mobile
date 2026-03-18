@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React from 'react';
+import { useRouter, useNavigation } from 'expo-router';
+import React, { useCallback } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
@@ -8,11 +8,21 @@ import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function MyListingsScreen() {
     const router = useRouter();
+    const navigation = useNavigation();
     const { user } = useAuth();
     const { listings, deleteListing, closeListing } = useData();
+
+    useFocusEffect(
+        useCallback(() => {
+            navigation.setOptions({
+                headerShown: true,
+            });
+        }, [navigation])
+    );
 
     // Filter to only this user's listings
     const myListings = listings.filter((l) => l.userId === user?.id);
@@ -63,17 +73,6 @@ export default function MyListingsScreen() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.statusSpacer} />
-            <View style={styles.header}>
-                <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={22} color={AppColors.text} />
-                </Pressable>
-                <Text style={styles.headerTitle}>My Listings</Text>
-                <Pressable style={styles.addBtn} onPress={() => router.push('/(tabs)/post')}>
-                    <Ionicons name="add" size={22} color={AppColors.primary} />
-                </Pressable>
-            </View>
-
             <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
                 {myListings.length === 0 ? (
                     <EmptyState
@@ -121,21 +120,6 @@ export default function MyListingsScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: AppColors.background },
-    statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36 },
-    header: {
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: Spacing.xl, marginBottom: Spacing.lg,
-    },
-    backBtn: {
-        width: 40, height: 40, borderRadius: 12,
-        backgroundColor: AppColors.surface, alignItems: 'center', justifyContent: 'center',
-    },
-    addBtn: {
-        width: 40, height: 40, borderRadius: 12,
-        backgroundColor: AppColors.surface, borderWidth: 1, borderColor: AppColors.border,
-        alignItems: 'center', justifyContent: 'center',
-    },
-    headerTitle: { fontSize: 17, fontWeight: '700', color: AppColors.text },
     scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 40, gap: Spacing.md },
     card: {
         backgroundColor: AppColors.surfaceLight, borderWidth: 1, borderColor: AppColors.border,

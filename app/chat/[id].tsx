@@ -29,6 +29,8 @@ import {
     TextInput,
     View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from 'expo-router';
 
 // ── Helpers ──────────────────────────────────────────────────────
 function formatTime(iso: string): string {
@@ -140,6 +142,16 @@ export default function ChatScreen() {
             listRef.current?.scrollToOffset({ offset: 0, animated });
         });
     }, []);
+
+    const navigation = useNavigation();
+
+    useFocusEffect(
+        useCallback(() => {
+            navigation.setOptions({
+                headerShown: true,
+            });
+        }, [navigation])
+    );
 
     const mapLegacyMessage = useCallback((m: FSMessage): ChatMessage => ({
         messageId: m.id,

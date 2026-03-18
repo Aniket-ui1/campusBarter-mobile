@@ -3,10 +3,11 @@
 import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
 import { getCreditsBalance } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useRouter, useNavigation } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useFocusEffect } from '@react-navigation/native';
 
 interface CreditTransaction {
     id: string;
@@ -18,9 +19,18 @@ interface CreditTransaction {
 
 export default function CreditsScreen() {
     const router = useRouter();
+    const navigation = useNavigation();
     const [balance, setBalance] = useState<number | null>(null);
     const [history, setHistory] = useState<CreditTransaction[]>([]);
     const [loading, setLoading] = useState(true);
+
+    useFocusEffect(
+        useCallback(() => {
+            navigation.setOptions({
+                headerShown: true,
+            });
+        }, [navigation])
+    );
 
     useEffect(() => {
         (async () => {
@@ -41,17 +51,6 @@ export default function CreditsScreen() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.statusSpacer} />
-
-            {/* Header */}
-            <View style={styles.header}>
-                <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
-                </Pressable>
-                <Text style={styles.headerTitle}>Time Credits</Text>
-                <View style={{ width: 40 }} />
-            </View>
-
             {loading ? (
                 <View style={styles.center}>
                     <ActivityIndicator size="large" color={AppColors.primary} />
@@ -138,16 +137,7 @@ async function fetch_history(): Promise<CreditTransaction[]> {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: AppColors.background },
-    statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36, backgroundColor: AppColors.primaryDark },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-
-    header: {
-        backgroundColor: AppColors.primaryDark,
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg,
-    },
-    backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-    headerTitle: { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
 
     scroll: { paddingHorizontal: Spacing.xl, paddingBottom: 48, paddingTop: Spacing.xl, gap: Spacing.xl },
 
