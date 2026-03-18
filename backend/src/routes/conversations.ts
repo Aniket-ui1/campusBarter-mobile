@@ -1,7 +1,7 @@
 import { Request, Response, Router } from 'express';
 import { body, param, query } from 'express-validator';
 import {
-    canAccessChat,
+    canAccessConversation,
     createChat,
     findExistingChatBetweenUsers,
     getChatParticipantIds,
@@ -10,10 +10,11 @@ import {
     getMessagesPage,
     hideChatForUser,
     markChatAsRead,
-    sendMessage,
+    markConversationMessagesAsRead,
+    sendMessage
 } from '../db';
 import { validate } from '../middleware/validate';
-import { notifyMessage, notifySkillRequest } from '../notifyEvent';
+import { notifySkillRequest } from '../notifyEvent';
 import { getIO } from '../socketInstance';
 
 export const conversationsRouter = Router();
@@ -104,7 +105,7 @@ conversationsRouter.get('/:conversationId/messages', validate([
 ]), async (req: Request, res: Response) => {
     try {
         const conversationId = req.params.conversationId;
-        const allowed = await canAccessChat(conversationId, req.user!.id);
+        const allowed = await canAccessConversation(conversationId, req.user!.id);
         if (!allowed) {
             res.status(403).json({ error: 'Access denied for this conversation' });
             return;
@@ -125,7 +126,7 @@ conversationsRouter.post('/:conversationId/messages', validate([
 ]), async (req: Request, res: Response) => {
     try {
         const conversationId = req.params.conversationId;
-        const allowed = await canAccessChat(conversationId, req.user!.id);
+        const allowed = await canAccessConversation(conversationId, req.user!.id);
         if (!allowed) {
             res.status(403).json({ error: 'Access denied for this conversation' });
             return;
@@ -171,13 +172,18 @@ conversationsRouter.put('/:conversationId/read/:userId', validate([
             res.status(403).json({ error: 'Access denied for this user' });
             return;
         }
-        const allowed = await canAccessChat(conversationId, req.user!.id);
+        const allowed = await canAccessConversation(conversationId, req.user!.id);
         if (!allowed) {
             res.status(403).json({ error: 'Access denied for this conversation' });
             return;
         }
 
+        // Mark V2 ConversationMessages as read
+        await markConversationMessagesAsRead(conversationId, userId);
+        
+        // Also mark legacy ChatUserState for backward compatibility
         await markChatAsRead(conversationId, userId);
+        
         res.json({ message: 'Conversation marked as read' });
     } catch {
         res.status(500).json({ error: 'Failed to mark conversation as read' });
@@ -194,7 +200,7 @@ conversationsRouter.delete('/:conversationId/:userId', validate([
             res.status(403).json({ error: 'Access denied for this user' });
             return;
         }
-        const allowed = await canAccessChat(conversationId, req.user!.id);
+        const allowed = await canAccessConversation(conversationId, req.user!.id);
         if (!allowed) {
             res.status(403).json({ error: 'Access denied for this conversation' });
             return;

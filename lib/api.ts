@@ -316,7 +316,8 @@ export async function sendMessage(
 
 export async function markChatRead(chatId: string, userId: string): Promise<void> {
     try {
-        await apiFetch(`/api/v1/conversations/${chatId}/read/${userId}`, {
+        // Try V2 Chat API first (current system using Conversations/ConversationMessages)
+        await apiFetch(`/api/chat/${chatId}/read`, {
             method: 'PUT',
         });
     } catch (error) {
@@ -324,13 +325,23 @@ export async function markChatRead(chatId: string, userId: string): Promise<void
         if (status !== 404) throw error;
 
         try {
-            await apiFetch(`/api/v1/chats/${chatId}/read`, {
+            // Fallback to V1 endpoint for legacy chats
+            await apiFetch(`/api/v1/conversations/${chatId}/read/${userId}`, {
                 method: 'PUT',
             });
-        } catch {
-            await apiFetch(`/api/chats/${chatId}/read`, {
-                method: 'PUT',
-            });
+        } catch (error2) {
+            const status2 = (error2 as { status?: number }).status;
+            if (status2 !== 404) throw error2;
+
+            try {
+                await apiFetch(`/api/v1/chats/${chatId}/read`, {
+                    method: 'PUT',
+                });
+            } catch {
+                await apiFetch(`/api/chats/${chatId}/read`, {
+                    method: 'PUT',
+                });
+            }
         }
     }
 }

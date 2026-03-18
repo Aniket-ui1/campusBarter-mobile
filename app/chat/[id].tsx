@@ -2,6 +2,7 @@
 import { Avatar } from '@/components/ui/Avatar';
 import { AppColors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
+import { useChatBadge } from '@/context/ChatBadgeContext';
 import { type FSMessage, useData } from '@/context/DataContext';
 import { chatApi, type ChatMessage } from '@/services/chatApi';
 import {
@@ -98,11 +99,13 @@ export default function ChatScreen() {
         = useLocalSearchParams<{ id: string; recipientId?: string; recipientName?: string }>();
     const router = useRouter();
     const { user, isLoading: authLoading } = useAuth();
+    const { updateUnreadForConversation, setActiveChatId } = useChatBadge();
     const {
         getChatById,
         loadOlderMessages,
         sendMessage: sendLegacyMessage,
         markChatRead,
+        refreshChats,
         subscribeToMessages,
     } = useData();
 
@@ -130,6 +133,7 @@ export default function ChatScreen() {
     const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const listRef = useRef<FlatList>(null);
     const typingEmitter = useRef<ReturnType<typeof createTypingEmitter> | null>(null);
+    const markedAsReadRef = useRef<string | null>(null); // Track which chat we marked as read
 
     const scrollToLatest = useCallback((animated = true) => {
         requestAnimationFrame(() => {
@@ -207,15 +211,48 @@ export default function ChatScreen() {
         }
     }, [loadMessages, authLoading]);
 
-    // ── Mark as read ─────────────────────────────────────────────
+    // ── Mark as read + track active chat ──────────────────────────
     useEffect(() => {
         if (!id) return;
-        if (isLegacyMode) {
-            void markChatRead(id).catch(() => undefined);
+        
+        // 🔥 NEW: Track that this chat is now active (for ChatBadgeContext)
+        // MUST run FIRST, before any early returns
+        setActiveChatId(id);
+        
+        // ⚠️ CRITICAL: Join room FIRST before marking as read
+        // to ensure we receive the socket event when backend emits it.
+        // If mark fires before join completes, we'll miss the event.
+        if (!isLegacyMode) {
+            joinConversation(id);
+        }
+        
+        // Only mark as read ONCE per conversation
+        if (markedAsReadRef.current === id) {
+            // ✅ Early return (plain return, NOT a cleanup function)
             return;
         }
-        void chatApi.markRead(id).catch(() => undefined);
-    }, [id, isLegacyMode, markChatRead]);
+        markedAsReadRef.current = id;
+        
+        const markAsRead = async () => {
+            try {
+                // Use DataContext's markChatRead for both legacy and new paths
+                // This updates the chat list state so bubble disappears
+                await markChatRead(id);
+                
+                // 🔥 Also optimistically update badge context (Instagram-style)
+                // This ensures badge stays at correct value even when switching tabs
+                updateUnreadForConversation(id, 0);
+            } catch (err) {
+                // Silently fail — marking as read is not critical
+                console.warn('[Chat] Failed to mark conversation as read:', err);
+            }
+        };
+        
+        void markAsRead();
+
+        // ✅ Cleanup ALWAYS runs on unmount/id change
+        return () => setActiveChatId(null);
+    }, [id, markChatRead, isLegacyMode, updateUnreadForConversation, setActiveChatId]);
 
     // ── Fetch online status ──────────────────────────────────────
     useEffect(() => {
@@ -280,7 +317,8 @@ export default function ChatScreen() {
             };
         }
 
-        joinConversation(id);
+        // Note: joinConversation() is now called in the mark-as-read effect
+        // to ensure we join BEFORE marking as read, so we receive the socket event
         typingEmitter.current = createTypingEmitter(id);
 
         const unsubMsg = onReceiveMessage((msg) => {

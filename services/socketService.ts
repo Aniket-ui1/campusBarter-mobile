@@ -83,10 +83,21 @@ export function onConversationUpdated(
     if (!sock) {
         connectSocket();
         const newSock = getSocket();
-        newSock?.on('conversation_updated', handler);
-        return () => newSock?.off('conversation_updated', handler);
+        if (newSock) {
+            newSock.off('conversation_updated'); // 🔥 Clear duplicates
+            newSock.on('conversation_updated', (data) => {
+                console.log('[Socket] conversation_updated EVENT:', data);
+                handler(data);
+            });
+            return () => newSock.off('conversation_updated', handler);
+        }
+        return () => {};
     }
-    sock.on('conversation_updated', handler);
+    sock.off('conversation_updated'); // 🔥 Clear duplicates
+    sock.on('conversation_updated', (data) => {
+        console.log('[Socket] conversation_updated EVENT:', data);
+        handler(data);
+    });
     return () => sock.off('conversation_updated', handler);
 }
 
@@ -95,6 +106,7 @@ export function onMessagesSeen(
     handler: (payload: MessageSeenPayload) => void
 ): () => void {
     const sock = getSocket() ?? connectSocket();
+    sock.off('messages_seen'); // 🔥 Clear duplicates
     sock.on('messages_seen', handler);
     return () => sock.off('messages_seen', handler);
 }
@@ -106,6 +118,24 @@ export function onMessageDeleted(
     const sock = getSocket() ?? connectSocket();
     sock.on('message_deleted', handler);
     return () => sock.off('message_deleted', handler);
+}
+
+/** Subscribe to socket 'connect' event (for reconnect fallback). Returns unsubscribe fn. */
+export function onSocketConnect(
+    handler: () => void
+): () => void {
+    const sock = getSocket();
+    if (!sock) {
+        // Socket not initialized yet — try connecting first
+        const newSock = connectSocket();
+        if (newSock) {
+            newSock.on('connect', handler);
+            return () => newSock.off('connect', handler);
+        }
+        return () => {};
+    }
+    sock.on('connect', handler);
+    return () => sock.off('connect', handler);
 }
 
 // ── Typing indicators ─────────────────────────────────────────

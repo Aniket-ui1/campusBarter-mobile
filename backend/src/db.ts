@@ -437,6 +437,40 @@ export async function canAccessChat(chatId: string, userId: string): Promise<boo
     return result.recordset.length > 0;
 }
 
+/**
+ * Check if user can access a conversation/chat.
+ * Checks both new Conversations table and legacy Chats/ChatParticipants.
+ * User must be one of the two participants.
+ */
+export async function canAccessConversation(conversationId: string, userId: string): Promise<boolean> {
+    const db = await getPool();
+    
+    // First try the Conversations table (new system)
+    const convResult = await db.request()
+        .input('convId', sql.NVarChar(300), conversationId)
+        .input('uid', sql.NVarChar(128), userId)
+        .query(`
+            SELECT TOP 1 1 AS allowed
+            FROM Conversations
+            WHERE conversationId = @convId
+              AND (participant1Id = @uid OR participant2Id = @uid)
+        `);
+    
+    if (convResult.recordset.length > 0) return true;
+    
+    // Fall back to ChatParticipants (legacy Chats system)
+    const chatResult = await db.request()
+        .input('chatId', sql.NVarChar(128), conversationId)
+        .input('uid', sql.NVarChar(128), userId)
+        .query(`
+            SELECT TOP 1 1 AS allowed
+            FROM ChatParticipants
+            WHERE chatId = @chatId AND userId = @uid
+        `);
+    
+    return chatResult.recordset.length > 0;
+}
+
 export async function sendMessage(
     chatId: string,
     senderId: string,
@@ -503,6 +537,22 @@ export async function markChatAsRead(chatId: string, userId: string): Promise<vo
             WHEN NOT MATCHED THEN
                 INSERT (chatId, userId, lastReadAt, hiddenAt)
                 VALUES (@chatId, @userId, GETUTCDATE(), NULL);
+        `);
+}
+
+export async function markConversationMessagesAsRead(conversationId: string, userId: string): Promise<void> {
+    const db = await getPool();
+    
+    // Mark all unread messages from OTHER user as read in ConversationMessages (V2 system)
+    await db.request()
+        .input('conversationId', sql.NVarChar(300), conversationId)
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`
+            UPDATE ConversationMessages
+            SET isRead = 1, readAt = GETUTCDATE()
+            WHERE conversationId = @conversationId
+              AND senderId != @userId
+              AND isRead = 0
         `);
 }
 
@@ -1005,17 +1055,66 @@ export async function getReviews(userId: string): Promise<Record<string, unknown
 
 // ── Notifications ─────────────────────────────────────────────
 
+let notificationsTableEnsured = false;
+
+async function ensureNotificationsTable(): Promise<void> {
+    if (notificationsTableEnsured) return;
+    
+    const db = await getPool();
+    try {
+        await db.request().query(`
+            IF NOT EXISTS (
+                SELECT * FROM sys.objects
+                WHERE object_id = OBJECT_ID(N'[dbo].[Notifications]') AND type in (N'U')
+            )
+            BEGIN
+                CREATE TABLE Notifications (
+                    id          NVARCHAR(128)   NOT NULL PRIMARY KEY DEFAULT NEWID(),
+                    userId      NVARCHAR(128)   NOT NULL REFERENCES Users(id) ON DELETE CASCADE,
+                    type        NVARCHAR(20)    NOT NULL
+                                                CHECK (type IN ('request','accepted','message','review','match')),
+                    title       NVARCHAR(200)   NOT NULL,
+                    body        NVARCHAR(500)   NOT NULL,
+                    isRead      BIT             NOT NULL DEFAULT 0,
+                    relatedId   NVARCHAR(128)   NULL,
+                    createdAt   DATETIME2       NOT NULL DEFAULT GETUTCDATE()
+                );
+                CREATE INDEX IX_Notifications_UserId ON Notifications(userId, isRead);
+            END
+        `);
+        notificationsTableEnsured = true;
+    } catch (err: any) {
+        console.error('[DB] ensureNotificationsTable failed:', err.message);
+        // Don't throw — allow the app to continue even if table creation fails
+    }
+}
+
 export async function getNotifications(userId: string): Promise<Record<string, unknown>[]> {
     const db = await getPool();
-    const result = await db.request()
-        .input('userId', sql.NVarChar(128), userId)
-        .query(`
-            SELECT id, type, title, body, [read], relatedId, createdAt
-            FROM   Notifications
-            WHERE  userId = @userId
-            ORDER  BY createdAt DESC
-        `);
-    return result.recordset;
+    
+    try {
+        // Ensure table exists first
+        await ensureNotificationsTable();
+        
+        // Get explicit notifications (reviews, match notifications, etc.)
+        const explicitNotifs = await db.request()
+            .input('userId', sql.NVarChar(128), userId)
+            .query(`
+                SELECT id, type, title, body, isRead, relatedId, createdAt
+                FROM   Notifications
+                WHERE  userId = @userId
+                ORDER  BY createdAt DESC
+            `);
+
+        // For now, return just explicit notifications
+        // (Message notifications are handled in real-time via socket.io)
+        return explicitNotifs.recordset;
+    } catch (err: any) {
+        console.error('[DB] getNotifications error:', err.message, err.stack);
+        // Return empty array on error rather than throwing
+        // so the frontend doesn't crash
+        return [];
+    }
 }
 
 export async function markNotificationRead(notificationId: string, userId: string): Promise<void> {
@@ -1023,14 +1122,14 @@ export async function markNotificationRead(notificationId: string, userId: strin
     await db.request()
         .input('id', sql.NVarChar(128), notificationId)
         .input('userId', sql.NVarChar(128), userId)
-        .query(`UPDATE Notifications SET [read] = 1 WHERE id = @id AND userId = @userId`);
+        .query(`UPDATE Notifications SET isRead = 1 WHERE id = @id AND userId = @userId`);
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
     const db = await getPool();
     await db.request()
         .input('userId', sql.NVarChar(128), userId)
-        .query(`UPDATE Notifications SET [read] = 1 WHERE userId = @userId`);
+        .query(`UPDATE Notifications SET isRead = 1 WHERE userId = @userId`);
 }
 
 export async function createNotification(

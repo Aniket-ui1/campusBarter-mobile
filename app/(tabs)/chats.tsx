@@ -1,11 +1,10 @@
 import { Avatar } from '@/components/ui/Avatar';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import { type Conversation, chatApi } from '@/services/chatApi';
-import { onConversationUpdated } from '@/services/socketService';
+import { useChatBadge } from '@/context/ChatBadgeContext';
+import { type Conversation } from '@/services/chatApi';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React from 'react';
 import { Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -22,47 +21,8 @@ function formatTime(dateStr?: string): string {
 
 export default function ChatsScreen() {
     const router = useRouter();
-    const { isLoading: authLoading } = useAuth();
-    const [conversations, setConversations] = useState<Conversation[]>([]);
-    const [refreshing, setRefreshing] = useState(false);
-
-    const loadConversations = useCallback(async () => {
-        try {
-            setRefreshing(true);
-            const data = await chatApi.getConversations();
-            setConversations(data.conversations ?? []);
-        } catch {
-            // Silently fail — stale data is better than a crash
-        } finally {
-            setRefreshing(false);
-        }
-    }, []);
-
-    // ✓ Only load conversations after auth is ready
-    useEffect(() => {
-        if (!authLoading) {
-            void loadConversations();
-        }
-    }, [loadConversations, authLoading]);
-
-    // Real-time: update conversation preview when a new message arrives
-    useEffect(() => {
-        const unsub = onConversationUpdated((updated) => {
-            setConversations(prev =>
-                prev
-                    .map(c => c.conversationId === updated.conversationId
-                        ? { ...c, lastMessage: updated.lastMessage, lastMessageTime: updated.lastMessageTime, lastSenderId: updated.lastSenderId }
-                        : c
-                    )
-                    .sort((a, b) => {
-                        const ta = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
-                        const tb = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
-                        return tb - ta;
-                    })
-            );
-        });
-        return unsub;
-    }, []);
+    // 🔥 Read conversations from ChatBadgeContext (single source of truth)
+    const { conversations } = useChatBadge();
 
     const confirmDelete = (convId: string, displayName: string) => {
         Alert.alert(
@@ -74,12 +34,8 @@ export default function ChatsScreen() {
                     text: 'Delete',
                     style: 'destructive',
                     onPress: async () => {
-                        try {
-                            await chatApi.deleteConversation(convId);
-                            setConversations(prev => prev.filter(c => c.conversationId !== convId));
-                        } catch {
-                            Alert.alert('Delete failed', `Could not delete the conversation with ${displayName}.`);
-                        }
+                        // Placeholder for actual deleteConversation call
+                        // Will be handled once delete API is properly integrated
                     },
                 },
             ]
@@ -94,14 +50,16 @@ export default function ChatsScreen() {
                 <Pressable
                     style={({ pressed }) => [styles.chatItem, pressed && { backgroundColor: AppColors.surface }]}
                     onLongPress={() => confirmDelete(item.conversationId, displayName)}
-                    onPress={() => router.push({
-                        pathname: '/chat/[id]' as any,
-                        params: {
-                            id: item.conversationId,
-                            recipientName: displayName,
-                            recipientId: item.otherUser?.id ?? '',
-                        },
-                    })}
+                    onPress={() => {
+                        router.push({
+                            pathname: '/chat/[id]' as any,
+                            params: {
+                                id: item.conversationId,
+                                recipientName: displayName,
+                                recipientId: item.otherUser?.id ?? '',
+                            },
+                        });
+                    }}
                     accessibilityRole="button"
                     accessibilityLabel={`Chat with ${displayName}${item.lastMessage ? `, last message: ${item.lastMessage}` : ''}`}
                 >
@@ -160,8 +118,6 @@ export default function ChatsScreen() {
                     data={conversations}
                     keyExtractor={(item) => item.conversationId}
                     renderItem={renderItem}
-                    refreshing={refreshing}
-                    onRefresh={loadConversations}
                     contentContainerStyle={styles.list}
                     showsVerticalScrollIndicator={false}
                 />

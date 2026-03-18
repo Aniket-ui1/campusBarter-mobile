@@ -13,6 +13,17 @@ import sql from 'mssql';
 import { Socket, Server as SocketServer } from 'socket.io';
 import { canAccessChat, getPool } from './db';
 
+// ── Module-level Socket.io instance ───────────────────────────
+let io: SocketServer | null = null;
+
+/** Get the Socket.io server instance (must be initialized first). */
+export function getIO(): SocketServer {
+    if (!io) {
+        throw new Error('Socket.io server not initialized. Call initSocketServer() first.');
+    }
+    return io;
+}
+
 // ── In-memory map of connected users for online status ─────────
 const connectedUsers = new Map<string, boolean>();
 
@@ -62,7 +73,7 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
         allowedOrigins.push('http://192.168.*:*');
     }
     
-    const io = new SocketServer(httpServer, {
+    io = new SocketServer(httpServer, {
         cors: {
             origin: allowedOrigins,
             methods: ['GET', 'POST'],
@@ -184,12 +195,46 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
             try {
                 const allowed = await canAccessChat(conversationId, socket.userId!);
                 if (!allowed) return;
+                
                 socket.to(conversationId).emit('receive_message', {
                     ...data,
                     conversationId,
                     senderId: socket.userId,
                     senderName: socket.displayName,
                 });
+
+                // 🔥 CRITICAL: Emit conversation_updated so badge context gets notified
+                const io = getIO();
+
+                // Send to chat room (for participants in that chat)
+                io.to(conversationId).emit('conversation_updated', {
+                    conversationId,
+                    lastSenderId: socket.userId,
+                });
+
+                // 🔥 Also send to recipient's user room (for badge update globally)
+                try {
+                    const db = await getPool();
+                    const result = await db.request()
+                        .input('cid', sql.NVarChar(300), conversationId)
+                        .query(`
+                            SELECT participant1Id, participant2Id
+                            FROM Conversations
+                            WHERE conversationId = @cid
+                        `);
+
+                    if (result.recordset.length > 0) {
+                        const { participant1Id, participant2Id } = result.recordset[0];
+                        const recipientId = participant1Id === socket.userId ? participant2Id : participant1Id;
+
+                        io.to(`user:${recipientId}`).emit('conversation_updated', {
+                            conversationId,
+                            lastSenderId: socket.userId,
+                        });
+                    }
+                } catch (dbErr) {
+                    console.warn('[Socket] Failed to query conversation for badge update:', dbErr);
+                }
             } catch {
                 // Ignore transient DB errors for socket-only message fanout.
             }

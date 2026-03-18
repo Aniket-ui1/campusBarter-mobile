@@ -1,13 +1,16 @@
+import ProfileSetupOverlay from '@/components/ProfileSetupOverlay';
+import { AppColors } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { useChatBadge } from '@/context/ChatBadgeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
 import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
-import { AppColors } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import ProfileSetupOverlay from '@/components/ProfileSetupOverlay';
 
 export default function TabLayout() {
   const { user } = useAuth();
+  const { totalUnreadCount } = useChatBadge();
+  
   if (!user) return <Redirect href="/(auth)/welcome" />;
 
   return (
@@ -60,9 +63,13 @@ export default function TabLayout() {
         }} />
         <Tabs.Screen name="chats" options={{
           title: 'Chats',
+          tabBarBadge: totalUnreadCount > 0 ? totalUnreadCount : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: '#FF5555',
+          },
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeWrap : undefined}>
-              <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={22} color={color} />
+              <Ionicons name="chatbubbles" size={22} color={color} />
             </View>
           ),
         }} />

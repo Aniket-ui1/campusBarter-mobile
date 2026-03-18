@@ -17,25 +17,25 @@ import React, {
     useState,
 } from "react";
 import {
-    getListings,
-    getChats,
-    getMessages,
-    sendMessage as apiSendMessage,
-    startChat as apiStartChat,
-    markChatRead as apiMarkChatRead,
-    deleteChat as apiDeleteChat,
-    getNotifications,
-    markNotificationRead as apiMarkRead,
-    markAllNotificationsRead as apiMarkAllRead,
-    createListing as apiCreateListing,
+    ApiChat,
     closeListing as apiCloseListing,
+    createListing as apiCreateListing,
+    deleteChat as apiDeleteChat,
     deleteListing as apiDeleteListing,
     ApiListing,
+    markAllNotificationsRead as apiMarkAllRead,
+    markChatRead as apiMarkChatRead,
+    markNotificationRead as apiMarkRead,
     ApiMessage,
-    ApiChat,
     ApiNotification,
+    sendMessage as apiSendMessage,
+    startChat as apiStartChat,
+    getChats,
+    getListings,
+    getMessages,
+    getNotifications,
 } from "../lib/api";
-import { onNewMessage, joinChat, leaveChat } from "../lib/socket";
+import { joinChat, leaveChat, onNewMessage } from "../lib/socket";
 import { useAuth } from "./AuthContext";
 
 // ── Public types ──────────────────────────────────────────────────
@@ -89,6 +89,7 @@ interface DataContextType {
     getChatById: (chatId: string) => Chat | undefined;
     loadOlderMessages: (chatId: string, page: number, limit?: number) => Promise<ApiMessage[]>;
     subscribeToMessages: (chatId: string, cb: (msgs: ApiMessage[]) => void) => () => void;
+    refreshChats: () => Promise<void>;
 
     notifications: AppNotification[];
     unreadCount: number;
@@ -132,15 +133,21 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, []);
 
+    // Track latest refreshListings in a ref to avoid circular dependencies
+    const refreshListingsRef = useRef(refreshListings);
+    useEffect(() => {
+        refreshListingsRef.current = refreshListings;
+    }, [refreshListings]);
+
     // Only start fetching listings once auth has fully resolved (token restored from SecureStore).
     // Without this gate, the very first fetch runs before the token is set, fails silently,
     // and listings stay empty until the 30-second polling interval fires.
     useEffect(() => {
         if (authLoading) return; // wait for auth to finish initialising
-        void refreshListings();
-        const id = setInterval(refreshListings, 30_000); // poll every 30s
+        void refreshListingsRef.current();
+        const id = setInterval(() => refreshListingsRef.current(), 30_000); // poll every 30s
         return () => clearInterval(id);
-    }, [authLoading, refreshListings]);
+    }, [authLoading]);
 
     // ── Load chats ────────────────────────────────────────────────
     const refreshChats = useCallback(async () => {
@@ -158,10 +165,16 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, [user?.id]);
 
+    // Track latest refreshChats in a ref  to avoid circular dependencies
+    const refreshChatsRef = useRef(refreshChats);
+    useEffect(() => {
+        refreshChatsRef.current = refreshChats;
+    }, [refreshChats]);
+
     useEffect(() => {
         if (authLoading) return; // wait for auth to resolve before fetching user data
-        void refreshChats();
-    }, [authLoading, refreshChats]);
+        void refreshChatsRef.current();
+    }, [authLoading]);
 
     // ── Load notifications ────────────────────────────────────────
     const refreshNotifications = useCallback(async () => {
@@ -174,12 +187,18 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, [user?.id]);
 
+    // Track latest refreshNotifications in a ref to avoid circular dependencies
+    const refreshNotificationsRef = useRef(refreshNotifications);
+    useEffect(() => {
+        refreshNotificationsRef.current = refreshNotifications;
+    }, [refreshNotifications]);
+
     useEffect(() => {
         if (authLoading) return; // wait for auth to resolve before fetching user data
-        void refreshNotifications();
-        const id = setInterval(refreshNotifications, 60_000); // poll every 60s
+        void refreshNotificationsRef.current();
+        const id = setInterval(() => refreshNotificationsRef.current(), 60_000); // poll every 60s
         return () => clearInterval(id);
-    }, [authLoading, refreshNotifications]);
+    }, [authLoading]);
 
     // ── Socket.io: listen for new messages ────────────────────────
     useEffect(() => {
@@ -196,14 +215,8 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
             (msgCallbacks.current[chatId] ?? []).forEach(cb =>
                 cb(chatMessages.current[chatId])
             );
-            // Update chat list preview and unread count, or refresh if the chat is hidden/not loaded.
+            // Update chat list preview and unread count (no refresh here — avoid infinite loops)
             setChats((currentChats) => {
-                const chatExists = currentChats.some((chat) => chat.id === chatId);
-                if (!chatExists) {
-                    void refreshChats();
-                    return currentChats;
-                }
-
                 return dedupeChatsByParticipant(currentChats.map((chat) => {
                     if (chat.id !== chatId) return chat;
 
@@ -222,7 +235,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
             });
         });
         return cleanup;
-    }, [refreshChats, user?.id]);
+    }, [user?.id]);
 
     const unreadCount = useMemo(
         () => notifications.filter(n => !n.read).length,
@@ -300,10 +313,41 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
     const markChatRead = async (chatId: string) => {
         if (!user?.id) return;
-        await apiMarkChatRead(chatId, user.id);
+        
+        // Update local state immediately (optimistic update)
         setChats((currentChats) => currentChats.map((chat) =>
             chat.id === chatId ? { ...chat, unreadCount: 0 } : chat
         ));
+        
+        // Then mark as read on the backend
+        try {
+            await apiMarkChatRead(chatId, user.id);
+            // 🔥 Light refresh to sync with server, but PROTECT against stale write-in-progress
+            // If unreadCount is 0 locally, keep it at 0 (don't let server overwrite)
+            const refreshedData = await getChats(user.id);
+            setChats((currentChats) => {
+                const merged = refreshedData.map(serverChat => {
+                    const localChat = currentChats.find(c => c.id === (serverChat.conversationId ?? serverChat.id));
+                    
+                    // 🔥 CRITICAL: If we just marked as read (local is 0), keep it at 0
+                    // Don't let stale server state (write-in-progress) overwrite
+                    const unreadCount = localChat?.unreadCount === 0 
+                        ? 0 
+                        : (serverChat.unreadCount ?? 0);
+                    
+                    return {
+                        ...serverChat,
+                        id: serverChat.conversationId ?? serverChat.id,
+                        messages: chatMessages.current[serverChat.conversationId ?? serverChat.id] ?? [],
+                        unreadCount,
+                    };
+                });
+                return dedupeChatsByParticipant(merged);
+            });
+        } catch (err) {
+            console.warn('[Data] markChatRead API call failed:', err);
+            // State is already updated optimistically, so UI is responsive
+        }
     };
 
     const deleteChat = async (chatId: string) => {
@@ -353,9 +397,6 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         // Join socket room
         joinChat(chatId);
         activeChatSubscriptions.current[chatId] = (activeChatSubscriptions.current[chatId] ?? 0) + 1;
-        void markChatRead(chatId).catch((error) => {
-            console.warn('[Data] markChatRead failed:', error);
-        });
 
         // Register callback
         if (!msgCallbacks.current[chatId]) msgCallbacks.current[chatId] = [];
@@ -408,6 +449,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 getChatById,
                 loadOlderMessages,
                 subscribeToMessages,
+                refreshChats,
                 notifications,
                 unreadCount,
                 addNotification,

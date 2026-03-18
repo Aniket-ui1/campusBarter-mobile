@@ -1,13 +1,16 @@
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { OfflineBanner } from '@/components/OfflineBanner';
+import { AppColors } from '@/constants/theme';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { ChatBadgeProvider } from '@/context/ChatBadgeContext';
+import { DataProvider } from '@/context/DataContext';
+import { OnboardingProvider } from '@/context/OnboardingContext';
+import { connectChatSocket } from '@/services/socketService';
 import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import React, { useEffect } from 'react';
 import 'react-native-reanimated';
-import { AppColors } from '@/constants/theme';
-import { AuthProvider } from '@/context/AuthContext';
-import { DataProvider } from '@/context/DataContext';
-import { OnboardingProvider } from '@/context/OnboardingContext';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { OfflineBanner } from '@/components/OfflineBanner';
 
 
 const CampusBarterTheme = {
@@ -23,44 +26,63 @@ const CampusBarterTheme = {
   },
 };
 
+// 🔥 Socket initializer - must be inside AuthProvider
+function SocketInitializer({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (user) {
+      // 🔥 Force socket connection on login
+      const socket = connectChatSocket();
+      console.log('[App] Socket initialized:', socket.connected);
+    }
+  }, [user]);
+
+  return <>{children}</>;
+}
+
 export default function RootLayout() {
   return (
     <ErrorBoundary>
       <ThemeProvider value={CampusBarterTheme}>
         <AuthProvider>
-          <DataProvider>
-            <OnboardingProvider>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: AppColors.background },
-                  animation: 'fade',
-                }}
-              >
-                <Stack.Screen name="index" />
-                <Stack.Screen name="(auth)" />
-                <Stack.Screen name="(onboarding)" />
-                <Stack.Screen name="(tabs)" />
-                <Stack.Screen name="skill/[id]" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="reviews/[userId]" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="rate/[userId]" options={{ presentation: 'modal' }} />
-                <Stack.Screen name="my-listings" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="my-requests" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="drafts" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="report" options={{ presentation: 'modal' }} />
-                <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="terms" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="privacy" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="about" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="modal" options={{ presentation: 'modal', headerShown: true, title: 'Info', headerStyle: { backgroundColor: AppColors.background }, headerTintColor: AppColors.text }} />
-              </Stack>
-              <OfflineBanner />
-              <StatusBar style="dark" />
-            </OnboardingProvider>
-          </DataProvider>
+          <SocketInitializer>
+            <ChatBadgeProvider>
+              <DataProvider>
+                <OnboardingProvider>
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      contentStyle: { backgroundColor: AppColors.background },
+                      animation: 'fade',
+                    }}
+                  >
+                    <Stack.Screen name="index" />
+                    <Stack.Screen name="(auth)" />
+                    <Stack.Screen name="(onboarding)" />
+                    <Stack.Screen name="(tabs)" />
+                    <Stack.Screen name="skill/[id]" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="reviews/[userId]" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="rate/[userId]" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="my-listings" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="my-requests" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="drafts" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="report" options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="terms" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="privacy" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="about" options={{ animation: 'slide_from_right' }} />
+                    <Stack.Screen name="modal" options={{ presentation: 'modal', headerShown: true, title: 'Info', headerStyle: { backgroundColor: AppColors.background }, headerTintColor: AppColors.text }} />
+                  </Stack>
+                  <OfflineBanner />
+                  <StatusBar style="dark" />
+                </OnboardingProvider>
+              </DataProvider>
+            </ChatBadgeProvider>
+          </SocketInitializer>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>

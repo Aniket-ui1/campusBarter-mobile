@@ -9,7 +9,7 @@ import crypto from 'crypto';
 import { Application, Request, Response, Router } from 'express';
 import { body, param, query } from 'express-validator';
 import sql from 'mssql';
-import { getPool } from '../db';
+import { createNotification, getPool } from '../db';
 import { verifyAzureAdToken } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { notifyOtherParticipant } from '../services/pushService';
@@ -340,19 +340,27 @@ router.post('/:convId/messages',
         try {
             const db = await getPool();
 
-            // Security: verify sender is a participant
+            // Security: verify sender is a participant + get conversation & sender details
             const check = await db.request()
                 .input('cid', sql.NVarChar(300), convId)
                 .input('uid', sql.NVarChar(128), senderId)
                 .query(`
-                    SELECT 1 FROM Conversations
-                    WHERE conversationId = @cid
-                      AND (participant1Id = @uid OR participant2Id = @uid)
+                    SELECT 
+                        c.participant1Id,
+                        c.participant2Id,
+                        u.displayName AS senderName
+                    FROM Conversations c
+                    JOIN Users u ON u.id = @uid
+                    WHERE c.conversationId = @cid
+                      AND (c.participant1Id = @uid OR c.participant2Id = @uid)
                 `);
             if (check.recordset.length === 0) {
                 res.status(403).json({ error: 'Forbidden' });
                 return;
             }
+            
+            const { participant1Id, participant2Id, senderName } = check.recordset[0];
+            const recipientId = participant1Id === senderId ? participant2Id : participant1Id;
 
             const messageId = crypto.randomUUID();
             const safeText  = messageType === 'text' ? String(textContent).trim() : null;
@@ -395,22 +403,61 @@ router.post('/:convId/messages',
                 createdAt: new Date().toISOString(),
             };
 
-            // Broadcast to all participants in the socket room
+            // 🔥 EMIT SOCKET EVENTS FIRST (CRITICAL - before any other async operations)
             const io = getIO();
             if (io) {
+                console.log('[Chat API] Emitting socket events for conversation:', convId);
+                
                 io.to(convId).emit('receive_message', message);
+                console.log('[Chat API] Emitted receive_message to room:', convId);
+                
                 io.to(convId).emit('conversation_updated', {
                     conversationId: convId,
                     lastMessage:     preview,
                     lastMessageTime: message.createdAt,
                     lastSenderId:    senderId,
                 });
+                console.log('[Chat API] Emitted conversation_updated to room:', convId);
+
+                // 🔥 ALSO send to recipient's user socket room (for global badge update)
+                io.to(`user:${recipientId}`).emit('conversation_updated', {
+                    conversationId: convId,
+                    lastMessage:     preview,
+                    lastMessageTime: message.createdAt,
+                    lastSenderId:    senderId,
+                });
+                console.log('[Chat API] Emitted conversation_updated to user room:', `user:${recipientId}`);
+
+                // Send to sender's user socket room for consistency
+                io.to(`user:${senderId}`).emit('conversation_updated', {
+                    conversationId: convId,
+                    lastMessage:     preview,
+                    lastMessageTime: message.createdAt,
+                    lastSenderId:    senderId,
+                });
+                console.log('[Chat API] Emitted conversation_updated to sender user room:', `user:${senderId}`);
+            } else {
+                console.warn('[Chat API] Socket.io not initialized, cannot emit events');
             }
 
-            // Fire-and-forget push notification to offline recipient
-            notifyOtherParticipant(convId, senderId, preview, db).catch(console.error);
-
+            // ✅ Send response immediately (socket events already emitted)
             res.status(201).json({ message });
+
+            // Fire-and-forget push notification to offline recipient (AFTER response sent)
+            notifyOtherParticipant(convId, senderId, preview, db).catch(err => {
+                console.error('[Chat] notifyOtherParticipant failed (non-critical):', err.message);
+            });
+            
+            // Create notification record in database for web/app notification center
+            createNotification(
+                recipientId,
+                'message',
+                `New message from ${senderName}`,
+                preview.length > 100 ? preview.slice(0, 97) + '...' : preview,
+                convId
+            ).catch(err => {
+                console.error('[Chat] Failed to create notification (non-critical):', err.message);
+            });
         } catch (e: any) {
             console.error('[Chat] POST /:convId/messages:', e.message);
             res.status(500).json({ error: e.message });
@@ -420,6 +467,7 @@ router.post('/:convId/messages',
 
 // ── PUT /api/chat/:convId/read ────────────────────────────────
 // Mark all unread messages in a conversation as read.
+// Verifies the user is a participant in the conversation.
 router.put('/:convId/read',
     validate([param('convId').trim().notEmpty()]),
     async (req: Request, res: Response) => {
@@ -427,6 +475,24 @@ router.put('/:convId/read',
         const convId = req.params.convId;
         try {
             const db = await getPool();
+
+            // Verify user is a participant in this conversation
+            const access = await db.request()
+                .input('cid', sql.NVarChar(300), convId)
+                .input('uid', sql.NVarChar(128), userId)
+                .query(`
+                    SELECT 1 FROM Conversations
+                    WHERE conversationId = @cid
+                      AND (participant1Id = @uid OR participant2Id = @uid)
+                `);
+
+            if (access.recordset.length === 0) {
+                res.status(403).json({ error: 'Access denied for this conversation' });
+                return;
+            }
+
+            // Mark all unread messages sent by OTHER user as read
+            // Update ConversationMessages table (V2 system)
             await db.request()
                 .input('cid', sql.NVarChar(300), convId)
                 .input('uid', sql.NVarChar(128), userId)
@@ -437,6 +503,22 @@ router.put('/:convId/read',
                       AND senderId != @uid
                       AND isRead = 0
                 `);
+
+            // Also update legacy Messages table for backward compatibility
+            try {
+                await db.request()
+                    .input('cid', sql.NVarChar(300), convId)
+                    .input('uid', sql.NVarChar(128), userId)
+                    .query(`
+                        UPDATE Messages
+                        SET isRead = 1, readAt = GETUTCDATE()
+                        WHERE chatId = @cid
+                          AND senderId != @uid
+                          AND isRead = 0
+                    `);
+            } catch {
+                // Silently fail if legacy Messages table doesn't exist — V2 system is primary
+            }
 
             // Notify sender their messages were read (via socket)
             const io = getIO();
