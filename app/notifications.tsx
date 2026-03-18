@@ -1,12 +1,12 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useNavigation } from 'expo-router';
-import React, { useCallback } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { useData } from '@/context/DataContext';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRouter } from 'expo-router';
+import React, { useCallback } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 const ICON_MAP: Record<string, { name: string; color: string }> = {
     request: { name: 'hand-left-outline', color: AppColors.primary },

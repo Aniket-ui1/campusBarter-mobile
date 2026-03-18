@@ -15,7 +15,8 @@ import {
     onUserTyping,
 } from '@/services/socketService';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -29,8 +30,6 @@ import {
     TextInput,
     View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import { useNavigation } from 'expo-router';
 
 // ── Helpers ──────────────────────────────────────────────────────
 function formatTime(iso: string): string {

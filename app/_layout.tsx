@@ -6,14 +6,13 @@ import { ChatBadgeProvider } from '@/context/ChatBadgeContext';
 import { DataProvider } from '@/context/DataContext';
 import { OnboardingProvider } from '@/context/OnboardingContext';
 import { connectChatSocket } from '@/services/socketService';
+import { Ionicons } from '@expo/vector-icons';
 import { DefaultTheme, ThemeProvider, useNavigation } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
-import 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
 import { Pressable } from 'react-native';
+import 'react-native-reanimated';
 
 function BackButtonHeader() {
   const navigation = useNavigation();

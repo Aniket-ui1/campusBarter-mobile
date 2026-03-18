@@ -1,8 +1,8 @@
+import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function AboutScreen() {
     const router = useRouter();

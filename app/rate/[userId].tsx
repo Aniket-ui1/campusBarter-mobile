@@ -1,11 +1,11 @@
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { AppColors, Spacing } from '@/constants/theme';
+import { getUserById } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AppColors, Spacing } from '@/constants/theme';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { getUserById } from '@/lib/api';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function RateScreen() {
     const { userId } = useLocalSearchParams<{ userId: string }>();

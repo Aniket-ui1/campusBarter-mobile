@@ -1,14 +1,14 @@
+import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { PROGRAMS, SEMESTERS, SKILLS_OPTIONS } from '@/constants/categories';
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Avatar } from '@/components/ui/Avatar';
-import { useAuth } from '@/context/AuthContext';
-import { PROGRAMS, SEMESTERS, SKILLS_OPTIONS } from '@/constants/categories';
-import * as ImagePicker from 'expo-image-picker';
 
 export default function EditProfileScreen() {
     const router = useRouter();

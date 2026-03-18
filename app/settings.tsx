@@ -1,9 +1,9 @@
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 type SettingItem = { icon: string; label: string; type: 'toggle' | 'nav'; key: string };
 

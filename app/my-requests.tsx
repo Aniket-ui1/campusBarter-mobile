@@ -1,9 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { AppColors, Spacing } from '@/constants/theme';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { StyleSheet, View } from 'react-native';
 
 export default function MyRequestsScreen() {
     const router = useRouter();

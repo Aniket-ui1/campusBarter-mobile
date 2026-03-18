@@ -1,8 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
+import { AppColors, Spacing } from '@/constants/theme';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AppColors, Spacing } from '@/constants/theme';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function TermsScreen() {
     const router = useRouter();
