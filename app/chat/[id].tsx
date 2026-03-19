@@ -73,9 +73,26 @@ function needsDateSep(msgs: ChatMessage[], index: number): boolean {
     const next = new Date(msgs[index + 1].createdAt);
 
     // Compare dates only if both are valid
-    if (isNaN(current.getTime()) || isNaN(next.getTime())) return false;
+    if (isNaN(current.getTime()) || isNaN(next.getTime())) {
+        console.log('[DateSep] Invalid timestamp:', {
+            index,
+            current: msgs[index].createdAt,
+            next: msgs[index + 1]?.createdAt
+        });
+        return false;
+    }
 
-    return current.toDateString() !== next.toDateString();
+    const needsSep = current.toDateString() !== next.toDateString();
+    if (needsSep) {
+        console.log('[DateSep] Separator needed at index', index, {
+            currentDate: current.toDateString(),
+            currentTime: msgs[index].createdAt,
+            nextDate: next.toDateString(),
+            nextTime: msgs[index + 1].createdAt
+        });
+    }
+
+    return needsSep;
 }
 
 function getMessageTimestamp(message: Pick<ChatMessage, 'createdAt'>): number {
