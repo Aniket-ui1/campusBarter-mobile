@@ -50,9 +50,10 @@ export async function notifyEvent(payload: NotifPayload): Promise<void> {
     console.log('[Notify] 📨 Creating notification:', { recipientId, type, title, actionUrl });
 
     // 1. Persist to DB (the bell icon in-app)
+    let notificationId: string | undefined;
     try {
-        await createNotification(recipientId, type, title, body, relatedId, entityType, actionUrl);
-        console.log('[Notify] ✅ DB insert successful');
+        notificationId = await createNotification(recipientId, type, title, body, relatedId, entityType, actionUrl);
+        console.log('[Notify] ✅ DB insert successful, ID:', notificationId);
     } catch (err) {
         console.error('[Notify] ❌ DB insert failed:', err);
     }
@@ -61,6 +62,7 @@ export async function notifyEvent(payload: NotifPayload): Promise<void> {
     try {
         const io = getIO();
         io.to(`user:${recipientId}`).emit('notification', {
+            notificationId,
             type, title, body, relatedId,
             createdAt: new Date().toISOString(),
         });

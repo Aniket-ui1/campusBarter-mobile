@@ -1086,9 +1086,9 @@ export async function createNotification(
     relatedEntityId?: string,
     relatedEntityType?: string,
     actionUrl?: string
-): Promise<void> {
+): Promise<string> {
     const db = await getPool();
-    await db.request()
+    const result = await db.request()
         .input('userId', sql.NVarChar(128), userId)
         .input('type', sql.NVarChar(50), type)
         .input('title', sql.NVarChar(200), title)
@@ -1098,8 +1098,10 @@ export async function createNotification(
         .input('actionUrl', sql.NVarChar(500), actionUrl ?? null)
         .query(`
             INSERT INTO Notifications (userId, type, title, message, relatedEntityId, relatedEntityType, actionUrl)
+            OUTPUT INSERTED.notificationId
             VALUES (@userId, @type, @title, @message, @relatedEntityId, @relatedEntityType, @actionUrl)
         `);
+    return result.recordset[0].notificationId;
 }
 
 // ── Time Credits ──────────────────────────────────────────────

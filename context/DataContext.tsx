@@ -230,7 +230,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         const cleanup = onNotification((notif) => {
             // Add new notification to the top of the list
             setNotifications(prev => [{
-                notificationId: `socket-${Date.now()}`,
+                notificationId: (notif as any).notificationId ?? `socket-${Date.now()}`,
                 userId: user?.id ?? '',
                 type: notif.type,
                 title: notif.title,
@@ -241,7 +241,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 isRead: false,
                 createdAt: notif.createdAt,
                 // Legacy fields
-                id: `socket-${Date.now()}`,
+                id: (notif as any).notificationId ?? `socket-${Date.now()}`,
                 body: notif.body,
                 read: false,
                 relatedId: notif.relatedId,
