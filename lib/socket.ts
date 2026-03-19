@@ -46,8 +46,15 @@ function dispatchNewMessage(msg: {
     text: string;
     sentAt: string;
 }) {
+    console.log('[Socket] 📨 Received message via WebSocket:', {
+        conversationId: msg.conversationId ?? msg.chatId,
+        senderId: msg.senderId,
+        textPreview: msg.text?.substring(0, 30) + '...',
+        handlersCount: messageHandlers.size,
+    });
     const normalized = normalizeMessage(msg);
     messageHandlers.forEach((handler) => handler(normalized));
+    console.log('[Socket] ✅ Message dispatched to', messageHandlers.size, 'handlers');
 }
 
 function dispatchTyping(data: { conversationId?: string; userId: string; displayName: string }) {
