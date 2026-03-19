@@ -19,8 +19,13 @@ const ALLOWED_TYPES = [
     'application/pdf',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'audio/m4a',
+    'audio/mp4',
+    'audio/mpeg',
+    'audio/wav',
+    'audio/x-m4a',
 ];
-const MAX_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB (increased for documents)
+const MAX_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB (includes audio)
 
 // Store file in memory (not disk) — we stream directly to Azure Blob Storage
 const storage = multer.memoryStorage();
@@ -31,7 +36,7 @@ const upload = multer({
         if (ALLOWED_TYPES.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Only images (jpg, png, webp, gif) and documents (pdf, doc, docx) are allowed'));
+            cb(new Error('Only images (jpg, png, webp, gif), documents (pdf, doc, docx), and audio (m4a, mp3, wav) are allowed'));
         }
     },
 });
