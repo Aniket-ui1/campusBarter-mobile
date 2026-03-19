@@ -15,7 +15,7 @@ export const uploadRouter = Router();
 
 // ── Allowed file types ────────────────────────────────────
 const ALLOWED_TYPES = [
-    'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
+    'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif',
     'application/pdf',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -31,7 +31,7 @@ const upload = multer({
         if (ALLOWED_TYPES.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Only images (jpg, png, webp) and documents (pdf, doc, docx) are allowed'));
+            cb(new Error('Only images (jpg, png, webp, gif) and documents (pdf, doc, docx) are allowed'));
         }
     },
 });
