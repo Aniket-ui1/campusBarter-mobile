@@ -64,11 +64,24 @@ function formatLastSeen(iso: string | null): string | null {
     return `last seen ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 }
 
+function getLocalDateKey(isoString: string): string {
+    const d = new Date(isoString);
+    // Return YYYY-MM-DD in local timezone for accurate day comparison
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function needsDateSep(msgs: ChatMessage[], index: number): boolean {
+    // Always show date for the oldest message (last in array, displayed at top)
     if (index === msgs.length - 1) return true;
-    const a = new Date(msgs[index].createdAt).toDateString();
-    const b = new Date(msgs[index + 1].createdAt).toDateString();
-    return a !== b;
+
+    const current = msgs[index].createdAt;
+    const next = msgs[index + 1].createdAt;
+
+    // Compare dates only if both are valid
+    if (!current || !next) return false;
+
+    // Compare local calendar dates (YYYY-MM-DD format)
+    return getLocalDateKey(current) !== getLocalDateKey(next);
 }
 
 function getMessageTimestamp(message: Pick<ChatMessage, 'createdAt'>): number {
@@ -125,11 +138,13 @@ export default function ChatScreen() {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
     const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+    const [, forceUpdate] = useState(0); // For forcing re-render at midnight
 
     const searchDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const listRef = useRef<FlatList>(null);
     const typingEmitter = useRef<ReturnType<typeof createTypingEmitter> | null>(null);
+    const midnightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const scrollToLatest = useCallback((animated = true) => {
         requestAnimationFrame(() => {
@@ -203,6 +218,31 @@ export default function ChatScreen() {
     useEffect(() => {
         void loadMessages(1);
     }, [loadMessages]);
+
+    // ── Schedule midnight update for date labels ─────────────────
+    useEffect(() => {
+        const scheduleMidnightUpdate = () => {
+            const now = new Date();
+            const tomorrow = new Date(now);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            tomorrow.setHours(0, 0, 0, 0); // Set to midnight
+
+            const msUntilMidnight = tomorrow.getTime() - now.getTime();
+
+            midnightTimer.current = setTimeout(() => {
+                // Force re-render to update "Today" → "Yesterday" labels
+                forceUpdate(prev => prev + 1);
+                // Schedule next midnight update
+                scheduleMidnightUpdate();
+            }, msUntilMidnight);
+        };
+
+        scheduleMidnightUpdate();
+
+        return () => {
+            if (midnightTimer.current) clearTimeout(midnightTimer.current);
+        };
+    }, []);
 
     // ── Mark as read ─────────────────────────────────────────────
     useEffect(() => {
@@ -281,10 +321,22 @@ export default function ChatScreen() {
         typingEmitter.current = createTypingEmitter(id);
 
         const unsubMsg = onReceiveMessage((msg) => {
-            if (msg.conversationId !== id) return;
+            console.log('[ChatScreen] 📨 Received message:', msg.conversationId, 'Current chat:', id);
+            if (msg.conversationId !== id) {
+                console.log('[ChatScreen] ⏭️ Skipping - message for different conversation');
+                return;
+            }
+            console.log('[ChatScreen] 🔄 Updating messages state...');
             setMessages(prev => {
-                if (prev.some(m => m.messageId === msg.messageId)) return prev;
-                return mergeMessages([msg as ChatMessage, ...prev]);
+                const isDuplicate = prev.some(m => m.messageId === msg.messageId);
+                console.log('[ChatScreen] Current messages count:', prev.length, 'Is duplicate:', isDuplicate);
+                if (isDuplicate) {
+                    console.log('[ChatScreen] ⏭️ Duplicate message, skipping');
+                    return prev;
+                }
+                const updated = mergeMessages([msg as ChatMessage, ...prev]);
+                console.log('[ChatScreen] ✅ State updated! New count:', updated.length);
+                return updated;
             });
             scrollToLatest();
             void chatApi.markRead(id).catch(() => undefined);
@@ -405,19 +457,11 @@ export default function ChatScreen() {
         const msgTime = item.createdAt;
         const isOptimistic = item.messageId.startsWith('opt-');
 
-        // Date separator (shown below in inverted list = visually above)
+        // Date separator (shown after message in JSX = visually above in inverted list)
         const showDate = needsDateSep(messages, index);
 
         return (
             <>
-                {showDate && (
-                    <View style={styles.dateSepWrap}>
-                        <View style={styles.dateSep}>
-                            <Text style={styles.dateSepText}>{formatDateLabel(msgTime)}</Text>
-                        </View>
-                    </View>
-                )}
-
                 <View style={[styles.bubbleRow, isMe ? styles.rowRight : styles.rowLeft]}>
                     {/* Avatar for other user */}
                     {!isMe && (
@@ -533,6 +577,14 @@ export default function ChatScreen() {
                         </View>
                     </Pressable>
                 </View>
+
+                {showDate && (
+                    <View style={styles.dateSepWrap}>
+                        <View style={styles.dateSep}>
+                            <Text style={styles.dateSepText}>{formatDateLabel(msgTime)}</Text>
+                        </View>
+                    </View>
+                )}
             </>
         );
     };

@@ -11,7 +11,7 @@ import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import sql from 'mssql';
 import { Socket, Server as SocketServer } from 'socket.io';
-import { canAccessChat, getPool } from './db';
+import { canAccessChat, canAccessConversation, getPool } from './db';
 
 // ── In-memory map of connected users for online status ─────────
 const connectedUsers = new Map<string, boolean>();
@@ -51,22 +51,53 @@ interface AuthenticatedSocket extends Socket {
 
 // ── Initialise Socket.io ──────────────────────────────────────
 export function initSocketServer(httpServer: http.Server): SocketServer {
-    const allowedOrigins = [
+    const allowedOrigins: Array<string | RegExp> = [
         'https://campusbarter.azurestaticapps.net',
-        'exp://*',
     ];
-    
+
     // Allow localhost in development
     if (process.env.NODE_ENV === 'development' || process.env.ALLOW_LOCALHOST === 'true') {
-        allowedOrigins.push('http://localhost:*');
-        allowedOrigins.push('http://192.168.*:*');
+        allowedOrigins.push('http://localhost:8081');
+        allowedOrigins.push('http://localhost:8082');
+        allowedOrigins.push('http://localhost:8083');
+        allowedOrigins.push('http://localhost:3000');
+        allowedOrigins.push(/^http:\/\/localhost:\d+$/);  // Any localhost port
+        allowedOrigins.push(/^http:\/\/192\.168\.\d+\.\d+:\d+$/);  // Local network
+        allowedOrigins.push(/^exp:\/\/.*/);  // Expo Go
+    } else {
+        // Production still allows Expo Go
+        allowedOrigins.push(/^exp:\/\/.*/);
     }
     
     const io = new SocketServer(httpServer, {
         cors: {
-            origin: allowedOrigins,
+            origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+                // Allow requests with no origin (mobile apps, Postman)
+                if (!origin) return callback(null, true);
+
+                // Check against allowed origins
+                const allowed = allowedOrigins.some((pattern: string | RegExp) => {
+                    if (typeof pattern === 'string') {
+                        if (pattern.includes('*')) {
+                            // Convert wildcard to regex
+                            const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+                            return regex.test(origin);
+                        }
+                        return pattern === origin;
+                    }
+                    // pattern is RegExp
+                    return (pattern as RegExp).test(origin);
+                });
+
+                callback(null, allowed);
+            },
             methods: ['GET', 'POST'],
+            credentials: true,
         },
+        // Force WebSocket transport (no polling fallback)
+        transports: ['websocket', 'polling'],
+        // Try WebSocket upgrade immediately
+        allowUpgrades: true,
         // Allow 1MB payloads (same limit as REST API)
         maxHttpBufferSize: 1e6,
     });
@@ -135,16 +166,31 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
         }
 
         const joinConversationRoom = async (conversationId: string) => {
+            console.log(`[Socket] 🚪 joinConversationRoom called by ${socket.userId} for conversation:`, conversationId);
             try {
-                if (!conversationId?.trim()) return;
-                const allowed = await canAccessChat(conversationId, socket.userId!);
+                if (!conversationId?.trim()) {
+                    console.log(`[Socket] ❌ Empty conversationId, aborting join`);
+                    return;
+                }
+
+                // Detect Chat System v2 (userId_userId format) vs legacy (single UUID)
+                const isV2Conversation = conversationId.includes('_') && conversationId.split('_').length === 2;
+
+                console.log(`[Socket] 🔐 Checking access for ${socket.userId} to ${isV2Conversation ? 'v2 conversation' : 'legacy chat'} ${conversationId}`);
+
+                const allowed = isV2Conversation
+                    ? await canAccessConversation(conversationId, socket.userId!)
+                    : await canAccessChat(conversationId, socket.userId!);
+
                 if (!allowed) {
+                    console.log(`[Socket] ❌ Access denied for ${socket.userId} to conversation ${conversationId}`);
                     socket.emit('socket_error', { message: 'Access denied for this conversation' });
                     return;
                 }
                 socket.join(conversationId);
-                console.log(`[Socket] ${socket.userId} joined conversation ${conversationId}`);
-            } catch {
+                console.log(`[Socket] ✅ ${socket.userId} successfully joined conversation ${conversationId}`);
+            } catch (error) {
+                console.error(`[Socket] ❌ Error joining conversation:`, error);
                 socket.emit('socket_error', { message: 'Failed to join conversation' });
             }
         };
