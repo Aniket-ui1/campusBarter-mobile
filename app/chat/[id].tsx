@@ -132,11 +132,13 @@ export default function ChatScreen() {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
     const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+    const [, forceUpdate] = useState(0); // For forcing re-render at midnight
 
     const searchDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const listRef = useRef<FlatList>(null);
     const typingEmitter = useRef<ReturnType<typeof createTypingEmitter> | null>(null);
+    const midnightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const scrollToLatest = useCallback((animated = true) => {
         requestAnimationFrame(() => {
@@ -210,6 +212,31 @@ export default function ChatScreen() {
     useEffect(() => {
         void loadMessages(1);
     }, [loadMessages]);
+
+    // ── Schedule midnight update for date labels ─────────────────
+    useEffect(() => {
+        const scheduleMidnightUpdate = () => {
+            const now = new Date();
+            const tomorrow = new Date(now);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            tomorrow.setHours(0, 0, 0, 0); // Set to midnight
+
+            const msUntilMidnight = tomorrow.getTime() - now.getTime();
+
+            midnightTimer.current = setTimeout(() => {
+                // Force re-render to update "Today" → "Yesterday" labels
+                forceUpdate(prev => prev + 1);
+                // Schedule next midnight update
+                scheduleMidnightUpdate();
+            }, msUntilMidnight);
+        };
+
+        scheduleMidnightUpdate();
+
+        return () => {
+            if (midnightTimer.current) clearTimeout(midnightTimer.current);
+        };
+    }, []);
 
     // ── Mark as read ─────────────────────────────────────────────
     useEffect(() => {
