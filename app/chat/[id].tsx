@@ -64,35 +64,24 @@ function formatLastSeen(iso: string | null): string | null {
     return `last seen ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 }
 
+function getLocalDateKey(isoString: string): string {
+    const d = new Date(isoString);
+    // Return YYYY-MM-DD in local timezone for accurate day comparison
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function needsDateSep(msgs: ChatMessage[], index: number): boolean {
     // Always show date for the oldest message (last in array, displayed at top)
     if (index === msgs.length - 1) return true;
 
-    // Show date separator when day changes between consecutive messages
-    const current = new Date(msgs[index].createdAt);
-    const next = new Date(msgs[index + 1].createdAt);
+    const current = msgs[index].createdAt;
+    const next = msgs[index + 1].createdAt;
 
     // Compare dates only if both are valid
-    if (isNaN(current.getTime()) || isNaN(next.getTime())) {
-        console.log('[DateSep] Invalid timestamp:', {
-            index,
-            current: msgs[index].createdAt,
-            next: msgs[index + 1]?.createdAt
-        });
-        return false;
-    }
+    if (!current || !next) return false;
 
-    const needsSep = current.toDateString() !== next.toDateString();
-    if (needsSep) {
-        console.log('[DateSep] Separator needed at index', index, {
-            currentDate: current.toDateString(),
-            currentTime: msgs[index].createdAt,
-            nextDate: next.toDateString(),
-            nextTime: msgs[index + 1].createdAt
-        });
-    }
-
-    return needsSep;
+    // Compare local calendar dates (YYYY-MM-DD format)
+    return getLocalDateKey(current) !== getLocalDateKey(next);
 }
 
 function getMessageTimestamp(message: Pick<ChatMessage, 'createdAt'>): number {
