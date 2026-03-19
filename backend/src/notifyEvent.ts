@@ -47,21 +47,26 @@ export async function notifyEvent(payload: NotifPayload): Promise<void> {
         actionUrl = recipientId ? `/reviews/${recipientId}` : undefined;
     }
 
+    console.log('[Notify] 📨 Creating notification:', { recipientId, type, title, actionUrl });
+
     // 1. Persist to DB (the bell icon in-app)
     try {
         await createNotification(recipientId, type, title, body, relatedId, entityType, actionUrl);
+        console.log('[Notify] ✅ DB insert successful');
     } catch (err) {
-        console.error('[Notify] DB insert failed:', err);
+        console.error('[Notify] ❌ DB insert failed:', err);
     }
 
     // 2. Real-time socket emit to the user's personal room
     try {
-        getIO().to(`user:${recipientId}`).emit('notification', {
+        const io = getIO();
+        io.to(`user:${recipientId}`).emit('notification', {
             type, title, body, relatedId,
             createdAt: new Date().toISOString(),
         });
-    } catch {
-        // Socket not initialised yet — safe to skip
+        console.log('[Notify] ✅ Socket emit successful to room:', `user:${recipientId}`);
+    } catch (err) {
+        console.error('[Notify] ❌ Socket emit failed:', err);
     }
 
     // 3. Push notification (mobile, if token registered)

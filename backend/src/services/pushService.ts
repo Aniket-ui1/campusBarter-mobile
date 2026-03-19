@@ -93,6 +93,13 @@ export async function notifyOtherParticipant(
         const { senderName, recipientId } = result.recordset[0];
         const bodyText = preview.length > 100 ? preview.slice(0, 97) + '...' : preview;
 
+        console.log('[PushService] 🔔 Creating in-app notification for:', {
+            recipientId,
+            senderName,
+            conversationId,
+            preview: bodyText
+        });
+
         // Create in-app notification
         notifyMessage(recipientId, senderName, conversationId, bodyText);
 
