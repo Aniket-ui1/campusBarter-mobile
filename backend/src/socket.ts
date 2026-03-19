@@ -166,16 +166,23 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
         }
 
         const joinConversationRoom = async (conversationId: string) => {
+            console.log(`[Socket] 🚪 joinConversationRoom called by ${socket.userId} for conversation:`, conversationId);
             try {
-                if (!conversationId?.trim()) return;
+                if (!conversationId?.trim()) {
+                    console.log(`[Socket] ❌ Empty conversationId, aborting join`);
+                    return;
+                }
+                console.log(`[Socket] 🔐 Checking access for ${socket.userId} to conversation ${conversationId}`);
                 const allowed = await canAccessChat(conversationId, socket.userId!);
                 if (!allowed) {
+                    console.log(`[Socket] ❌ Access denied for ${socket.userId} to conversation ${conversationId}`);
                     socket.emit('socket_error', { message: 'Access denied for this conversation' });
                     return;
                 }
                 socket.join(conversationId);
-                console.log(`[Socket] ${socket.userId} joined conversation ${conversationId}`);
-            } catch {
+                console.log(`[Socket] ✅ ${socket.userId} successfully joined conversation ${conversationId}`);
+            } catch (error) {
+                console.error(`[Socket] ❌ Error joining conversation:`, error);
                 socket.emit('socket_error', { message: 'Failed to join conversation' });
             }
         };
