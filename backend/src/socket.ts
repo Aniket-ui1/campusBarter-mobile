@@ -11,7 +11,7 @@ import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import sql from 'mssql';
 import { Socket, Server as SocketServer } from 'socket.io';
-import { canAccessChat, getPool } from './db';
+import { canAccessChat, canAccessConversation, getPool } from './db';
 
 // ── In-memory map of connected users for online status ─────────
 const connectedUsers = new Map<string, boolean>();
@@ -172,8 +172,16 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
                     console.log(`[Socket] ❌ Empty conversationId, aborting join`);
                     return;
                 }
-                console.log(`[Socket] 🔐 Checking access for ${socket.userId} to conversation ${conversationId}`);
-                const allowed = await canAccessChat(conversationId, socket.userId!);
+
+                // Detect Chat System v2 (userId_userId format) vs legacy (single UUID)
+                const isV2Conversation = conversationId.includes('_') && conversationId.split('_').length === 2;
+
+                console.log(`[Socket] 🔐 Checking access for ${socket.userId} to ${isV2Conversation ? 'v2 conversation' : 'legacy chat'} ${conversationId}`);
+
+                const allowed = isV2Conversation
+                    ? await canAccessConversation(conversationId, socket.userId!)
+                    : await canAccessChat(conversationId, socket.userId!);
+
                 if (!allowed) {
                     console.log(`[Socket] ❌ Access denied for ${socket.userId} to conversation ${conversationId}`);
                     socket.emit('socket_error', { message: 'Access denied for this conversation' });
