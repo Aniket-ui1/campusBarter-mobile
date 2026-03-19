@@ -17,7 +17,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import { Audio } from 'expo-av';
 import EmojiSelector from 'react-native-emoji-selector';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -388,10 +387,6 @@ export default function ChatScreen() {
     const [viewingImage, setViewingImage] = useState<string | null>(null);
     const [showAttachMenu, setShowAttachMenu] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [isRecording, setIsRecording] = useState(false);
-    const [recordingDuration, setRecordingDuration] = useState(0);
-    const recordingRef = useRef<Audio.Recording | null>(null);
-    const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // ── Pick & send image ─────────────────────────────────────────
     const pickAndSendImage = async () => {
@@ -589,156 +584,6 @@ export default function ChatScreen() {
         }
     };
 
-    // ── Voice Recording Functions ────────────────────────────────
-    const startRecording = async () => {
-        if (!user?.id || !id) return;
-
-        try {
-            console.log('🎤 Requesting microphone permissions...');
-            const { status } = await Audio.requestPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permission needed', 'Microphone access is required to record voice messages.');
-                return;
-            }
-
-            await Audio.setAudioModeAsync({
-                allowsRecordingIOS: true,
-                playsInSilentModeIOS: true,
-            });
-
-            console.log('🎤 Starting recording...');
-            const { recording } = await Audio.Recording.createAsync(
-                Audio.RecordingOptionsPresets.HIGH_QUALITY
-            );
-
-            recordingRef.current = recording;
-            setIsRecording(true);
-            setRecordingDuration(0);
-
-            // Start timer
-            recordingTimerRef.current = setInterval(() => {
-                setRecordingDuration(prev => prev + 1);
-            }, 1000);
-
-            console.log('✅ Recording started');
-        } catch (error) {
-            console.error('❌ Failed to start recording:', error);
-            Alert.alert('Recording failed', 'Could not start recording. Please try again.');
-        }
-    };
-
-    const stopAndSendRecording = async () => {
-        if (!recordingRef.current || !user?.id || !id) return;
-
-        try {
-            console.log('🎤 Stopping recording...');
-            setIsRecording(false);
-            if (recordingTimerRef.current) {
-                clearInterval(recordingTimerRef.current);
-                recordingTimerRef.current = null;
-            }
-
-            await recordingRef.current.stopAndUnloadAsync();
-            await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-
-            const uri = recordingRef.current.getURI();
-            recordingRef.current = null;
-
-            if (!uri) {
-                Alert.alert('Recording failed', 'No audio recorded.');
-                return;
-            }
-
-            console.log('✅ Recording stopped, uploading...');
-            setSendingMedia(true);
-
-            // Upload audio
-            const formData = new FormData();
-            let fileName: string;
-
-            if (Platform.OS === 'web') {
-                const response = await fetch(uri);
-                const blob = await response.blob();
-                // Use the actual MIME type to determine file extension
-                const mimeType = blob.type;
-                const ext = mimeType.includes('webm') ? 'webm'
-                          : mimeType.includes('ogg') ? 'ogg'
-                          : mimeType.includes('wav') ? 'wav'
-                          : 'm4a';
-                fileName = `voice_${Date.now()}.${ext}`;
-                console.log('🎤 Web audio blob type:', mimeType, 'extension:', ext);
-                formData.append('image', blob, fileName);
-            } else {
-                fileName = `voice_${Date.now()}.m4a`;
-                formData.append('image', {
-                    uri,
-                    name: fileName,
-                    type: 'audio/m4a',
-                } as any);
-            }
-
-            const token = getApiToken();
-            const uploadRes = await fetch(`${getApiBase()}/api/upload`, {
-                method: 'POST',
-                headers: token ? { Authorization: `Bearer ${token}` } : {},
-                body: formData,
-            });
-
-            if (!uploadRes.ok) {
-                const err = await uploadRes.json().catch(() => ({ error: 'Upload failed' }));
-                throw new Error(err?.error ?? 'Upload failed');
-            }
-
-            const { url } = await uploadRes.json() as { url: string };
-            console.log('✅ Audio uploaded:', url);
-
-            // Send as audio message
-            const { message } = await chatApi.sendMedia(id, url, fileName, 'audio' as any);
-
-            // Add to messages
-            const audioMsg: ChatMessage = {
-                ...message,
-                messageId: message.messageId || `audio-${Date.now()}`,
-                senderId: message.senderId || user.id,
-                senderName: message.senderName || user.displayName,
-                messageType: 'audio' as any,
-                mediaUrl: message.mediaUrl ?? url,
-                mediaName: fileName,
-                createdAt: message.createdAt || new Date().toISOString(),
-            };
-
-            setMessages(prev => mergeMessages([audioMsg, ...prev]));
-            scrollToLatest(false);
-            setRecordingDuration(0);
-        } catch (error) {
-            console.error('❌ Failed to send voice message:', error);
-            console.error('❌ Full error details:', JSON.stringify(error, null, 2));
-            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-            Alert.alert('Send failed', `Could not send voice message: ${errorMsg}`);
-        } finally {
-            setSendingMedia(false);
-        }
-    };
-
-    const cancelRecording = async () => {
-        console.log('🎤 Cancelling recording...');
-        setIsRecording(false);
-        if (recordingTimerRef.current) {
-            clearInterval(recordingTimerRef.current);
-            recordingTimerRef.current = null;
-        }
-
-        if (recordingRef.current) {
-            try {
-                await recordingRef.current.stopAndUnloadAsync();
-                await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-            } catch (error) {
-                console.error('Error cancelling recording:', error);
-            }
-            recordingRef.current = null;
-        }
-        setRecordingDuration(0);
-    };
 
     const handleSend = async () => {
         const t = text.trim();
@@ -1120,6 +965,18 @@ export default function ChatScreen() {
                             maxLength={2000}
                             returnKeyType="default"
                             blurOnSubmit={false}
+                            onKeyPress={(e) => {
+                                // On web, send on Enter (without Shift)
+                                if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter') {
+                                    const webEvent = e.nativeEvent as any;
+                                    if (!webEvent.shiftKey) {
+                                        e.preventDefault();
+                                        if (text.trim()) {
+                                            handleSend();
+                                        }
+                                    }
+                                }
+                            }}
                         />
 
                         {/* Emoji button */}
@@ -1138,20 +995,17 @@ export default function ChatScreen() {
                         </Pressable>
                     </View>
 
-                    {/* Send / mic button — morphs like WhatsApp */}
+                    {/* Send button */}
                     <Pressable
-                        style={[styles.sendBtn, !text.trim() && styles.micBtn]}
-                        onPress={text.trim() ? handleSend : undefined}
-                        onPressIn={!text.trim() ? startRecording : undefined}
-                        onPressOut={!text.trim() && isRecording ? stopAndSendRecording : undefined}
-                        onLongPress={!text.trim() ? () => {} : undefined}
-                        delayLongPress={200}
+                        style={styles.sendBtn}
+                        onPress={handleSend}
+                        disabled={!text.trim() || sending || sendingMedia}
                     >
                         {sending || sendingMedia ? (
                             <ActivityIndicator color="#FFF" size="small" />
                         ) : (
                             <Ionicons
-                                name={text.trim() ? 'send' : 'mic'}
+                                name="send"
                                 size={20}
                                 color="#FFF"
                             />
@@ -1173,22 +1027,6 @@ export default function ChatScreen() {
                         showSectionTitles={false}
                         columns={8}
                     />
-                </View>
-            )}
-
-            {/* Recording Overlay */}
-            {isRecording && (
-                <View style={styles.recordingOverlay}>
-                    <View style={styles.recordingContent}>
-                        <Ionicons name="mic" size={24} color="#FF3B30" />
-                        <Text style={styles.recordingText}>
-                            Recording... {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
-                        </Text>
-                        <Pressable onPress={cancelRecording} style={styles.recordingCancel}>
-                            <Text style={styles.recordingCancelText}>Cancel</Text>
-                        </Pressable>
-                    </View>
-                    <Text style={styles.recordingHint}>Release to send, tap cancel to discard</Text>
                 </View>
             )}
 
