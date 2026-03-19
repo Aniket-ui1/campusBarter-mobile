@@ -175,21 +175,45 @@ export const chatApi = {
     },
 
     /** Get all conversations for the logged-in user. */
-    getConversations(): Promise<{ conversations: Conversation[] }> {
-        return tryFetch([
-            async () => {
-                const result = await chatFetch<{ conversations: any[] }>(`${base()}/conversations`);
-                return { conversations: (result.conversations ?? []).map(normalizeConversation) };
+    async getConversations(): Promise<{ conversations: Conversation[] }> {
+        const paths: Array<{ name: string; request: () => Promise<any> }> = [
+            {
+                name: 'v2:/api/chat/conversations',
+                request: () => chatFetch<{ conversations: any[] }>(`${base()}/conversations`),
             },
-            async () => {
-                const result = await chatFetch<any[]>(`${legacyBaseV1()}/chats`);
-                return { conversations: (result ?? []).map(normalizeConversation) };
+            {
+                name: 'v1:/api/v1/chats',
+                request: () => chatFetch<any[]>(`${legacyBaseV1()}/chats`),
             },
-            async () => {
-                const result = await chatFetch<any[]>(`${legacyBase()}/chats`);
-                return { conversations: (result ?? []).map(normalizeConversation) };
+            {
+                name: 'legacy:/api/chats',
+                request: () => chatFetch<any[]>(`${legacyBase()}/chats`),
             },
-        ]);
+        ];
+
+        let lastError: unknown;
+        for (const path of paths) {
+            try {
+                const raw = await path.request();
+                const rows = Array.isArray(raw) ? raw : (raw?.conversations ?? []);
+                const conversations: Conversation[] = rows.map(normalizeConversation);
+
+                console.log('[ChatAPI] getConversations source:', path.name, {
+                    count: conversations.length,
+                    unreadCounts: conversations.slice(0, 5).map((c: Conversation) => ({
+                        conversationId: c.conversationId,
+                        unreadCount: c.unreadCount,
+                    })),
+                });
+
+                return { conversations };
+            } catch (error) {
+                lastError = error;
+                console.warn('[ChatAPI] getConversations failed:', path.name, error);
+            }
+        }
+
+        throw lastError instanceof Error ? lastError : new Error('Request failed');
     },
 
     /**

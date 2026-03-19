@@ -5,11 +5,19 @@ import { useChatBadge } from '@/context/ChatBadgeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
 export default function TabLayout() {
   const { user } = useAuth();
   const { totalUnreadCount } = useChatBadge();
+  const chatsBadgeText = totalUnreadCount > 99 ? '99+' : String(totalUnreadCount);
+
+  React.useEffect(() => {
+    console.log('[ChatBadge][TabLayout] chats badge state', {
+      totalUnreadCount,
+      chatsBadgeText,
+    });
+  }, [totalUnreadCount, chatsBadgeText]);
   
   if (!user) return <Redirect href="/(auth)/welcome" />;
 
@@ -63,13 +71,16 @@ export default function TabLayout() {
         }} />
         <Tabs.Screen name="chats" options={{
           title: 'Chats',
-          tabBarBadge: totalUnreadCount > 0 ? totalUnreadCount : undefined,
-          tabBarBadgeStyle: {
-            backgroundColor: '#FF5555',
-          },
           tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.activeWrap : undefined}>
-              <Ionicons name="chatbubbles" size={22} color={color} />
+            <View style={styles.chatIconWrap}>
+              <View style={focused ? styles.activeWrap : undefined}>
+                <Ionicons name="chatbubbles" size={22} color={color} />
+              </View>
+              {totalUnreadCount > 0 && (
+                <View style={styles.chatTabBadge}>
+                  <Text style={styles.chatTabBadgeText}>{chatsBadgeText}</Text>
+                </View>
+              )}
             </View>
           ),
         }} />
@@ -89,10 +100,36 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  chatIconWrap: {
+    position: 'relative',
+    overflow: 'visible',
+  },
   activeWrap: {
     backgroundColor: 'rgba(107,143,113,0.15)',
     borderRadius: 10,
     padding: 4,
+  },
+  chatTabBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -12,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: '#ef4444',
+    borderWidth: 1,
+    borderColor: AppColors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+    elevation: 10,
+  },
+  chatTabBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 11,
   },
   postWrap: {
     width: 44, height: 44, borderRadius: 14,
