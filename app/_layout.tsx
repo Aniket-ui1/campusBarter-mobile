@@ -8,6 +8,7 @@ import { DataProvider } from '@/context/DataContext';
 import { OnboardingProvider } from '@/context/OnboardingContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { OfflineBanner } from '@/components/OfflineBanner';
+// import { ActionSheetProvider } from '@expo/react-native-action-sheet';
 
 
 const CampusBarterTheme = {

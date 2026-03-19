@@ -295,7 +295,15 @@ router.get('/:convId/messages',
                     SELECT m.messageId, m.conversationId, m.senderId,
                            m.messageType, m.textContent, m.mediaUrl, m.mediaName,
                            m.isRead, m.readAt, m.isDeleted, m.createdAt,
+                           m.replyToMessageId,
+                           m.isEdited, m.editedAt,
+                           m.isPinned, m.pinnedAt, m.pinnedBy,
                            COALESCE(u.displayName, m.senderId) AS senderName,
+                           -- Reply context (denormalized for performance)
+                           reply.textContent AS replyTextContent,
+                           reply.messageType AS replyMessageType,
+                           COALESCE(replyUser.displayName, reply.senderId) AS replySenderName,
+                           -- Reactions JSON
                            (
                                SELECT r.emoji, r.userId, COALESCE(ru.displayName, r.userId) AS displayName
                                FROM MessageReactions r
@@ -305,16 +313,29 @@ router.get('/:convId/messages',
                            ) AS reactionsJSON
                     FROM ConversationMessages m
                     LEFT JOIN Users u ON u.id = m.senderId
+                    LEFT JOIN ConversationMessages reply ON reply.messageId = m.replyToMessageId
+                    LEFT JOIN Users replyUser ON replyUser.id = reply.senderId
                     WHERE m.conversationId = @cid AND m.isDeleted = 0
                     ORDER BY m.createdAt DESC
                     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
                 `);
 
-            // Parse reactions JSON and reverse order (oldest-first for UI)
+            // Parse reactions JSON, format reply context, reverse order (oldest-first for UI)
             const messages = result.recordset.map((m: any) => ({
                 ...m,
                 reactions: m.reactionsJSON ? JSON.parse(m.reactionsJSON) : [],
                 reactionsJSON: undefined,  // Remove the raw JSON field
+                // Format reply context if exists
+                replyContext: m.replyToMessageId ? {
+                    messageId: m.replyToMessageId,
+                    textContent: m.replyTextContent,
+                    messageType: m.replyMessageType,
+                    senderName: m.replySenderName,
+                } : null,
+                // Remove denormalized reply fields
+                replyTextContent: undefined,
+                replyMessageType: undefined,
+                replySenderName: undefined,
             }));
             res.json({ messages: messages.reverse() });
         } catch (e: any) {
@@ -333,6 +354,7 @@ router.post('/:convId/messages',
         body('messageType').optional().isIn(['text','image','file','audio']),
         body('mediaUrl').optional().isURL(),
         body('mediaName').optional().isLength({ max: 200 }),
+        body('replyToMessageId').optional().trim().notEmpty(),
     ]),
     async (req: Request, res: Response) => {
         const senderId  = req.user!.id;
@@ -342,6 +364,7 @@ router.post('/:convId/messages',
             messageType = 'text',
             mediaUrl,
             mediaName,
+            replyToMessageId,
         } = req.body;
 
         if (messageType === 'text' && !textContent?.trim()) {
@@ -382,10 +405,11 @@ router.post('/:convId/messages',
                 .input('text',  sql.NVarChar(2000), safeText)
                 .input('murl',  sql.NVarChar(500),  mediaUrl  ?? null)
                 .input('mname', sql.NVarChar(128),  mediaName ?? null)
+                .input('reply', sql.NVarChar(128),  replyToMessageId ?? null)
                 .query(`
                     INSERT INTO ConversationMessages
-                        (messageId, conversationId, senderId, messageType, textContent, mediaUrl, mediaName)
-                    VALUES (@mid, @cid, @sid, @type, @text, @murl, @mname)
+                        (messageId, conversationId, senderId, messageType, textContent, mediaUrl, mediaName, replyToMessageId)
+                    VALUES (@mid, @cid, @sid, @type, @text, @murl, @mname, @reply)
                 `);
 
             // Update conversation preview
@@ -407,6 +431,7 @@ router.post('/:convId/messages',
                 textContent: safeText,
                 mediaUrl:    mediaUrl  ?? null,
                 mediaName:   mediaName ?? null,
+                replyToMessageId: replyToMessageId ?? null,
                 isRead:   false,
                 createdAt: new Date().toISOString(),
             };
@@ -747,6 +772,150 @@ router.get('/message/:messageId/reactions',
             res.json({ reactions: reactions.recordset });
         } catch (e: any) {
             console.error('[Chat] GET /message/:messageId/reactions:', e.message);
+            res.status(500).json({ error: e.message });
+        }
+    }
+);
+
+// ── PUT /api/chat/message/:messageId ──────────────────────────
+// Edit a text message (only sender, only text messages, within 15 minutes)
+router.put('/message/:messageId',
+    validate([
+        param('messageId').trim().notEmpty(),
+        body('textContent').trim().notEmpty().isLength({ max: 2000 }),
+    ]),
+    async (req: Request, res: Response) => {
+        const userId = req.user!.id;
+        const messageId = req.params.messageId;
+        const newText = String(req.body.textContent).trim();
+
+        try {
+            const db = await getPool();
+
+            // Fetch message and verify sender + type + time window
+            const msgCheck = await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .input('uid', sql.NVarChar(128), userId)
+                .query(`
+                    SELECT m.conversationId, m.messageType, m.textContent, m.createdAt, m.isEdited
+                    FROM ConversationMessages m
+                    WHERE m.messageId = @mid AND m.senderId = @uid AND m.isDeleted = 0
+                `);
+
+            if (msgCheck.recordset.length === 0) {
+                res.status(403).json({ error: 'Forbidden: Not your message or message deleted' });
+                return;
+            }
+
+            const msg = msgCheck.recordset[0];
+
+            // Only text messages can be edited
+            if (msg.messageType !== 'text') {
+                res.status(400).json({ error: 'Only text messages can be edited' });
+                return;
+            }
+
+            // 15-minute edit window
+            const createdAt = new Date(msg.createdAt);
+            const now = new Date();
+            const diffMinutes = (now.getTime() - createdAt.getTime()) / (1000 * 60);
+            if (diffMinutes > 15) {
+                res.status(400).json({ error: 'Edit window expired (15 minutes)' });
+                return;
+            }
+
+            // Save original text on first edit
+            const originalText = msg.isEdited ? undefined : msg.textContent;
+
+            await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .input('text', sql.NVarChar(2000), newText)
+                .input('orig', sql.NVarChar(2000), originalText ?? null)
+                .query(`
+                    UPDATE ConversationMessages
+                    SET textContent = @text,
+                        isEdited = 1,
+                        editedAt = GETUTCDATE(),
+                        originalText = COALESCE(originalText, @orig)
+                    WHERE messageId = @mid
+                `);
+
+            const io = getIO();
+            if (io) {
+                io.to(msg.conversationId).emit('message_edited', {
+                    messageId,
+                    textContent: newText,
+                    isEdited: true,
+                    editedAt: new Date().toISOString(),
+                });
+            }
+
+            res.json({ success: true, messageId, textContent: newText });
+        } catch (e: any) {
+            console.error('[Chat] PUT /message/:messageId:', e.message);
+            res.status(500).json({ error: e.message });
+        }
+    }
+);
+
+// ── POST /api/chat/message/:messageId/pin ─────────────────────
+// Pin or unpin a message in a conversation
+router.post('/message/:messageId/pin',
+    validate([param('messageId').trim().notEmpty()]),
+    async (req: Request, res: Response) => {
+        const userId = req.user!.id;
+        const messageId = req.params.messageId;
+
+        try {
+            const db = await getPool();
+
+            // Verify user can access this conversation
+            const msgCheck = await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .input('uid', sql.NVarChar(128), userId)
+                .query(`
+                    SELECT m.conversationId, m.isPinned
+                    FROM ConversationMessages m
+                    JOIN Conversations c ON c.conversationId = m.conversationId
+                    WHERE m.messageId = @mid
+                      AND (c.participant1Id = @uid OR c.participant2Id = @uid)
+                      AND m.isDeleted = 0
+                `);
+
+            if (msgCheck.recordset.length === 0) {
+                res.status(403).json({ error: 'Forbidden' });
+                return;
+            }
+
+            const msg = msgCheck.recordset[0];
+            const newPinState = !msg.isPinned;  // Toggle
+
+            await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .input('pinned', sql.Bit, newPinState)
+                .input('uid', sql.NVarChar(128), newPinState ? userId : null)
+                .query(`
+                    UPDATE ConversationMessages
+                    SET isPinned = @pinned,
+                        pinnedAt = CASE WHEN @pinned = 1 THEN GETUTCDATE() ELSE NULL END,
+                        pinnedBy = @uid
+                    WHERE messageId = @mid
+                `);
+
+            const io = getIO();
+            if (io) {
+                const event = newPinState ? 'message_pinned' : 'message_unpinned';
+                io.to(msg.conversationId).emit(event, {
+                    messageId,
+                    isPinned: newPinState,
+                    pinnedAt: newPinState ? new Date().toISOString() : null,
+                    pinnedBy: newPinState ? userId : null,
+                });
+            }
+
+            res.json({ success: true, action: newPinState ? 'pinned' : 'unpinned', isPinned: newPinState });
+        } catch (e: any) {
+            console.error('[Chat] POST /message/:messageId/pin:', e.message);
             res.status(500).json({ error: e.message });
         }
     }

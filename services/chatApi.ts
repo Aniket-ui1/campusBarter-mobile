@@ -29,6 +29,13 @@ export interface MessageReaction {
     displayName?: string;
 }
 
+export interface ReplyContext {
+    messageId: string;
+    textContent: string | null;
+    messageType: string;
+    senderName?: string;
+}
+
 export interface ChatMessage {
     messageId: string;
     conversationId: string;
@@ -42,7 +49,17 @@ export interface ChatMessage {
     readAt: string | null;
     isDeleted: boolean;
     createdAt: string;
-    reactions?: MessageReaction[];  // NEW: Emoji reactions
+    reactions?: MessageReaction[];
+    // Reply threading
+    replyToMessageId?: string | null;
+    replyContext?: ReplyContext | null;
+    // Message editing
+    isEdited?: boolean;
+    editedAt?: string | null;
+    // Pin messages
+    isPinned?: boolean;
+    pinnedAt?: string | null;
+    pinnedBy?: string | null;
 }
 
 function authHeaders(): Record<string, string> {
@@ -334,5 +351,20 @@ export const chatApi = {
     /** Get all reactions for a message. */
     getReactions(messageId: string): Promise<{ reactions: MessageReaction[] }> {
         return chatFetch(`${base()}/message/${encodeURIComponent(messageId)}/reactions`);
+    },
+
+    /** Edit a text message (only sender, within 15 minutes). */
+    editMessage(messageId: string, textContent: string): Promise<{ success: boolean; messageId: string; textContent: string }> {
+        return chatFetch(`${base()}/message/${encodeURIComponent(messageId)}`, {
+            method: 'PUT',
+            body: JSON.stringify({ textContent }),
+        });
+    },
+
+    /** Pin or unpin a message (toggle behavior). */
+    pinMessage(messageId: string): Promise<{ success: boolean; action: 'pinned' | 'unpinned'; isPinned: boolean }> {
+        return chatFetch(`${base()}/message/${encodeURIComponent(messageId)}/pin`, {
+            method: 'POST',
+        });
     },
 };

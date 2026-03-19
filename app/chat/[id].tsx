@@ -20,6 +20,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import EmojiSelector from 'react-native-emoji-selector';
+// import { useActionSheet } from '@expo/react-native-action-sheet';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -127,6 +128,7 @@ export default function ChatScreen() {
         markChatRead,
         subscribeToMessages,
     } = useData();
+    // const { showActionSheetWithOptions } = useActionSheet();
 
     const [otherName, setOtherName] = useState(paramRecipientName ?? 'Chat');
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -686,6 +688,65 @@ export default function ChatScreen() {
         setReactingToMessageId(null);
     };
 
+    // ── Message Actions Menu ─────────────────────────────────────
+    const handleMessageLongPress = (message: ChatMessage) => {
+        if (message.isDeleted) return;
+
+        const isMe = message.senderId === user?.id;
+
+        // Simple Alert.alert menu (temporary until ActionSheet is fixed)
+        Alert.alert('Message Actions', 'Choose an action', [
+            {
+                text: 'Reply',
+                onPress: () => Alert.alert('Reply', 'Reply feature coming soon!'),
+            },
+            ...(isMe && message.messageType === 'text' ? [{
+                text: 'Edit',
+                onPress: () => Alert.alert('Edit', 'Edit feature coming soon!'),
+            }] : []),
+            {
+                text: 'Pin',
+                onPress: () => Alert.alert('Pin', 'Pin feature coming soon!'),
+            },
+            {
+                text: 'Delete for me',
+                style: 'destructive' as const,
+                onPress: async () => {
+                    try {
+                        await chatApi.deleteMessage(message.messageId, false);
+                        setMessages(prev => prev.map(m =>
+                            m.messageId === message.messageId
+                                ? { ...m, isDeleted: true, textContent: null }
+                                : m
+                        ));
+                    } catch (e) {
+                        Alert.alert('Error', 'Failed to delete message');
+                    }
+                },
+            },
+            ...(isMe ? [{
+                text: 'Delete for everyone',
+                style: 'destructive' as const,
+                onPress: async () => {
+                    try {
+                        await chatApi.deleteMessage(message.messageId, true);
+                        setMessages(prev => prev.map(m =>
+                            m.messageId === message.messageId
+                                ? { ...m, isDeleted: true, textContent: null }
+                                : m
+                        ));
+                    } catch (e) {
+                        Alert.alert('Error', 'Failed to delete message for everyone');
+                    }
+                },
+            }] : []),
+            {
+                text: 'Cancel',
+                style: 'cancel' as const,
+            },
+        ]);
+    };
+
     const handleLoadOlder = async () => {
         if (!id || loadingOlder || !hasMore) return;
         setLoadingOlder(true);
@@ -725,69 +786,7 @@ export default function ChatScreen() {
                             item.isDeleted && styles.bubbleDeleted,
                             highlightedMessageId === item.messageId && styles.bubbleHighlighted,
                         ]}
-                        onLongPress={() => {
-                            if (item.isDeleted) return;
-                            
-                            if (isMe) {
-                                // Sent by me — show both delete options
-                                Alert.alert('Delete message', 'Choose how to delete this message', [
-                                    {
-                                        text: 'Delete for me',
-                                        onPress: async () => {
-                                            try {
-                                                await chatApi.deleteMessage(item.messageId, false);
-                                                setMessages(prev => prev.map(m =>
-                                                    m.messageId === item.messageId
-                                                        ? { ...m, isDeleted: true, textContent: null }
-                                                        : m
-                                                ));
-                                            } catch (e) {
-                                                Alert.alert('Error', 'Failed to delete message');
-                                            }
-                                        },
-                                        style: 'default',
-                                    },
-                                    {
-                                        text: 'Delete for everyone',
-                                        onPress: async () => {
-                                            try {
-                                                await chatApi.deleteMessage(item.messageId, true);
-                                                setMessages(prev => prev.map(m =>
-                                                    m.messageId === item.messageId
-                                                        ? { ...m, isDeleted: true, textContent: null }
-                                                        : m
-                                                ));
-                                            } catch (e) {
-                                                Alert.alert('Error', 'Failed to delete message for everyone');
-                                            }
-                                        },
-                                        style: 'destructive',
-                                    },
-                                    { text: 'Cancel', style: 'cancel' },
-                                ]);
-                            } else {
-                                // Received message — only delete for me
-                                Alert.alert('Delete message', 'Delete this message?', [
-                                    {
-                                        text: 'Delete for me',
-                                        onPress: async () => {
-                                            try {
-                                                await chatApi.deleteMessage(item.messageId, false);
-                                                setMessages(prev => prev.map(m =>
-                                                    m.messageId === item.messageId
-                                                        ? { ...m, isDeleted: true, textContent: null }
-                                                        : m
-                                                ));
-                                            } catch (e) {
-                                                Alert.alert('Error', 'Failed to delete message');
-                                            }
-                                        },
-                                        style: 'destructive',
-                                    },
-                                    { text: 'Cancel', style: 'cancel' },
-                                ]);
-                            }
-                        }}
+                        onLongPress={() => handleMessageLongPress(item)}
                     >
                         {/* Show deleted placeholder or message content */}
                         {item.isDeleted ? (
