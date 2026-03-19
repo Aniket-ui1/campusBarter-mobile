@@ -398,6 +398,9 @@ router.post('/:convId/messages',
             // Broadcast to all participants in the socket room
             const io = getIO();
             if (io) {
+                console.log('[Chat] 📤 Emitting receive_message to room:', convId);
+                console.log('[Chat] Message preview:', preview.substring(0, 30) + '...');
+                console.log('[Chat] Sender:', senderId);
                 io.to(convId).emit('receive_message', message);
                 io.to(convId).emit('conversation_updated', {
                     conversationId: convId,
@@ -405,6 +408,9 @@ router.post('/:convId/messages',
                     lastMessageTime: message.createdAt,
                     lastSenderId:    senderId,
                 });
+                console.log('[Chat] ✅ Events emitted successfully');
+            } else {
+                console.error('[Chat] ❌ Socket.io instance not available! Cannot broadcast message.');
             }
 
             // Fire-and-forget push notification to offline recipient
