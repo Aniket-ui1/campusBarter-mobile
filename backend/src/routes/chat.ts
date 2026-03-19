@@ -295,7 +295,14 @@ router.get('/:convId/messages',
                     SELECT m.messageId, m.conversationId, m.senderId,
                            m.messageType, m.textContent, m.mediaUrl, m.mediaName,
                            m.isRead, m.readAt, m.isDeleted, m.createdAt,
-                           COALESCE(u.displayName, m.senderId) AS senderName
+                           COALESCE(u.displayName, m.senderId) AS senderName,
+                           (
+                               SELECT r.emoji, r.userId, COALESCE(ru.displayName, r.userId) AS displayName
+                               FROM MessageReactions r
+                               LEFT JOIN Users ru ON ru.id = r.userId
+                               WHERE r.messageId = m.messageId
+                               FOR JSON PATH
+                           ) AS reactionsJSON
                     FROM ConversationMessages m
                     LEFT JOIN Users u ON u.id = m.senderId
                     WHERE m.conversationId = @cid AND m.isDeleted = 0
@@ -303,8 +310,13 @@ router.get('/:convId/messages',
                     OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
                 `);
 
-            // Return oldest-first for the UI
-            res.json({ messages: result.recordset.reverse() });
+            // Parse reactions JSON and reverse order (oldest-first for UI)
+            const messages = result.recordset.map((m: any) => ({
+                ...m,
+                reactions: m.reactionsJSON ? JSON.parse(m.reactionsJSON) : [],
+                reactionsJSON: undefined,  // Remove the raw JSON field
+            }));
+            res.json({ messages: messages.reverse() });
         } catch (e: any) {
             console.error('[Chat] GET /:convId/messages:', e.message);
             res.status(500).json({ error: e.message });
@@ -318,7 +330,7 @@ router.post('/:convId/messages',
         param('convId').trim().notEmpty(),
         body('textContent').if(body('messageType').not().equals('text').not().exists())
             .optional().isLength({ max: 2000 }),
-        body('messageType').optional().isIn(['text','image','file']),
+        body('messageType').optional().isIn(['text','image','file','audio']),
         body('mediaUrl').optional().isURL(),
         body('mediaName').optional().isLength({ max: 200 }),
     ]),
@@ -356,7 +368,11 @@ router.post('/:convId/messages',
 
             const messageId = crypto.randomUUID();
             const safeText  = messageType === 'text' ? String(textContent).trim() : null;
-            const preview   = messageType === 'text' ? safeText! : '[Image]';
+            const preview   = messageType === 'text' ? safeText!
+                            : messageType === 'image' ? '[Image]'
+                            : messageType === 'file' ? '[Document]'
+                            : messageType === 'audio' ? '[Voice message]'
+                            : '[Media]';
 
             await db.request()
                 .input('mid',   sql.NVarChar(128), messageId)
@@ -591,6 +607,146 @@ router.delete('/message/:messageId',
             res.json({ success: true, messageId });
         } catch (e: any) {
             console.error('[Chat] DELETE /message/:messageId:', e.message);
+            res.status(500).json({ error: e.message });
+        }
+    }
+);
+
+// ── POST /api/chat/message/:messageId/react ──────────────────────
+// Add or remove a reaction to a message (toggle behavior)
+router.post('/message/:messageId/react',
+    validate([
+        param('messageId').trim().notEmpty(),
+        body('emoji').trim().notEmpty()
+            .isLength({ max: 10 }).withMessage('Emoji too long')
+            .matches(/^[\p{Emoji}]+$/u).withMessage('Invalid emoji'),
+    ]),
+    async (req: Request, res: Response) => {
+        const userId = req.user!.id;
+        const messageId = req.params.messageId;
+        const emoji = String(req.body.emoji).trim();
+
+        try {
+            const db = await getPool();
+
+            // Verify user can access this conversation
+            const msgCheck = await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .input('uid', sql.NVarChar(128), userId)
+                .query(`
+                    SELECT m.conversationId
+                    FROM ConversationMessages m
+                    JOIN Conversations c ON c.conversationId = m.conversationId
+                    WHERE m.messageId = @mid
+                      AND (c.participant1Id = @uid OR c.participant2Id = @uid)
+                `);
+
+            if (msgCheck.recordset.length === 0) {
+                res.status(403).json({ error: 'Forbidden' });
+                return;
+            }
+
+            const conversationId = msgCheck.recordset[0].conversationId;
+
+            // Check if reaction already exists (toggle behavior)
+            const existing = await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .input('uid', sql.NVarChar(128), userId)
+                .input('emoji', sql.NVarChar(10), emoji)
+                .query(`
+                    SELECT reactionId FROM MessageReactions
+                    WHERE messageId = @mid AND userId = @uid AND emoji = @emoji
+                `);
+
+            if (existing.recordset.length > 0) {
+                // Remove reaction (toggle off)
+                await db.request()
+                    .input('rid', sql.NVarChar(128), existing.recordset[0].reactionId)
+                    .query(`DELETE FROM MessageReactions WHERE reactionId = @rid`);
+
+                const io = getIO();
+                if (io) {
+                    io.to(conversationId).emit('reaction_removed', {
+                        messageId,
+                        userId,
+                        emoji,
+                    });
+                }
+
+                res.json({ success: true, action: 'removed' });
+            } else {
+                // Add new reaction
+                const reactionId = crypto.randomUUID();
+                await db.request()
+                    .input('rid', sql.NVarChar(128), reactionId)
+                    .input('mid', sql.NVarChar(128), messageId)
+                    .input('uid', sql.NVarChar(128), userId)
+                    .input('emoji', sql.NVarChar(10), emoji)
+                    .query(`
+                        INSERT INTO MessageReactions (reactionId, messageId, userId, emoji)
+                        VALUES (@rid, @mid, @uid, @emoji)
+                    `);
+
+                const io = getIO();
+                if (io) {
+                    io.to(conversationId).emit('reaction_added', {
+                        messageId,
+                        userId,
+                        emoji,
+                        reactionId,
+                    });
+                }
+
+                res.json({ success: true, action: 'added', reactionId });
+            }
+        } catch (e: any) {
+            console.error('[Chat] POST /message/:messageId/react:', e.message);
+            res.status(500).json({ error: e.message });
+        }
+    }
+);
+
+// ── GET /api/chat/message/:messageId/reactions ────────────────────
+// Get all reactions for a message
+router.get('/message/:messageId/reactions',
+    validate([param('messageId').trim().notEmpty()]),
+    async (req: Request, res: Response) => {
+        const userId = req.user!.id;
+        const messageId = req.params.messageId;
+
+        try {
+            const db = await getPool();
+
+            // Verify access
+            const msgCheck = await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .input('uid', sql.NVarChar(128), userId)
+                .query(`
+                    SELECT 1 FROM ConversationMessages m
+                    JOIN Conversations c ON c.conversationId = m.conversationId
+                    WHERE m.messageId = @mid
+                      AND (c.participant1Id = @uid OR c.participant2Id = @uid)
+                `);
+
+            if (msgCheck.recordset.length === 0) {
+                res.status(403).json({ error: 'Forbidden' });
+                return;
+            }
+
+            // Get reactions grouped by emoji
+            const reactions = await db.request()
+                .input('mid', sql.NVarChar(128), messageId)
+                .query(`
+                    SELECT r.emoji, r.userId, u.displayName, r.createdAt
+                    FROM MessageReactions r
+                    LEFT JOIN Users u ON u.id = r.userId
+                    WHERE r.messageId = @mid
+                    ORDER BY r.createdAt ASC
+                `);
+
+            res.json({ reactions: reactions.recordset });
+        } catch (e: any) {
+            console.error('[Chat] GET /message/:messageId/reactions:', e.message);
             res.status(500).json({ error: e.message });
         }
     }

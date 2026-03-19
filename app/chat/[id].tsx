@@ -10,17 +10,25 @@ import {
     leaveConversation,
     onMessageDeleted,
     onMessagesSeen,
+    onReactionAdded,
+    onReactionRemoved,
     onReceiveMessage,
     onUserTyping,
 } from '@/services/socketService';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import EmojiSelector from 'react-native-emoji-selector';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     FlatList,
+    Image,
     KeyboardAvoidingView,
+    Linking,
+    Modal,
     Platform,
     Pressable,
     StyleSheet,
@@ -28,6 +36,7 @@ import {
     TextInput,
     View,
 } from 'react-native';
+import { getApiBase, getApiToken } from '@/lib/api';
 
 // ── Helpers ──────────────────────────────────────────────────────
 function formatTime(iso: string): string {
@@ -139,6 +148,7 @@ export default function ChatScreen() {
     const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
     const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
     const [, forceUpdate] = useState(0); // For forcing re-render at midnight
+    const [reactingToMessageId, setReactingToMessageId] = useState<string | null>(null);
 
     const searchDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -365,6 +375,27 @@ export default function ChatScreen() {
             ));
         });
 
+        const unsubReactionAdded = onReactionAdded(({ messageId, userId, emoji }) => {
+            setMessages(prev => prev.map(m => {
+                if (m.messageId === messageId) {
+                    const reactions = m.reactions || [];
+                    const newReaction = { emoji, userId };
+                    return { ...m, reactions: [...reactions, newReaction] };
+                }
+                return m;
+            }));
+        });
+
+        const unsubReactionRemoved = onReactionRemoved(({ messageId, userId, emoji }) => {
+            setMessages(prev => prev.map(m => {
+                if (m.messageId === messageId) {
+                    const reactions = (m.reactions || []).filter(r => !(r.userId === userId && r.emoji === emoji));
+                    return { ...m, reactions };
+                }
+                return m;
+            }));
+        });
+
         return () => {
             leaveConversation(id);
             typingEmitter.current?.cleanup();
@@ -372,10 +403,214 @@ export default function ChatScreen() {
             unsubSeen();
             unsubTyping();
             unsubDeleted();
+            unsubReactionAdded();
+            unsubReactionRemoved();
         };
     }, [id, isLegacyMode, user?.id, user?.displayName, subscribeToMessages, mapLegacyMessage]);
 
     // ── Send message ─────────────────────────────────────────────
+    const [sendingMedia, setSendingMedia] = useState(false);
+    const [viewingImage, setViewingImage] = useState<string | null>(null);
+    const [showAttachMenu, setShowAttachMenu] = useState(false);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+    // ── Pick & send image ─────────────────────────────────────────
+    const pickAndSendImage = async () => {
+        if (!user?.id || !id || sendingMedia) return;
+
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission needed', 'Please allow access to your photo library to send images.');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: false,
+            quality: 0.8,
+        });
+
+        if (result.canceled || !result.assets?.[0]) return;
+
+        const asset = result.assets[0];
+        const fileName = asset.fileName ?? asset.uri.split('/').pop() ?? 'photo.jpg';
+        const mimeType = asset.mimeType ?? 'image/jpeg';
+
+        // Optimistic image bubble
+        const optimisticId = `opt-img-${Date.now()}`;
+        const optimisticMsg: ChatMessage = {
+            messageId:      optimisticId,
+            conversationId: id,
+            senderId:       user.id,
+            senderName:     user.displayName,
+            messageType:    'image',
+            textContent:    null,
+            mediaUrl:       asset.uri,   // local URI for instant preview
+            mediaName:      fileName,
+            isRead:         false,
+            readAt:         null,
+            isDeleted:      false,
+            createdAt:      new Date().toISOString(),
+        };
+        setMessages(prev => mergeMessages([optimisticMsg, ...prev]));
+        scrollToLatest(false);
+        setSendingMedia(true);
+
+        try {
+            console.log('🖼️ [1/4] Building FormData...');
+            // Build multipart form (platform-specific)
+            const formData = new FormData();
+
+            if (Platform.OS === 'web') {
+                // Web: fetch the blob from the URI first
+                const response = await fetch(asset.uri);
+                const blob = await response.blob();
+                formData.append('image', blob, fileName);
+            } else {
+                // Native: use uri/name/type format
+                formData.append('image', {
+                    uri:  asset.uri,
+                    name: fileName,
+                    type: mimeType,
+                } as any);
+            }
+
+            console.log('🖼️ [2/4] Uploading to /api/upload...');
+            const token = getApiToken();
+            const uploadRes = await fetch(`${getApiBase()}/api/upload`, {
+                method:  'POST',
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+                body:    formData,
+            });
+
+            if (!uploadRes.ok) {
+                const err = await uploadRes.json().catch(() => ({ error: 'Upload failed' }));
+                console.error('❌ Upload failed:', err);
+                throw new Error(err?.error ?? 'Upload failed');
+            }
+
+            const { url } = await uploadRes.json() as { url: string };
+            console.log('✅ [3/4] Upload success! URL:', url);
+
+            console.log('🖼️ [4/4] Sending media message...');
+            const { message } = await chatApi.sendMedia(id, url, fileName, 'image');
+            console.log('✅ Media message sent!', message);
+            const stableMsg: ChatMessage = {
+                ...message,
+                messageId:  message.messageId || optimisticId,
+                senderId:   message.senderId  || user.id,
+                senderName: message.senderName || user.displayName,
+                mediaUrl:   message.mediaUrl  ?? url,
+                createdAt:  message.createdAt || optimisticMsg.createdAt,
+            };
+            setMessages(prev => mergeMessages(prev.map(m =>
+                m.messageId === optimisticId ? stableMsg : m
+            )));
+            scrollToLatest(false);
+        } catch (error) {
+            console.error('❌ Image send FAILED:', error);
+            setMessages(prev => prev.filter(m => m.messageId !== optimisticId));
+            const msg = (error as { message?: string })?.message || 'Image could not be sent. Please try again.';
+            Alert.alert('Send failed', msg);
+        } finally {
+            setSendingMedia(false);
+        }
+    };
+
+    const pickAndSendDocument = async () => {
+        if (!user?.id || !id || sendingMedia) return;
+
+        const result = await DocumentPicker.getDocumentAsync({
+            type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+            copyToCacheDirectory: true,
+        });
+
+        if (result.canceled || !result.assets?.[0]) return;
+
+        const asset = result.assets[0];
+        const fileName = asset.name;
+        const mimeType = asset.mimeType ?? 'application/pdf';
+
+        // Optimistic file bubble
+        const optimisticId = `opt-file-${Date.now()}`;
+        const optimisticMsg: ChatMessage = {
+            messageId:      optimisticId,
+            conversationId: id,
+            senderId:       user.id,
+            senderName:     user.displayName,
+            messageType:    'file',
+            textContent:    null,
+            mediaUrl:       asset.uri,
+            mediaName:      fileName,
+            isRead:         false,
+            readAt:         null,
+            isDeleted:      false,
+            createdAt:      new Date().toISOString(),
+        };
+        setMessages(prev => mergeMessages([optimisticMsg, ...prev]));
+        scrollToLatest(false);
+        setSendingMedia(true);
+
+        try {
+            console.log('📄 [1/4] Building FormData for document...');
+            const formData = new FormData();
+
+            if (Platform.OS === 'web') {
+                const response = await fetch(asset.uri);
+                const blob = await response.blob();
+                formData.append('image', blob, fileName);
+            } else {
+                formData.append('image', {
+                    uri:  asset.uri,
+                    name: fileName,
+                    type: mimeType,
+                } as any);
+            }
+
+            console.log('📄 [2/4] Uploading to /api/upload...');
+            const token = getApiToken();
+            const uploadRes = await fetch(`${getApiBase()}/api/upload`, {
+                method:  'POST',
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+                body:    formData,
+            });
+
+            if (!uploadRes.ok) {
+                const err = await uploadRes.json().catch(() => ({ error: 'Upload failed' }));
+                console.error('❌ Upload failed:', err);
+                throw new Error(err?.error ?? 'Upload failed');
+            }
+
+            const { url } = await uploadRes.json() as { url: string };
+            console.log('✅ [3/4] Upload success! URL:', url);
+
+            console.log('📄 [4/4] Sending file message...');
+            const { message } = await chatApi.sendMedia(id, url, fileName, 'file');
+            console.log('✅ File message sent!', message);
+
+            const stableMsg: ChatMessage = {
+                ...message,
+                messageId:  message.messageId || optimisticId,
+                senderId:   message.senderId  || user.id,
+                senderName: message.senderName || user.displayName,
+                mediaUrl:   message.mediaUrl  ?? url,
+                createdAt:  message.createdAt || optimisticMsg.createdAt,
+            };
+            setMessages(prev => mergeMessages(prev.map(m =>
+                m.messageId === optimisticId ? stableMsg : m
+            )));
+            scrollToLatest(false);
+        } catch (error) {
+            console.error('❌ Document send FAILED:', error);
+            setMessages(prev => prev.filter(m => m.messageId !== optimisticId));
+            const msg = (error as { message?: string })?.message || 'Document could not be sent. Please try again.';
+            Alert.alert('Send failed', msg);
+        } finally {
+            setSendingMedia(false);
+        }
+    };
+
+
     const handleSend = async () => {
         const t = text.trim();
         if (!t || !user?.id || !id || sending) return;
@@ -437,6 +672,18 @@ export default function ChatScreen() {
     const handleTyping = (val: string) => {
         setText(val);
         typingEmitter.current?.onInput();
+    };
+
+    // ── Reactions ────────────────────────────────────────────────
+    const handleReaction = async (messageId: string, emoji: string) => {
+        try {
+            await chatApi.addReaction(messageId, emoji);
+            // Socket will update the state in real-time
+        } catch (error) {
+            console.error('Failed to add reaction:', error);
+            Alert.alert('Error', 'Could not add reaction');
+        }
+        setReactingToMessageId(null);
     };
 
     const handleLoadOlder = async () => {
@@ -554,11 +801,90 @@ export default function ChatScreen() {
                                     <Text style={styles.senderName}>{item.senderName || otherName}</Text>
                                 )}
 
-                                {/* Message text */}
-                                <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
-                                    {item.textContent}
-                                </Text>
+                                {/* Image bubble */}
+                                {item.messageType === 'image' && item.mediaUrl ? (
+                                    <Pressable onPress={() => setViewingImage(item.mediaUrl)}>
+                                        <Image
+                                            source={{ uri: item.mediaUrl }}
+                                            style={styles.msgImage}
+                                            resizeMode="cover"
+                                        />
+                                    </Pressable>
+                                ) : item.messageType === 'file' && item.mediaUrl ? (
+                                    /* File card */
+                                    <Pressable
+                                        style={styles.fileCard}
+                                        onPress={() => Linking.openURL(item.mediaUrl!)}
+                                    >
+                                        <Ionicons name="document-outline" size={32} color={AppColors.primary} />
+                                        <View style={styles.fileInfo}>
+                                            <Text style={styles.fileName} numberOfLines={1}>
+                                                {item.mediaName || 'Document'}
+                                            </Text>
+                                            <Text style={styles.fileAction}>Tap to open</Text>
+                                        </View>
+                                    </Pressable>
+                                ) : (item.messageType as any) === 'audio' && item.mediaUrl ? (
+                                    /* Audio playback card */
+                                    <Pressable
+                                        style={styles.audioCard}
+                                        onPress={() => Linking.openURL(item.mediaUrl!)}
+                                    >
+                                        <Ionicons name="play-circle" size={32} color={AppColors.primary} />
+                                        <View style={styles.audioInfo}>
+                                            <Text style={styles.audioText}>Voice message</Text>
+                                            <Text style={styles.audioAction}>Tap to play</Text>
+                                        </View>
+                                        <Ionicons name="volume-medium-outline" size={20} color={AppColors.textMuted} />
+                                    </Pressable>
+                                ) : (
+                                    /* Message text */
+                                    <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
+                                        {item.textContent}
+                                    </Text>
+                                )}
                             </>
+                        )}
+
+                        {/* Reactions */}
+                        {!item.isDeleted && item.reactions && item.reactions.length > 0 && (
+                            <View style={styles.reactionsRow}>
+                                {Object.entries(
+                                    item.reactions.reduce((acc, r) => {
+                                        acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+                                        return acc;
+                                    }, {} as Record<string, number>)
+                                ).map(([emoji, count]) => (
+                                    <Pressable
+                                        key={emoji}
+                                        style={[
+                                            styles.reactionBubble,
+                                            item.reactions?.some(r => r.emoji === emoji && r.userId === user?.id)
+                                                && styles.reactionBubbleActive
+                                        ]}
+                                        onPress={() => handleReaction(item.messageId, emoji)}
+                                    >
+                                        <Text style={styles.reactionEmoji}>{emoji}</Text>
+                                        {count > 1 && <Text style={styles.reactionCount}>{count}</Text>}
+                                    </Pressable>
+                                ))}
+                                <Pressable
+                                    style={styles.addReactionBtn}
+                                    onPress={() => setReactingToMessageId(item.messageId)}
+                                >
+                                    <Ionicons name="add-circle-outline" size={16} color={AppColors.textMuted} />
+                                </Pressable>
+                            </View>
+                        )}
+
+                        {/* Add reaction button (when no reactions) */}
+                        {!item.isDeleted && (!item.reactions || item.reactions.length === 0) && (
+                            <Pressable
+                                style={styles.addReactionBtn}
+                                onPress={() => setReactingToMessageId(item.messageId)}
+                            >
+                                <Ionicons name="add-circle-outline" size={16} color={AppColors.textMuted} />
+                            </Pressable>
                         )}
 
                         {/* Time + tick */}
@@ -631,14 +957,6 @@ export default function ChatScreen() {
                     <Pressable style={styles.headerIcon} hitSlop={10}
                         onPress={() => setIsSearching(!isSearching)}>
                         <Ionicons name="search" size={20} color="#FFF" />
-                    </Pressable>
-                    <Pressable style={styles.headerIcon} hitSlop={10}
-                        onPress={() => Alert.alert('Coming soon', 'Voice calls will be available in a future update.')}>
-                        <Ionicons name="call-outline" size={20} color="#FFF" />
-                    </Pressable>
-                    <Pressable style={styles.headerIcon} hitSlop={10}
-                        onPress={() => Alert.alert('Coming soon', 'Video calls will be available in a future update.')}>
-                        <Ionicons name="videocam-outline" size={21} color="#FFF" />
                     </Pressable>
                 </View>
             </View>
@@ -716,11 +1034,6 @@ export default function ChatScreen() {
                 {/* Input bar */}
                 <View style={styles.inputBar}>
                     <View style={styles.inputWrap}>
-                        <Pressable hitSlop={8}
-                            onPress={() => Alert.alert('Emoji picker', 'Will appear here soon!')}>
-                            <Ionicons name="happy-outline" size={23} color={AppColors.textMuted} />
-                        </Pressable>
-
                         <TextInput
                             style={styles.textInput}
                             placeholder="Message"
@@ -731,25 +1044,47 @@ export default function ChatScreen() {
                             maxLength={2000}
                             returnKeyType="default"
                             blurOnSubmit={false}
+                            onKeyPress={(e) => {
+                                // On web, send on Enter (without Shift)
+                                if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter') {
+                                    const webEvent = e.nativeEvent as any;
+                                    if (!webEvent.shiftKey) {
+                                        e.preventDefault();
+                                        if (text.trim()) {
+                                            handleSend();
+                                        }
+                                    }
+                                }
+                            }}
                         />
 
-                        <Pressable hitSlop={8}
-                            onPress={() => Alert.alert('Attachment', 'File/image sending coming soon!')}>
-                            <Ionicons name="attach-outline" size={23} color={AppColors.textMuted}
-                                style={{ transform: [{ rotate: '45deg' }] }} />
+                        {/* Emoji button */}
+                        <Pressable hitSlop={8} onPress={() => setShowEmojiPicker(!showEmojiPicker)}>
+                            <Ionicons name={showEmojiPicker ? "close-circle" : "happy-outline"} size={23} color={AppColors.textMuted} />
+                        </Pressable>
+
+                        {/* Attachment button */}
+                        <Pressable hitSlop={8} onPress={() => setShowAttachMenu(true)} disabled={sendingMedia}>
+                            {sendingMedia ? (
+                                <ActivityIndicator size="small" color={AppColors.textMuted} />
+                            ) : (
+                                <Ionicons name="attach-outline" size={23} color={AppColors.textMuted}
+                                    style={{ transform: [{ rotate: '45deg' }] }} />
+                            )}
                         </Pressable>
                     </View>
 
-                    {/* Send / mic button — morphs like WhatsApp */}
+                    {/* Send button */}
                     <Pressable
-                        style={[styles.sendBtn, !text.trim() && styles.micBtn]}
-                        onPress={text.trim() ? handleSend : undefined}
+                        style={styles.sendBtn}
+                        onPress={handleSend}
+                        disabled={!text.trim() || sending || sendingMedia}
                     >
-                        {sending ? (
+                        {sending || sendingMedia ? (
                             <ActivityIndicator color="#FFF" size="small" />
                         ) : (
                             <Ionicons
-                                name={text.trim() ? 'send' : 'mic'}
+                                name="send"
                                 size={20}
                                 color="#FFF"
                             />
@@ -757,6 +1092,116 @@ export default function ChatScreen() {
                     </Pressable>
                 </View>
             </KeyboardAvoidingView>
+
+            {/* Emoji Picker */}
+            {showEmojiPicker && (
+                <View style={styles.emojiPickerContainer}>
+                    <EmojiSelector
+                        onEmojiSelected={(emoji) => {
+                            setText(text + emoji);
+                            setShowEmojiPicker(false);
+                        }}
+                        showSearchBar={false}
+                        showHistory={false}
+                        showSectionTitles={false}
+                        columns={8}
+                    />
+                </View>
+            )}
+
+            {/* Attachment menu */}
+            <Modal
+                visible={showAttachMenu}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowAttachMenu(false)}
+            >
+                <Pressable
+                    style={styles.attachMenuOverlay}
+                    onPress={() => setShowAttachMenu(false)}
+                >
+                    <View style={styles.attachMenuContent}>
+                        <Pressable
+                            style={styles.attachOption}
+                            onPress={() => {
+                                setShowAttachMenu(false);
+                                pickAndSendImage();
+                            }}
+                        >
+                            <Ionicons name="image-outline" size={24} color={AppColors.primary} />
+                            <Text style={styles.attachOptionText}>Gallery</Text>
+                        </Pressable>
+
+                        <Pressable
+                            style={styles.attachOption}
+                            onPress={() => {
+                                setShowAttachMenu(false);
+                                pickAndSendDocument();
+                            }}
+                        >
+                            <Ionicons name="document-outline" size={24} color={AppColors.primary} />
+                            <Text style={styles.attachOptionText}>Document</Text>
+                        </Pressable>
+
+                        <Pressable
+                            style={[styles.attachOption, styles.attachCancel]}
+                            onPress={() => setShowAttachMenu(false)}
+                        >
+                            <Text style={styles.attachCancelText}>Cancel</Text>
+                        </Pressable>
+                    </View>
+                </Pressable>
+            </Modal>
+
+            {/* Full-screen image viewer */}
+            <Modal
+                visible={!!viewingImage}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setViewingImage(null)}
+            >
+                <Pressable
+                    style={styles.imageViewerOverlay}
+                    onPress={() => setViewingImage(null)}
+                >
+                    <Image
+                        source={{ uri: viewingImage || '' }}
+                        style={styles.imageViewerImage}
+                        resizeMode="contain"
+                    />
+                    <Pressable
+                        style={styles.imageViewerClose}
+                        onPress={() => setViewingImage(null)}
+                    >
+                        <Ionicons name="close" size={32} color="#FFF" />
+                    </Pressable>
+                </Pressable>
+            </Modal>
+
+            {/* Reaction Picker */}
+            <Modal
+                visible={!!reactingToMessageId}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setReactingToMessageId(null)}
+            >
+                <Pressable
+                    style={styles.reactionPickerOverlay}
+                    onPress={() => setReactingToMessageId(null)}
+                >
+                    <View style={styles.reactionPickerContent}>
+                        {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+                            <Pressable
+                                key={emoji}
+                                style={styles.reactionOption}
+                                onPress={() => reactingToMessageId && handleReaction(reactingToMessageId, emoji)}
+                            >
+                                <Text style={styles.reactionOptionEmoji}>{emoji}</Text>
+                            </Pressable>
+                        ))}
+                    </View>
+                </Pressable>
+            </Modal>
         </View>
     );
 }
@@ -1018,5 +1463,213 @@ const styles = StyleSheet.create({
     },
     micBtn: {
         backgroundColor: '#25D366',
+    },
+    msgImage: {
+        width: 200,
+        height: 200,
+        borderRadius: 10,
+        backgroundColor: '#e0e0e0',
+    },
+    fileCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f5f5f5',
+        padding: 12,
+        borderRadius: 10,
+        minWidth: 200,
+        maxWidth: 250,
+    },
+    fileInfo: {
+        marginLeft: 12,
+        flex: 1,
+    },
+    fileName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#000',
+        marginBottom: 4,
+    },
+    fileAction: {
+        fontSize: 12,
+        color: AppColors.primary,
+    },
+    audioCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f5f5f5',
+        padding: 12,
+        borderRadius: 10,
+        minWidth: 220,
+        maxWidth: 250,
+    },
+    audioInfo: {
+        marginLeft: 12,
+        flex: 1,
+    },
+    audioText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#000',
+        marginBottom: 4,
+    },
+    audioAction: {
+        fontSize: 12,
+        color: AppColors.primary,
+    },
+    imageViewerOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.95)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    imageViewerImage: {
+        width: '100%',
+        height: '100%',
+    },
+    imageViewerClose: {
+        position: 'absolute',
+        top: 50,
+        right: 20,
+        padding: 10,
+        borderRadius: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    attachMenuOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'flex-end',
+    },
+    attachMenuContent: {
+        backgroundColor: '#FFF',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+        paddingTop: 10,
+    },
+    attachOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+    },
+    attachOptionText: {
+        fontSize: 16,
+        marginLeft: 16,
+        color: '#000',
+    },
+    attachCancel: {
+        borderBottomWidth: 0,
+        marginTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#e0e0e0',
+    },
+    attachCancelText: {
+        fontSize: 16,
+        color: '#FF3B30',
+        textAlign: 'center',
+        width: '100%',
+    },
+    emojiPickerContainer: {
+        height: 300,
+        backgroundColor: '#FFF',
+    },
+    recordingOverlay: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        padding: 20,
+        paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    },
+    recordingContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 10,
+    },
+    recordingText: {
+        color: '#FFF',
+        fontSize: 16,
+        marginLeft: 12,
+        fontWeight: '600',
+    },
+    recordingCancel: {
+        marginLeft: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        backgroundColor: '#FF3B30',
+        borderRadius: 20,
+    },
+    recordingCancelText: {
+        color: '#FFF',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    recordingHint: {
+        color: '#AAA',
+        fontSize: 12,
+        textAlign: 'center',
+    },
+    reactionsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 4,
+        marginTop: 4,
+        marginBottom: 2,
+    },
+    reactionBubble: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.05)',
+        borderRadius: 12,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.1)',
+    },
+    reactionBubbleActive: {
+        backgroundColor: AppColors.primaryLight,
+        borderColor: AppColors.primary,
+    },
+    reactionEmoji: {
+        fontSize: 14,
+    },
+    reactionCount: {
+        fontSize: 11,
+        marginLeft: 3,
+        color: '#666',
+        fontWeight: '600',
+    },
+    addReactionBtn: {
+        marginTop: 4,
+        padding: 4,
+    },
+    reactionPickerOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    reactionPickerContent: {
+        backgroundColor: '#FFF',
+        borderRadius: 16,
+        flexDirection: 'row',
+        padding: 12,
+        gap: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
+        elevation: 5,
+    },
+    reactionOption: {
+        padding: 8,
+        borderRadius: 8,
+        backgroundColor: '#F5F5F5',
+    },
+    reactionOptionEmoji: {
+        fontSize: 32,
     },
 });
