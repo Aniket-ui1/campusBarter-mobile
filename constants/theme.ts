@@ -178,14 +178,20 @@ export const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export const CATEGORY_EMOJIS: Record<string, string> = {
-  tutoring: '📚',
-  design: '🎨',
-  tech: '💻',
+  coding: '💻',
+  design: '🧠',
+  math: '📐',
   writing: '✍️',
   music: '🎵',
+  languages: '🗣️',
+  science: '🔬',
+  business: '📊',
   fitness: '💪',
+  photography: '📷',
+  other: '🔧',
+  // Legacy aliases
+  tutoring: '📚',
+  tech: '💻',
   cooking: '🍳',
   language: '🌍',
-  business: '📈',
-  other: '✨',
 };
