@@ -24,6 +24,10 @@ const ALLOWED_TYPES = [
     'audio/mpeg',
     'audio/wav',
     'audio/x-m4a',
+    'audio/webm',
+    'audio/ogg',
+    'audio/3gpp',
+    'audio/3gpp2',
 ];
 const MAX_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB (includes audio)
 
@@ -36,7 +40,7 @@ const upload = multer({
         if (ALLOWED_TYPES.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Only images (jpg, png, webp, gif), documents (pdf, doc, docx), and audio (m4a, mp3, wav) are allowed'));
+            cb(new Error('Only images (jpg, png, webp, gif), documents (pdf, doc, docx), and audio (m4a, mp3, wav, webm, ogg) are allowed'));
         }
     },
 });

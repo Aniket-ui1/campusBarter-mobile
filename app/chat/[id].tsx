@@ -15,12 +15,19 @@ import {
 } from '@/services/socketService';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import { Audio } from 'expo-av';
+import EmojiSelector from 'react-native-emoji-selector';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     FlatList,
+    Image,
     KeyboardAvoidingView,
+    Linking,
+    Modal,
     Platform,
     Pressable,
     StyleSheet,
@@ -28,6 +35,7 @@ import {
     TextInput,
     View,
 } from 'react-native';
+import { getApiBase, getApiToken } from '@/lib/api';
 
 // ── Helpers ──────────────────────────────────────────────────────
 function formatTime(iso: string): string {
@@ -376,6 +384,362 @@ export default function ChatScreen() {
     }, [id, isLegacyMode, user?.id, user?.displayName, subscribeToMessages, mapLegacyMessage]);
 
     // ── Send message ─────────────────────────────────────────────
+    const [sendingMedia, setSendingMedia] = useState(false);
+    const [viewingImage, setViewingImage] = useState<string | null>(null);
+    const [showAttachMenu, setShowAttachMenu] = useState(false);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    const recordingRef = useRef<Audio.Recording | null>(null);
+    const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // ── Pick & send image ─────────────────────────────────────────
+    const pickAndSendImage = async () => {
+        if (!user?.id || !id || sendingMedia) return;
+
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission needed', 'Please allow access to your photo library to send images.');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: false,
+            quality: 0.8,
+        });
+
+        if (result.canceled || !result.assets?.[0]) return;
+
+        const asset = result.assets[0];
+        const fileName = asset.fileName ?? asset.uri.split('/').pop() ?? 'photo.jpg';
+        const mimeType = asset.mimeType ?? 'image/jpeg';
+
+        // Optimistic image bubble
+        const optimisticId = `opt-img-${Date.now()}`;
+        const optimisticMsg: ChatMessage = {
+            messageId:      optimisticId,
+            conversationId: id,
+            senderId:       user.id,
+            senderName:     user.displayName,
+            messageType:    'image',
+            textContent:    null,
+            mediaUrl:       asset.uri,   // local URI for instant preview
+            mediaName:      fileName,
+            isRead:         false,
+            readAt:         null,
+            isDeleted:      false,
+            createdAt:      new Date().toISOString(),
+        };
+        setMessages(prev => mergeMessages([optimisticMsg, ...prev]));
+        scrollToLatest(false);
+        setSendingMedia(true);
+
+        try {
+            console.log('🖼️ [1/4] Building FormData...');
+            // Build multipart form (platform-specific)
+            const formData = new FormData();
+
+            if (Platform.OS === 'web') {
+                // Web: fetch the blob from the URI first
+                const response = await fetch(asset.uri);
+                const blob = await response.blob();
+                formData.append('image', blob, fileName);
+            } else {
+                // Native: use uri/name/type format
+                formData.append('image', {
+                    uri:  asset.uri,
+                    name: fileName,
+                    type: mimeType,
+                } as any);
+            }
+
+            console.log('🖼️ [2/4] Uploading to /api/upload...');
+            const token = getApiToken();
+            const uploadRes = await fetch(`${getApiBase()}/api/upload`, {
+                method:  'POST',
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+                body:    formData,
+            });
+
+            if (!uploadRes.ok) {
+                const err = await uploadRes.json().catch(() => ({ error: 'Upload failed' }));
+                console.error('❌ Upload failed:', err);
+                throw new Error(err?.error ?? 'Upload failed');
+            }
+
+            const { url } = await uploadRes.json() as { url: string };
+            console.log('✅ [3/4] Upload success! URL:', url);
+
+            console.log('🖼️ [4/4] Sending media message...');
+            const { message } = await chatApi.sendMedia(id, url, fileName, 'image');
+            console.log('✅ Media message sent!', message);
+            const stableMsg: ChatMessage = {
+                ...message,
+                messageId:  message.messageId || optimisticId,
+                senderId:   message.senderId  || user.id,
+                senderName: message.senderName || user.displayName,
+                mediaUrl:   message.mediaUrl  ?? url,
+                createdAt:  message.createdAt || optimisticMsg.createdAt,
+            };
+            setMessages(prev => mergeMessages(prev.map(m =>
+                m.messageId === optimisticId ? stableMsg : m
+            )));
+            scrollToLatest(false);
+        } catch (error) {
+            console.error('❌ Image send FAILED:', error);
+            setMessages(prev => prev.filter(m => m.messageId !== optimisticId));
+            const msg = (error as { message?: string })?.message || 'Image could not be sent. Please try again.';
+            Alert.alert('Send failed', msg);
+        } finally {
+            setSendingMedia(false);
+        }
+    };
+
+    const pickAndSendDocument = async () => {
+        if (!user?.id || !id || sendingMedia) return;
+
+        const result = await DocumentPicker.getDocumentAsync({
+            type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+            copyToCacheDirectory: true,
+        });
+
+        if (result.canceled || !result.assets?.[0]) return;
+
+        const asset = result.assets[0];
+        const fileName = asset.name;
+        const mimeType = asset.mimeType ?? 'application/pdf';
+
+        // Optimistic file bubble
+        const optimisticId = `opt-file-${Date.now()}`;
+        const optimisticMsg: ChatMessage = {
+            messageId:      optimisticId,
+            conversationId: id,
+            senderId:       user.id,
+            senderName:     user.displayName,
+            messageType:    'file',
+            textContent:    null,
+            mediaUrl:       asset.uri,
+            mediaName:      fileName,
+            isRead:         false,
+            readAt:         null,
+            isDeleted:      false,
+            createdAt:      new Date().toISOString(),
+        };
+        setMessages(prev => mergeMessages([optimisticMsg, ...prev]));
+        scrollToLatest(false);
+        setSendingMedia(true);
+
+        try {
+            console.log('📄 [1/4] Building FormData for document...');
+            const formData = new FormData();
+
+            if (Platform.OS === 'web') {
+                const response = await fetch(asset.uri);
+                const blob = await response.blob();
+                formData.append('image', blob, fileName);
+            } else {
+                formData.append('image', {
+                    uri:  asset.uri,
+                    name: fileName,
+                    type: mimeType,
+                } as any);
+            }
+
+            console.log('📄 [2/4] Uploading to /api/upload...');
+            const token = getApiToken();
+            const uploadRes = await fetch(`${getApiBase()}/api/upload`, {
+                method:  'POST',
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+                body:    formData,
+            });
+
+            if (!uploadRes.ok) {
+                const err = await uploadRes.json().catch(() => ({ error: 'Upload failed' }));
+                console.error('❌ Upload failed:', err);
+                throw new Error(err?.error ?? 'Upload failed');
+            }
+
+            const { url } = await uploadRes.json() as { url: string };
+            console.log('✅ [3/4] Upload success! URL:', url);
+
+            console.log('📄 [4/4] Sending file message...');
+            const { message } = await chatApi.sendMedia(id, url, fileName, 'file');
+            console.log('✅ File message sent!', message);
+
+            const stableMsg: ChatMessage = {
+                ...message,
+                messageId:  message.messageId || optimisticId,
+                senderId:   message.senderId  || user.id,
+                senderName: message.senderName || user.displayName,
+                mediaUrl:   message.mediaUrl  ?? url,
+                createdAt:  message.createdAt || optimisticMsg.createdAt,
+            };
+            setMessages(prev => mergeMessages(prev.map(m =>
+                m.messageId === optimisticId ? stableMsg : m
+            )));
+            scrollToLatest(false);
+        } catch (error) {
+            console.error('❌ Document send FAILED:', error);
+            setMessages(prev => prev.filter(m => m.messageId !== optimisticId));
+            const msg = (error as { message?: string })?.message || 'Document could not be sent. Please try again.';
+            Alert.alert('Send failed', msg);
+        } finally {
+            setSendingMedia(false);
+        }
+    };
+
+    // ── Voice Recording Functions ────────────────────────────────
+    const startRecording = async () => {
+        if (!user?.id || !id) return;
+
+        try {
+            console.log('🎤 Requesting microphone permissions...');
+            const { status } = await Audio.requestPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Microphone access is required to record voice messages.');
+                return;
+            }
+
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: true,
+                playsInSilentModeIOS: true,
+            });
+
+            console.log('🎤 Starting recording...');
+            const { recording } = await Audio.Recording.createAsync(
+                Audio.RecordingOptionsPresets.HIGH_QUALITY
+            );
+
+            recordingRef.current = recording;
+            setIsRecording(true);
+            setRecordingDuration(0);
+
+            // Start timer
+            recordingTimerRef.current = setInterval(() => {
+                setRecordingDuration(prev => prev + 1);
+            }, 1000);
+
+            console.log('✅ Recording started');
+        } catch (error) {
+            console.error('❌ Failed to start recording:', error);
+            Alert.alert('Recording failed', 'Could not start recording. Please try again.');
+        }
+    };
+
+    const stopAndSendRecording = async () => {
+        if (!recordingRef.current || !user?.id || !id) return;
+
+        try {
+            console.log('🎤 Stopping recording...');
+            setIsRecording(false);
+            if (recordingTimerRef.current) {
+                clearInterval(recordingTimerRef.current);
+                recordingTimerRef.current = null;
+            }
+
+            await recordingRef.current.stopAndUnloadAsync();
+            await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+
+            const uri = recordingRef.current.getURI();
+            recordingRef.current = null;
+
+            if (!uri) {
+                Alert.alert('Recording failed', 'No audio recorded.');
+                return;
+            }
+
+            console.log('✅ Recording stopped, uploading...');
+            setSendingMedia(true);
+
+            // Upload audio
+            const formData = new FormData();
+            let fileName: string;
+
+            if (Platform.OS === 'web') {
+                const response = await fetch(uri);
+                const blob = await response.blob();
+                // Use the actual MIME type to determine file extension
+                const mimeType = blob.type;
+                const ext = mimeType.includes('webm') ? 'webm'
+                          : mimeType.includes('ogg') ? 'ogg'
+                          : mimeType.includes('wav') ? 'wav'
+                          : 'm4a';
+                fileName = `voice_${Date.now()}.${ext}`;
+                console.log('🎤 Web audio blob type:', mimeType, 'extension:', ext);
+                formData.append('image', blob, fileName);
+            } else {
+                fileName = `voice_${Date.now()}.m4a`;
+                formData.append('image', {
+                    uri,
+                    name: fileName,
+                    type: 'audio/m4a',
+                } as any);
+            }
+
+            const token = getApiToken();
+            const uploadRes = await fetch(`${getApiBase()}/api/upload`, {
+                method: 'POST',
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+                body: formData,
+            });
+
+            if (!uploadRes.ok) {
+                const err = await uploadRes.json().catch(() => ({ error: 'Upload failed' }));
+                throw new Error(err?.error ?? 'Upload failed');
+            }
+
+            const { url } = await uploadRes.json() as { url: string };
+            console.log('✅ Audio uploaded:', url);
+
+            // Send as audio message
+            const { message } = await chatApi.sendMedia(id, url, fileName, 'audio' as any);
+
+            // Add to messages
+            const audioMsg: ChatMessage = {
+                ...message,
+                messageId: message.messageId || `audio-${Date.now()}`,
+                senderId: message.senderId || user.id,
+                senderName: message.senderName || user.displayName,
+                messageType: 'audio' as any,
+                mediaUrl: message.mediaUrl ?? url,
+                mediaName: fileName,
+                createdAt: message.createdAt || new Date().toISOString(),
+            };
+
+            setMessages(prev => mergeMessages([audioMsg, ...prev]));
+            scrollToLatest(false);
+            setRecordingDuration(0);
+        } catch (error) {
+            console.error('❌ Failed to send voice message:', error);
+            console.error('❌ Full error details:', JSON.stringify(error, null, 2));
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+            Alert.alert('Send failed', `Could not send voice message: ${errorMsg}`);
+        } finally {
+            setSendingMedia(false);
+        }
+    };
+
+    const cancelRecording = async () => {
+        console.log('🎤 Cancelling recording...');
+        setIsRecording(false);
+        if (recordingTimerRef.current) {
+            clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
+        }
+
+        if (recordingRef.current) {
+            try {
+                await recordingRef.current.stopAndUnloadAsync();
+                await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+            } catch (error) {
+                console.error('Error cancelling recording:', error);
+            }
+            recordingRef.current = null;
+        }
+        setRecordingDuration(0);
+    };
+
     const handleSend = async () => {
         const t = text.trim();
         if (!t || !user?.id || !id || sending) return;
@@ -554,10 +918,48 @@ export default function ChatScreen() {
                                     <Text style={styles.senderName}>{item.senderName || otherName}</Text>
                                 )}
 
-                                {/* Message text */}
-                                <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
-                                    {item.textContent}
-                                </Text>
+                                {/* Image bubble */}
+                                {item.messageType === 'image' && item.mediaUrl ? (
+                                    <Pressable onPress={() => setViewingImage(item.mediaUrl)}>
+                                        <Image
+                                            source={{ uri: item.mediaUrl }}
+                                            style={styles.msgImage}
+                                            resizeMode="cover"
+                                        />
+                                    </Pressable>
+                                ) : item.messageType === 'file' && item.mediaUrl ? (
+                                    /* File card */
+                                    <Pressable
+                                        style={styles.fileCard}
+                                        onPress={() => Linking.openURL(item.mediaUrl!)}
+                                    >
+                                        <Ionicons name="document-outline" size={32} color={AppColors.primary} />
+                                        <View style={styles.fileInfo}>
+                                            <Text style={styles.fileName} numberOfLines={1}>
+                                                {item.mediaName || 'Document'}
+                                            </Text>
+                                            <Text style={styles.fileAction}>Tap to open</Text>
+                                        </View>
+                                    </Pressable>
+                                ) : (item.messageType as any) === 'audio' && item.mediaUrl ? (
+                                    /* Audio playback card */
+                                    <Pressable
+                                        style={styles.audioCard}
+                                        onPress={() => Linking.openURL(item.mediaUrl!)}
+                                    >
+                                        <Ionicons name="play-circle" size={32} color={AppColors.primary} />
+                                        <View style={styles.audioInfo}>
+                                            <Text style={styles.audioText}>Voice message</Text>
+                                            <Text style={styles.audioAction}>Tap to play</Text>
+                                        </View>
+                                        <Ionicons name="volume-medium-outline" size={20} color={AppColors.textMuted} />
+                                    </Pressable>
+                                ) : (
+                                    /* Message text */
+                                    <Text style={[styles.bubbleText, isMe && styles.bubbleTextMe]}>
+                                        {item.textContent}
+                                    </Text>
+                                )}
                             </>
                         )}
 
@@ -631,14 +1033,6 @@ export default function ChatScreen() {
                     <Pressable style={styles.headerIcon} hitSlop={10}
                         onPress={() => setIsSearching(!isSearching)}>
                         <Ionicons name="search" size={20} color="#FFF" />
-                    </Pressable>
-                    <Pressable style={styles.headerIcon} hitSlop={10}
-                        onPress={() => Alert.alert('Coming soon', 'Voice calls will be available in a future update.')}>
-                        <Ionicons name="call-outline" size={20} color="#FFF" />
-                    </Pressable>
-                    <Pressable style={styles.headerIcon} hitSlop={10}
-                        onPress={() => Alert.alert('Coming soon', 'Video calls will be available in a future update.')}>
-                        <Ionicons name="videocam-outline" size={21} color="#FFF" />
                     </Pressable>
                 </View>
             </View>
@@ -716,11 +1110,6 @@ export default function ChatScreen() {
                 {/* Input bar */}
                 <View style={styles.inputBar}>
                     <View style={styles.inputWrap}>
-                        <Pressable hitSlop={8}
-                            onPress={() => Alert.alert('Emoji picker', 'Will appear here soon!')}>
-                            <Ionicons name="happy-outline" size={23} color={AppColors.textMuted} />
-                        </Pressable>
-
                         <TextInput
                             style={styles.textInput}
                             placeholder="Message"
@@ -733,10 +1122,19 @@ export default function ChatScreen() {
                             blurOnSubmit={false}
                         />
 
-                        <Pressable hitSlop={8}
-                            onPress={() => Alert.alert('Attachment', 'File/image sending coming soon!')}>
-                            <Ionicons name="attach-outline" size={23} color={AppColors.textMuted}
-                                style={{ transform: [{ rotate: '45deg' }] }} />
+                        {/* Emoji button */}
+                        <Pressable hitSlop={8} onPress={() => setShowEmojiPicker(!showEmojiPicker)}>
+                            <Ionicons name={showEmojiPicker ? "close-circle" : "happy-outline"} size={23} color={AppColors.textMuted} />
+                        </Pressable>
+
+                        {/* Attachment button */}
+                        <Pressable hitSlop={8} onPress={() => setShowAttachMenu(true)} disabled={sendingMedia}>
+                            {sendingMedia ? (
+                                <ActivityIndicator size="small" color={AppColors.textMuted} />
+                            ) : (
+                                <Ionicons name="attach-outline" size={23} color={AppColors.textMuted}
+                                    style={{ transform: [{ rotate: '45deg' }] }} />
+                            )}
                         </Pressable>
                     </View>
 
@@ -744,8 +1142,12 @@ export default function ChatScreen() {
                     <Pressable
                         style={[styles.sendBtn, !text.trim() && styles.micBtn]}
                         onPress={text.trim() ? handleSend : undefined}
+                        onPressIn={!text.trim() ? startRecording : undefined}
+                        onPressOut={!text.trim() && isRecording ? stopAndSendRecording : undefined}
+                        onLongPress={!text.trim() ? () => {} : undefined}
+                        delayLongPress={200}
                     >
-                        {sending ? (
+                        {sending || sendingMedia ? (
                             <ActivityIndicator color="#FFF" size="small" />
                         ) : (
                             <Ionicons
@@ -757,6 +1159,107 @@ export default function ChatScreen() {
                     </Pressable>
                 </View>
             </KeyboardAvoidingView>
+
+            {/* Emoji Picker */}
+            {showEmojiPicker && (
+                <View style={styles.emojiPickerContainer}>
+                    <EmojiSelector
+                        onEmojiSelected={(emoji) => {
+                            setText(text + emoji);
+                            setShowEmojiPicker(false);
+                        }}
+                        showSearchBar={false}
+                        showHistory={false}
+                        showSectionTitles={false}
+                        columns={8}
+                    />
+                </View>
+            )}
+
+            {/* Recording Overlay */}
+            {isRecording && (
+                <View style={styles.recordingOverlay}>
+                    <View style={styles.recordingContent}>
+                        <Ionicons name="mic" size={24} color="#FF3B30" />
+                        <Text style={styles.recordingText}>
+                            Recording... {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
+                        </Text>
+                        <Pressable onPress={cancelRecording} style={styles.recordingCancel}>
+                            <Text style={styles.recordingCancelText}>Cancel</Text>
+                        </Pressable>
+                    </View>
+                    <Text style={styles.recordingHint}>Release to send, tap cancel to discard</Text>
+                </View>
+            )}
+
+            {/* Attachment menu */}
+            <Modal
+                visible={showAttachMenu}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setShowAttachMenu(false)}
+            >
+                <Pressable
+                    style={styles.attachMenuOverlay}
+                    onPress={() => setShowAttachMenu(false)}
+                >
+                    <View style={styles.attachMenuContent}>
+                        <Pressable
+                            style={styles.attachOption}
+                            onPress={() => {
+                                setShowAttachMenu(false);
+                                pickAndSendImage();
+                            }}
+                        >
+                            <Ionicons name="image-outline" size={24} color={AppColors.primary} />
+                            <Text style={styles.attachOptionText}>Gallery</Text>
+                        </Pressable>
+
+                        <Pressable
+                            style={styles.attachOption}
+                            onPress={() => {
+                                setShowAttachMenu(false);
+                                pickAndSendDocument();
+                            }}
+                        >
+                            <Ionicons name="document-outline" size={24} color={AppColors.primary} />
+                            <Text style={styles.attachOptionText}>Document</Text>
+                        </Pressable>
+
+                        <Pressable
+                            style={[styles.attachOption, styles.attachCancel]}
+                            onPress={() => setShowAttachMenu(false)}
+                        >
+                            <Text style={styles.attachCancelText}>Cancel</Text>
+                        </Pressable>
+                    </View>
+                </Pressable>
+            </Modal>
+
+            {/* Full-screen image viewer */}
+            <Modal
+                visible={!!viewingImage}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setViewingImage(null)}
+            >
+                <Pressable
+                    style={styles.imageViewerOverlay}
+                    onPress={() => setViewingImage(null)}
+                >
+                    <Image
+                        source={{ uri: viewingImage || '' }}
+                        style={styles.imageViewerImage}
+                        resizeMode="contain"
+                    />
+                    <Pressable
+                        style={styles.imageViewerClose}
+                        onPress={() => setViewingImage(null)}
+                    >
+                        <Ionicons name="close" size={32} color="#FFF" />
+                    </Pressable>
+                </Pressable>
+            </Modal>
         </View>
     );
 }
@@ -1018,5 +1521,153 @@ const styles = StyleSheet.create({
     },
     micBtn: {
         backgroundColor: '#25D366',
+    },
+    msgImage: {
+        width: 200,
+        height: 200,
+        borderRadius: 10,
+        backgroundColor: '#e0e0e0',
+    },
+    fileCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f5f5f5',
+        padding: 12,
+        borderRadius: 10,
+        minWidth: 200,
+        maxWidth: 250,
+    },
+    fileInfo: {
+        marginLeft: 12,
+        flex: 1,
+    },
+    fileName: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#000',
+        marginBottom: 4,
+    },
+    fileAction: {
+        fontSize: 12,
+        color: AppColors.primary,
+    },
+    audioCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f5f5f5',
+        padding: 12,
+        borderRadius: 10,
+        minWidth: 220,
+        maxWidth: 250,
+    },
+    audioInfo: {
+        marginLeft: 12,
+        flex: 1,
+    },
+    audioText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#000',
+        marginBottom: 4,
+    },
+    audioAction: {
+        fontSize: 12,
+        color: AppColors.primary,
+    },
+    imageViewerOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.95)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    imageViewerImage: {
+        width: '100%',
+        height: '100%',
+    },
+    imageViewerClose: {
+        position: 'absolute',
+        top: 50,
+        right: 20,
+        padding: 10,
+        borderRadius: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    attachMenuOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'flex-end',
+    },
+    attachMenuContent: {
+        backgroundColor: '#FFF',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+        paddingTop: 10,
+    },
+    attachOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+    },
+    attachOptionText: {
+        fontSize: 16,
+        marginLeft: 16,
+        color: '#000',
+    },
+    attachCancel: {
+        borderBottomWidth: 0,
+        marginTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#e0e0e0',
+    },
+    attachCancelText: {
+        fontSize: 16,
+        color: '#FF3B30',
+        textAlign: 'center',
+        width: '100%',
+    },
+    emojiPickerContainer: {
+        height: 300,
+        backgroundColor: '#FFF',
+    },
+    recordingOverlay: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.9)',
+        padding: 20,
+        paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    },
+    recordingContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 10,
+    },
+    recordingText: {
+        color: '#FFF',
+        fontSize: 16,
+        marginLeft: 12,
+        fontWeight: '600',
+    },
+    recordingCancel: {
+        marginLeft: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        backgroundColor: '#FF3B30',
+        borderRadius: 20,
+    },
+    recordingCancelText: {
+        color: '#FFF',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    recordingHint: {
+        color: '#AAA',
+        fontSize: 12,
+        textAlign: 'center',
     },
 });
