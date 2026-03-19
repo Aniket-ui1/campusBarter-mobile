@@ -457,19 +457,11 @@ export default function ChatScreen() {
         const msgTime = item.createdAt;
         const isOptimistic = item.messageId.startsWith('opt-');
 
-        // Date separator (shown below in inverted list = visually above)
+        // Date separator (shown after message in JSX = visually above in inverted list)
         const showDate = needsDateSep(messages, index);
 
         return (
             <>
-                {showDate && (
-                    <View style={styles.dateSepWrap}>
-                        <View style={styles.dateSep}>
-                            <Text style={styles.dateSepText}>{formatDateLabel(msgTime)}</Text>
-                        </View>
-                    </View>
-                )}
-
                 <View style={[styles.bubbleRow, isMe ? styles.rowRight : styles.rowLeft]}>
                     {/* Avatar for other user */}
                     {!isMe && (
@@ -585,6 +577,14 @@ export default function ChatScreen() {
                         </View>
                     </Pressable>
                 </View>
+
+                {showDate && (
+                    <View style={styles.dateSepWrap}>
+                        <View style={styles.dateSep}>
+                            <Text style={styles.dateSepText}>{formatDateLabel(msgTime)}</Text>
+                        </View>
+                    </View>
+                )}
             </>
         );
     };
