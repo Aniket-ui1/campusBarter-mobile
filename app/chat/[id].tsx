@@ -288,10 +288,22 @@ export default function ChatScreen() {
         typingEmitter.current = createTypingEmitter(id);
 
         const unsubMsg = onReceiveMessage((msg) => {
-            if (msg.conversationId !== id) return;
+            console.log('[ChatScreen] 📨 Received message:', msg.conversationId, 'Current chat:', id);
+            if (msg.conversationId !== id) {
+                console.log('[ChatScreen] ⏭️ Skipping - message for different conversation');
+                return;
+            }
+            console.log('[ChatScreen] 🔄 Updating messages state...');
             setMessages(prev => {
-                if (prev.some(m => m.messageId === msg.messageId)) return prev;
-                return mergeMessages([msg as ChatMessage, ...prev]);
+                const isDuplicate = prev.some(m => m.messageId === msg.messageId);
+                console.log('[ChatScreen] Current messages count:', prev.length, 'Is duplicate:', isDuplicate);
+                if (isDuplicate) {
+                    console.log('[ChatScreen] ⏭️ Duplicate message, skipping');
+                    return prev;
+                }
+                const updated = mergeMessages([msg as ChatMessage, ...prev]);
+                console.log('[ChatScreen] ✅ State updated! New count:', updated.length);
+                return updated;
             });
             scrollToLatest();
             void chatApi.markRead(id).catch(() => undefined);

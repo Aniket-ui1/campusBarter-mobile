@@ -58,8 +58,10 @@ export function leaveConversation(conversationId: string): void {
 export function onReceiveMessage(
     handler: (msg: Partial<ChatMessage> & { conversationId: string }) => void
 ): () => void {
+    console.log('[SocketService] 🎧 onReceiveMessage handler registered');
     return onNewMessage((raw) => {
-        handler({
+        console.log('[SocketService] 📩 Message received in wrapper, transforming...');
+        const transformed = {
             messageId:      (raw as any).messageId ?? (raw as any).id ?? `sock-${(raw as any).sentAt ?? Date.now()}-${raw.senderId}`,
             conversationId: raw.conversationId ?? (raw as any).chatId,
             senderId:       raw.senderId,
@@ -71,7 +73,10 @@ export function onReceiveMessage(
             isRead:         false,
             isDeleted:      false,
             createdAt:      (raw as any).createdAt ?? raw.sentAt ?? new Date().toISOString(),
-        });
+        };
+        console.log('[SocketService] ✅ Calling handler with transformed message:', transformed.conversationId);
+        handler(transformed);
+        console.log('[SocketService] ✅ Handler called successfully');
     });
 }
 
