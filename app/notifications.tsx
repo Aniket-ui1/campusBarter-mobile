@@ -20,12 +20,26 @@ export default function NotificationsScreen() {
     const { notifications, markRead, markAllRead, unreadCount } = useData();
 
     const handlePress = async (notif: typeof notifications[0]) => {
-        if (!notif.read) {
-            await markRead(notif.id);
+        const notifId = notif.notificationId ?? notif.id;
+        const isUnread = !notif.isRead && !notif.read;
+
+        if (isUnread && notifId) {
+            await markRead(notifId);
         }
-        // Navigate based on type
-        if (notif.type === 'message' && notif.relatedId) {
-            router.push({ pathname: '/chat/[id]' as any, params: { id: notif.relatedId } });
+
+        // Navigate using actionUrl if available, otherwise fallback to type-based navigation
+        if (notif.actionUrl) {
+            router.push(notif.actionUrl as any);
+        } else if (notif.type === 'message') {
+            const chatId = notif.relatedEntityId ?? notif.relatedId;
+            if (chatId) {
+                router.push({ pathname: '/chat/[id]' as any, params: { id: chatId } });
+            }
+        } else if (notif.type === 'match') {
+            const listingId = notif.relatedEntityId ?? notif.relatedId;
+            if (listingId) {
+                router.push({ pathname: '/skill/[id]' as any, params: { id: listingId } });
+            }
         }
     };
 
@@ -56,10 +70,14 @@ export default function NotificationsScreen() {
                 ) : (
                     notifications.map((n, i) => {
                         const icon = ICON_MAP[n.type] ?? ICON_MAP.request;
+                        const notifId = n.notificationId ?? n.id;
+                        const message = n.message ?? n.body;
+                        const isUnread = !n.isRead && !n.read;
+
                         return (
-                            <Animated.View key={n.id} entering={FadeInDown.delay(i * 60).duration(400)}>
+                            <Animated.View key={notifId} entering={FadeInDown.delay(i * 60).duration(400)}>
                                 <Pressable
-                                    style={[styles.card, !n.read && styles.cardUnread]}
+                                    style={[styles.card, isUnread && styles.cardUnread]}
                                     onPress={() => handlePress(n)}
                                 >
                                     <View style={[styles.iconCircle, { backgroundColor: icon.color + '20' }]}>
@@ -67,10 +85,10 @@ export default function NotificationsScreen() {
                                     </View>
                                     <View style={{ flex: 1 }}>
                                         <Text style={styles.title}>{n.title}</Text>
-                                        <Text style={styles.body}>{n.body}</Text>
+                                        <Text style={styles.body}>{message}</Text>
                                         <Text style={styles.time}>{new Date(n.createdAt).toLocaleString()}</Text>
                                     </View>
-                                    {!n.read && <View style={styles.unreadDot} />}
+                                    {isUnread && <View style={styles.unreadDot} />}
                                 </Pressable>
                             </Animated.View>
                         );

@@ -36,6 +36,7 @@ import {
     ApiNotification,
 } from "../lib/api";
 import { onNewMessage, joinChat, leaveChat } from "../lib/socket";
+import { onNotification } from "../services/socketService";
 import { useAuth } from "./AuthContext";
 
 // ── Public types ──────────────────────────────────────────────────
@@ -224,8 +225,33 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         return cleanup;
     }, [refreshChats, user?.id]);
 
+    // ── Socket.io: listen for new notifications ───────────────────
+    useEffect(() => {
+        const cleanup = onNotification((notif) => {
+            // Add new notification to the top of the list
+            setNotifications(prev => [{
+                notificationId: `socket-${Date.now()}`,
+                userId: user?.id ?? '',
+                type: notif.type,
+                title: notif.title,
+                message: notif.body,
+                relatedEntityId: notif.relatedId ?? null,
+                relatedEntityType: null,
+                actionUrl: null,
+                isRead: false,
+                createdAt: notif.createdAt,
+                // Legacy fields
+                id: `socket-${Date.now()}`,
+                body: notif.body,
+                read: false,
+                relatedId: notif.relatedId,
+            }, ...prev]);
+        });
+        return cleanup;
+    }, [user?.id]);
+
     const unreadCount = useMemo(
-        () => notifications.filter(n => !n.read).length,
+        () => notifications.filter(n => !n.isRead && !n.read).length,
         [notifications]
     );
 
@@ -382,13 +408,13 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const markRead = async (notifId: string) => {
         await apiMarkRead(notifId);
         setNotifications(ns => ns.map(n =>
-            n.id === notifId ? { ...n, read: true } : n
+            (n.notificationId === notifId || n.id === notifId) ? { ...n, read: true, isRead: true } : n
         ));
     };
 
     const markAllRead = async () => {
         await apiMarkAllRead();
-        setNotifications(ns => ns.map(n => ({ ...n, read: true })));
+        setNotifications(ns => ns.map(n => ({ ...n, read: true, isRead: true })));
     };
 
     return (

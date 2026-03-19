@@ -121,13 +121,21 @@ export interface ApiChat {
 }
 
 export interface ApiNotification {
-    id: string;
+    notificationId: string;
+    userId: string;
     type: string;
     title: string;
-    body: string;
-    read: boolean;
-    relatedId?: string;
+    message: string;
+    relatedEntityId: string | null;
+    relatedEntityType: string | null;
+    actionUrl: string | null;
+    isRead: boolean;
     createdAt: string;
+    // Legacy compatibility
+    id?: string;
+    body?: string;
+    read?: boolean;
+    relatedId?: string;
 }
 
 // ── Listings ──────────────────────────────────────────────────
@@ -326,15 +334,62 @@ export async function deleteChat(chatId: string, userId: string): Promise<void> 
 // ── Notifications ─────────────────────────────────────────────
 
 export async function getNotifications(): Promise<ApiNotification[]> {
-    return apiFetch<ApiNotification[]>('/api/v1/notifications');
+    try {
+        // Try new endpoint first
+        const data = await apiFetch<any[]>('/api/notifications');
+        return data.map(n => ({
+            notificationId: n.notificationId ?? n.id,
+            userId: n.userId,
+            type: n.type,
+            title: n.title,
+            message: n.message ?? n.body,
+            relatedEntityId: n.relatedEntityId ?? n.relatedId ?? null,
+            relatedEntityType: n.relatedEntityType ?? null,
+            actionUrl: n.actionUrl ?? null,
+            isRead: n.isRead ?? n.read ?? false,
+            createdAt: n.createdAt,
+            // Legacy fields for backwards compatibility
+            id: n.notificationId ?? n.id,
+            body: n.message ?? n.body,
+            read: n.isRead ?? n.read ?? false,
+            relatedId: n.relatedEntityId ?? n.relatedId,
+        }));
+    } catch {
+        // Fallback to legacy endpoint
+        const data = await apiFetch<any[]>('/api/v1/notifications');
+        return data.map(n => ({
+            notificationId: n.id,
+            userId: n.userId ?? '',
+            type: n.type,
+            title: n.title,
+            message: n.body,
+            relatedEntityId: n.relatedId ?? null,
+            relatedEntityType: null,
+            actionUrl: null,
+            isRead: n.read ?? false,
+            createdAt: n.createdAt,
+            id: n.id,
+            body: n.body,
+            read: n.read,
+            relatedId: n.relatedId,
+        }));
+    }
 }
 
 export async function markNotificationRead(notifId: string): Promise<void> {
-    await apiFetch(`/api/v1/notifications/${notifId}/read`, { method: 'PUT' });
+    try {
+        await apiFetch(`/api/notifications/${notifId}/read`, { method: 'PUT' });
+    } catch {
+        await apiFetch(`/api/v1/notifications/${notifId}/read`, { method: 'PUT' });
+    }
 }
 
 export async function markAllNotificationsRead(): Promise<void> {
-    await apiFetch('/api/v1/notifications/read-all', { method: 'PUT' });
+    try {
+        await apiFetch('/api/notifications/read-all', { method: 'PUT' });
+    } catch {
+        await apiFetch('/api/v1/notifications/read-all', { method: 'PUT' });
+    }
 }
 
 // ── Credits ───────────────────────────────────────────────────

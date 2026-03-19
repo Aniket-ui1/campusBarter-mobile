@@ -88,7 +88,9 @@ export async function runSmartMatching(params: {
                 'MATCH',
                 '🎯 Potential Match Found!',
                 `${postedByName} ${verb} "${title}"`,
-                newListingId
+                newListingId,
+                'listing',
+                `/skill/${newListingId}`
             );
         });
 

@@ -32,9 +32,24 @@ interface NotifPayload {
 export async function notifyEvent(payload: NotifPayload): Promise<void> {
     const { recipientId, type, title, body, relatedId, data } = payload;
 
+    // Determine entity type and action URL based on notification type
+    let entityType: string | undefined;
+    let actionUrl: string | undefined;
+
+    if (type === 'message' || type === 'request' || type === 'accepted') {
+        entityType = 'conversation';
+        actionUrl = relatedId ? `/chat/${relatedId}` : undefined;
+    } else if (type === 'match') {
+        entityType = 'listing';
+        actionUrl = relatedId ? `/skill/${relatedId}` : undefined;
+    } else if (type === 'review') {
+        entityType = 'review';
+        actionUrl = recipientId ? `/reviews/${recipientId}` : undefined;
+    }
+
     // 1. Persist to DB (the bell icon in-app)
     try {
-        await createNotification(recipientId, type, title, body, relatedId);
+        await createNotification(recipientId, type, title, body, relatedId, entityType, actionUrl);
     } catch (err) {
         console.error('[Notify] DB insert failed:', err);
     }

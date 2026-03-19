@@ -8,6 +8,7 @@
 import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import sql from 'mssql';
 import { getPool } from '../db';
+import { notifyMessage } from '../notifyEvent';
 
 const expo = new Expo();
 
@@ -92,6 +93,10 @@ export async function notifyOtherParticipant(
         const { senderName, recipientId } = result.recordset[0];
         const bodyText = preview.length > 100 ? preview.slice(0, 97) + '...' : preview;
 
+        // Create in-app notification
+        notifyMessage(recipientId, senderName, conversationId, bodyText);
+
+        // Send push notification
         await sendPushToUser(
             recipientId,
             `New message from ${senderName}`,

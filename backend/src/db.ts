@@ -1053,7 +1053,9 @@ export async function getNotifications(userId: string): Promise<Record<string, u
     const result = await db.request()
         .input('userId', sql.NVarChar(128), userId)
         .query(`
-            SELECT id, type, title, body, [read], relatedId, createdAt
+            SELECT notificationId, userId, type, title, message,
+                   relatedEntityId, relatedEntityType, actionUrl,
+                   isRead, createdAt
             FROM   Notifications
             WHERE  userId = @userId
             ORDER  BY createdAt DESC
@@ -1066,35 +1068,37 @@ export async function markNotificationRead(notificationId: string, userId: strin
     await db.request()
         .input('id', sql.NVarChar(128), notificationId)
         .input('userId', sql.NVarChar(128), userId)
-        .query(`UPDATE Notifications SET [read] = 1 WHERE id = @id AND userId = @userId`);
+        .query(`UPDATE Notifications SET isRead = 1 WHERE notificationId = @id AND userId = @userId`);
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
     const db = await getPool();
     await db.request()
         .input('userId', sql.NVarChar(128), userId)
-        .query(`UPDATE Notifications SET [read] = 1 WHERE userId = @userId`);
+        .query(`UPDATE Notifications SET isRead = 1 WHERE userId = @userId`);
 }
 
 export async function createNotification(
     userId: string,
     type: string,
     title: string,
-    body: string,
-    relatedId?: string
+    message: string,
+    relatedEntityId?: string,
+    relatedEntityType?: string,
+    actionUrl?: string
 ): Promise<void> {
     const db = await getPool();
-    const id = crypto.randomUUID();
     await db.request()
-        .input('id', sql.NVarChar(128), id)
         .input('userId', sql.NVarChar(128), userId)
         .input('type', sql.NVarChar(50), type)
         .input('title', sql.NVarChar(200), title)
-        .input('body', sql.NVarChar(500), body)
-        .input('relatedId', sql.NVarChar(128), relatedId ?? null)
+        .input('message', sql.NVarChar(500), message)
+        .input('relatedEntityId', sql.NVarChar(128), relatedEntityId ?? null)
+        .input('relatedEntityType', sql.NVarChar(50), relatedEntityType ?? null)
+        .input('actionUrl', sql.NVarChar(500), actionUrl ?? null)
         .query(`
-            INSERT INTO Notifications (id, userId, type, title, body, relatedId)
-            VALUES (@id, @userId, @type, @title, @body, @relatedId)
+            INSERT INTO Notifications (userId, type, title, message, relatedEntityId, relatedEntityType, actionUrl)
+            VALUES (@userId, @type, @title, @message, @relatedEntityId, @relatedEntityType, @actionUrl)
         `);
 }
 

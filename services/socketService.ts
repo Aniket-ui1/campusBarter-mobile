@@ -211,3 +211,21 @@ export function onMessageUnpinned(
     sock.on('message_unpinned', handler);
     return () => sock.off('message_unpinned', handler);
 }
+
+// ── Notification Events ───────────────────────────────────────
+export interface NotificationPayload {
+    type: string;
+    title: string;
+    body: string;
+    relatedId?: string;
+    createdAt: string;
+}
+
+/** Listen for new in-app notifications. */
+export function onNotification(
+    handler: (payload: NotificationPayload) => void
+): () => void {
+    const sock = getSocket() ?? connectSocket();
+    sock.on('notification', handler);
+    return () => sock.off('notification', handler);
+}
