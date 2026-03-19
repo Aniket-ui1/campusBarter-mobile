@@ -10,6 +10,8 @@ import {
     leaveConversation,
     onMessageDeleted,
     onMessagesSeen,
+    onReactionAdded,
+    onReactionRemoved,
     onReceiveMessage,
     onUserTyping,
 } from '@/services/socketService';
@@ -146,6 +148,7 @@ export default function ChatScreen() {
     const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
     const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
     const [, forceUpdate] = useState(0); // For forcing re-render at midnight
+    const [reactingToMessageId, setReactingToMessageId] = useState<string | null>(null);
 
     const searchDebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -372,6 +375,27 @@ export default function ChatScreen() {
             ));
         });
 
+        const unsubReactionAdded = onReactionAdded(({ messageId, userId, emoji }) => {
+            setMessages(prev => prev.map(m => {
+                if (m.messageId === messageId) {
+                    const reactions = m.reactions || [];
+                    const newReaction = { emoji, userId };
+                    return { ...m, reactions: [...reactions, newReaction] };
+                }
+                return m;
+            }));
+        });
+
+        const unsubReactionRemoved = onReactionRemoved(({ messageId, userId, emoji }) => {
+            setMessages(prev => prev.map(m => {
+                if (m.messageId === messageId) {
+                    const reactions = (m.reactions || []).filter(r => !(r.userId === userId && r.emoji === emoji));
+                    return { ...m, reactions };
+                }
+                return m;
+            }));
+        });
+
         return () => {
             leaveConversation(id);
             typingEmitter.current?.cleanup();
@@ -379,6 +403,8 @@ export default function ChatScreen() {
             unsubSeen();
             unsubTyping();
             unsubDeleted();
+            unsubReactionAdded();
+            unsubReactionRemoved();
         };
     }, [id, isLegacyMode, user?.id, user?.displayName, subscribeToMessages, mapLegacyMessage]);
 
@@ -648,6 +674,18 @@ export default function ChatScreen() {
         typingEmitter.current?.onInput();
     };
 
+    // ── Reactions ────────────────────────────────────────────────
+    const handleReaction = async (messageId: string, emoji: string) => {
+        try {
+            await chatApi.addReaction(messageId, emoji);
+            // Socket will update the state in real-time
+        } catch (error) {
+            console.error('Failed to add reaction:', error);
+            Alert.alert('Error', 'Could not add reaction');
+        }
+        setReactingToMessageId(null);
+    };
+
     const handleLoadOlder = async () => {
         if (!id || loadingOlder || !hasMore) return;
         setLoadingOlder(true);
@@ -806,6 +844,47 @@ export default function ChatScreen() {
                                     </Text>
                                 )}
                             </>
+                        )}
+
+                        {/* Reactions */}
+                        {!item.isDeleted && item.reactions && item.reactions.length > 0 && (
+                            <View style={styles.reactionsRow}>
+                                {Object.entries(
+                                    item.reactions.reduce((acc, r) => {
+                                        acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+                                        return acc;
+                                    }, {} as Record<string, number>)
+                                ).map(([emoji, count]) => (
+                                    <Pressable
+                                        key={emoji}
+                                        style={[
+                                            styles.reactionBubble,
+                                            item.reactions?.some(r => r.emoji === emoji && r.userId === user?.id)
+                                                && styles.reactionBubbleActive
+                                        ]}
+                                        onPress={() => handleReaction(item.messageId, emoji)}
+                                    >
+                                        <Text style={styles.reactionEmoji}>{emoji}</Text>
+                                        {count > 1 && <Text style={styles.reactionCount}>{count}</Text>}
+                                    </Pressable>
+                                ))}
+                                <Pressable
+                                    style={styles.addReactionBtn}
+                                    onPress={() => setReactingToMessageId(item.messageId)}
+                                >
+                                    <Ionicons name="add-circle-outline" size={16} color={AppColors.textMuted} />
+                                </Pressable>
+                            </View>
+                        )}
+
+                        {/* Add reaction button (when no reactions) */}
+                        {!item.isDeleted && (!item.reactions || item.reactions.length === 0) && (
+                            <Pressable
+                                style={styles.addReactionBtn}
+                                onPress={() => setReactingToMessageId(item.messageId)}
+                            >
+                                <Ionicons name="add-circle-outline" size={16} color={AppColors.textMuted} />
+                            </Pressable>
                         )}
 
                         {/* Time + tick */}
@@ -1096,6 +1175,31 @@ export default function ChatScreen() {
                     >
                         <Ionicons name="close" size={32} color="#FFF" />
                     </Pressable>
+                </Pressable>
+            </Modal>
+
+            {/* Reaction Picker */}
+            <Modal
+                visible={!!reactingToMessageId}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setReactingToMessageId(null)}
+            >
+                <Pressable
+                    style={styles.reactionPickerOverlay}
+                    onPress={() => setReactingToMessageId(null)}
+                >
+                    <View style={styles.reactionPickerContent}>
+                        {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+                            <Pressable
+                                key={emoji}
+                                style={styles.reactionOption}
+                                onPress={() => reactingToMessageId && handleReaction(reactingToMessageId, emoji)}
+                            >
+                                <Text style={styles.reactionOptionEmoji}>{emoji}</Text>
+                            </Pressable>
+                        ))}
+                    </View>
                 </Pressable>
             </Modal>
         </View>
@@ -1507,5 +1611,65 @@ const styles = StyleSheet.create({
         color: '#AAA',
         fontSize: 12,
         textAlign: 'center',
+    },
+    reactionsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 4,
+        marginTop: 4,
+        marginBottom: 2,
+    },
+    reactionBubble: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.05)',
+        borderRadius: 12,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.1)',
+    },
+    reactionBubbleActive: {
+        backgroundColor: AppColors.primaryLight,
+        borderColor: AppColors.primary,
+    },
+    reactionEmoji: {
+        fontSize: 14,
+    },
+    reactionCount: {
+        fontSize: 11,
+        marginLeft: 3,
+        color: '#666',
+        fontWeight: '600',
+    },
+    addReactionBtn: {
+        marginTop: 4,
+        padding: 4,
+    },
+    reactionPickerOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    reactionPickerContent: {
+        backgroundColor: '#FFF',
+        borderRadius: 16,
+        flexDirection: 'row',
+        padding: 12,
+        gap: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
+        elevation: 5,
+    },
+    reactionOption: {
+        padding: 8,
+        borderRadius: 8,
+        backgroundColor: '#F5F5F5',
+    },
+    reactionOptionEmoji: {
+        fontSize: 32,
     },
 });

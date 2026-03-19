@@ -38,6 +38,19 @@ export interface MessageDeletedPayload {
     conversationId: string;
 }
 
+export interface ReactionAddedPayload {
+    messageId: string;
+    userId: string;
+    emoji: string;
+    reactionId: string;
+}
+
+export interface ReactionRemovedPayload {
+    messageId: string;
+    userId: string;
+    emoji: string;
+}
+
 // ── Connect / Disconnect ──────────────────────────────────────
 /** Connect the socket (call after login). */
 export { connectSocket as connectChatSocket, disconnectSocket as disconnectChatSocket };
@@ -136,4 +149,23 @@ export function createTypingEmitter(conversationId: string): {
     };
 
     return { onInput, cleanup };
+}
+
+// ── Reaction Events ───────────────────────────────────────────
+/** Listen for reactions added to messages. */
+export function onReactionAdded(
+    handler: (payload: ReactionAddedPayload) => void
+): () => void {
+    const sock = getSocket() ?? connectSocket();
+    sock.on('reaction_added', handler);
+    return () => sock.off('reaction_added', handler);
+}
+
+/** Listen for reactions removed from messages. */
+export function onReactionRemoved(
+    handler: (payload: ReactionRemovedPayload) => void
+): () => void {
+    const sock = getSocket() ?? connectSocket();
+    sock.on('reaction_removed', handler);
+    return () => sock.off('reaction_removed', handler);
 }

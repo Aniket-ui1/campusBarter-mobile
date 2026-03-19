@@ -23,6 +23,12 @@ export interface Conversation {
     };
 }
 
+export interface MessageReaction {
+    emoji: string;
+    userId: string;
+    displayName?: string;
+}
+
 export interface ChatMessage {
     messageId: string;
     conversationId: string;
@@ -36,6 +42,7 @@ export interface ChatMessage {
     readAt: string | null;
     isDeleted: boolean;
     createdAt: string;
+    reactions?: MessageReaction[];  // NEW: Emoji reactions
 }
 
 function authHeaders(): Record<string, string> {
@@ -314,5 +321,18 @@ export const chatApi = {
     /** Search messages within a conversation. */
     searchConversation(convId: string, q: string): Promise<{ results: ChatMessage[] }> {
         return chatFetch(`${base()}/${encodeURIComponent(convId)}/search?q=${encodeURIComponent(q)}`);
+    },
+
+    /** Add or remove a reaction to a message (toggle behavior). */
+    addReaction(messageId: string, emoji: string): Promise<{ success: boolean; action: 'added' | 'removed'; reactionId?: string }> {
+        return chatFetch(`${base()}/message/${encodeURIComponent(messageId)}/react`, {
+            method: 'POST',
+            body: JSON.stringify({ emoji }),
+        });
+    },
+
+    /** Get all reactions for a message. */
+    getReactions(messageId: string): Promise<{ reactions: MessageReaction[] }> {
+        return chatFetch(`${base()}/message/${encodeURIComponent(messageId)}/reactions`);
     },
 };
