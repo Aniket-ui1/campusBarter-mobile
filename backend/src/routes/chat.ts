@@ -318,7 +318,7 @@ router.post('/:convId/messages',
         param('convId').trim().notEmpty(),
         body('textContent').if(body('messageType').not().equals('text').not().exists())
             .optional().isLength({ max: 2000 }),
-        body('messageType').optional().isIn(['text','image','file']),
+        body('messageType').optional().isIn(['text','image','file','audio']),
         body('mediaUrl').optional().isURL(),
         body('mediaName').optional().isLength({ max: 200 }),
     ]),
@@ -356,7 +356,11 @@ router.post('/:convId/messages',
 
             const messageId = crypto.randomUUID();
             const safeText  = messageType === 'text' ? String(textContent).trim() : null;
-            const preview   = messageType === 'text' ? safeText! : '[Image]';
+            const preview   = messageType === 'text' ? safeText!
+                            : messageType === 'image' ? '[Image]'
+                            : messageType === 'file' ? '[Document]'
+                            : messageType === 'audio' ? '[Voice message]'
+                            : '[Media]';
 
             await db.request()
                 .input('mid',   sql.NVarChar(128), messageId)
