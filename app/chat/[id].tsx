@@ -65,10 +65,17 @@ function formatLastSeen(iso: string | null): string | null {
 }
 
 function needsDateSep(msgs: ChatMessage[], index: number): boolean {
+    // Always show date for the oldest message (last in array, displayed at top)
     if (index === msgs.length - 1) return true;
-    const a = new Date(msgs[index].createdAt).toDateString();
-    const b = new Date(msgs[index + 1].createdAt).toDateString();
-    return a !== b;
+
+    // Show date separator when day changes between consecutive messages
+    const current = new Date(msgs[index].createdAt);
+    const next = new Date(msgs[index + 1].createdAt);
+
+    // Compare dates only if both are valid
+    if (isNaN(current.getTime()) || isNaN(next.getTime())) return false;
+
+    return current.toDateString() !== next.toDateString();
 }
 
 function getMessageTimestamp(message: Pick<ChatMessage, 'createdAt'>): number {

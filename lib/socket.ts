@@ -7,6 +7,8 @@
 import { io, Socket } from 'socket.io-client';
 import { getApiBase, getApiToken } from './api';
 
+console.log('[Socket] Module loaded successfully');
+
 
 let _socket: Socket | null = null;
 const joinedRooms = new Set<string>();
@@ -54,29 +56,56 @@ function dispatchTyping(data: { conversationId?: string; userId: string; display
 
 /** Connect and authenticate. Call after setApiToken() is set. */
 export function connectSocket(): Socket {
+    console.log('[Socket] connectSocket() called');
+    console.log('[Socket] API Base:', getApiBase());
+    console.log('[Socket] Token present:', !!getApiToken());
+
     if (_socket) {
+        console.log('[Socket] Reusing existing socket, connected:', _socket.connected);
         if (!_socket.connected) _socket.connect();
         return _socket;
     }
 
+    console.log('[Socket] Creating new socket instance...');
     _socket = io(getApiBase(), {
         // Use a callback so socket.io reads the CURRENT token on every (re)connect,
         // instead of capturing a stale/null value at construction time.
-        auth: (cb) => cb({ token: getApiToken() }),
+        auth: (cb) => {
+            const token = getApiToken();
+            console.log('[Socket] Auth callback - token:', token?.substring(0, 20) + '...');
+            cb({ token });
+        },
         transports: ['websocket'],
         reconnectionAttempts: 5,
         reconnectionDelay: 2000,
     });
+    console.log('[Socket] Socket instance created');
 
     _socket.on('connect', () => {
-        console.log('[Socket] Connected');
+        console.log('[Socket] ✅ Connected successfully!');
+        console.log('[Socket] Transport:', _socket?.io?.engine?.transport?.name);
+        console.log('[Socket] Socket ID:', _socket?.id);
+        // Expose globally for debugging
+        if (typeof window !== 'undefined') {
+            (window as any).__socket = _socket;
+            console.log('[Socket] Exposed as window.__socket');
+        }
         // Re-join active rooms after reconnect so real-time messages continue.
         joinedRooms.forEach((conversationId) => {
+            console.log('[Socket] Re-joining room:', conversationId);
             _socket?.emit('join_conversation', conversationId);
         });
     });
-    _socket.on('disconnect', () => console.log('[Socket] Disconnected'));
-    _socket.on('connect_error', (err) => console.warn('[Socket] Error:', err.message));
+    _socket.on('disconnect', (reason) => {
+        console.log('[Socket] ❌ Disconnected. Reason:', reason);
+    });
+    _socket.on('connect_error', (err) => {
+        console.error('[Socket] ⚠️ Connection Error:', err.message);
+        console.error('[Socket] Error details:', err);
+    });
+    _socket.on('error', (err) => {
+        console.error('[Socket] ⚠️ Socket Error:', err);
+    });
     _socket.on('new_message', dispatchNewMessage);
     _socket.on('receive_message', dispatchNewMessage);
     _socket.on('typing', dispatchTyping);
@@ -96,9 +125,17 @@ export function getSocket(): Socket | null {
 
 /** Join a chat room to receive real-time messages. */
 export function joinChat(chatId: string) {
-    if (!chatId) return;
+    console.log('[Socket] joinChat called for:', chatId);
+    if (!chatId) {
+        console.log('[Socket] joinChat aborted - no chatId');
+        return;
+    }
     joinedRooms.add(chatId);
-    if (!_socket) connectSocket();
+    if (!_socket) {
+        console.log('[Socket] No socket exists, calling connectSocket()...');
+        connectSocket();
+    }
+    console.log('[Socket] Emitting join_conversation for:', chatId);
     _socket?.emit('join_conversation', chatId);
 }
 
