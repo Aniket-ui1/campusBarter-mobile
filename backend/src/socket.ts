@@ -51,22 +51,53 @@ interface AuthenticatedSocket extends Socket {
 
 // ── Initialise Socket.io ──────────────────────────────────────
 export function initSocketServer(httpServer: http.Server): SocketServer {
-    const allowedOrigins = [
+    const allowedOrigins: Array<string | RegExp> = [
         'https://campusbarter.azurestaticapps.net',
-        'exp://*',
     ];
-    
+
     // Allow localhost in development
     if (process.env.NODE_ENV === 'development' || process.env.ALLOW_LOCALHOST === 'true') {
-        allowedOrigins.push('http://localhost:*');
-        allowedOrigins.push('http://192.168.*:*');
+        allowedOrigins.push('http://localhost:8081');
+        allowedOrigins.push('http://localhost:8082');
+        allowedOrigins.push('http://localhost:8083');
+        allowedOrigins.push('http://localhost:3000');
+        allowedOrigins.push(/^http:\/\/localhost:\d+$/);  // Any localhost port
+        allowedOrigins.push(/^http:\/\/192\.168\.\d+\.\d+:\d+$/);  // Local network
+        allowedOrigins.push(/^exp:\/\/.*/);  // Expo Go
+    } else {
+        // Production still allows Expo Go
+        allowedOrigins.push(/^exp:\/\/.*/);
     }
     
     const io = new SocketServer(httpServer, {
         cors: {
-            origin: allowedOrigins,
+            origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+                // Allow requests with no origin (mobile apps, Postman)
+                if (!origin) return callback(null, true);
+
+                // Check against allowed origins
+                const allowed = allowedOrigins.some((pattern: string | RegExp) => {
+                    if (typeof pattern === 'string') {
+                        if (pattern.includes('*')) {
+                            // Convert wildcard to regex
+                            const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+                            return regex.test(origin);
+                        }
+                        return pattern === origin;
+                    }
+                    // pattern is RegExp
+                    return (pattern as RegExp).test(origin);
+                });
+
+                callback(null, allowed);
+            },
             methods: ['GET', 'POST'],
+            credentials: true,
         },
+        // Force WebSocket transport (no polling fallback)
+        transports: ['websocket', 'polling'],
+        // Try WebSocket upgrade immediately
+        allowUpgrades: true,
         // Allow 1MB payloads (same limit as REST API)
         maxHttpBufferSize: 1e6,
     });
