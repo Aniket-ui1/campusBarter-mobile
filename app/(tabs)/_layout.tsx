@@ -4,15 +4,10 @@ import React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { AppColors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
 import ProfileSetupOverlay from '@/components/ProfileSetupOverlay';
 
 export default function TabLayout() {
   const { user } = useAuth();
-  const { unreadChatsCount } = useData();
-
-  console.log('[TabLayout] 🔔 Unread chats count for badge:', unreadChatsCount);
-
   if (!user) return <Redirect href="/(auth)/welcome" />;
 
   return (
@@ -65,7 +60,6 @@ export default function TabLayout() {
         }} />
         <Tabs.Screen name="chats" options={{
           title: 'Chats',
-          tabBarBadge: unreadChatsCount > 0 ? unreadChatsCount : undefined,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.activeWrap : undefined}>
               <Ionicons name={focused ? 'chatbubbles' : 'chatbubbles-outline'} size={22} color={color} />

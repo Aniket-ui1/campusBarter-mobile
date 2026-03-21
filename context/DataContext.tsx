@@ -37,7 +37,6 @@ import {
 } from "../lib/api";
 import { onNewMessage, joinChat, leaveChat } from "../lib/socket";
 import { onNotification } from "../services/socketService";
-import { chatApi } from "../services/chatApi";
 import { useAuth } from "./AuthContext";
 
 // ── Public types ──────────────────────────────────────────────────
@@ -84,7 +83,6 @@ interface DataContextType {
     refreshListings: () => Promise<void>;
 
     chats: Chat[];
-    unreadChatsCount: number;
     startChat: (listingId: string, listingTitle: string, userIds: string[], listingOwnerId?: string) => Promise<string>;
     sendMessage: (chatId: string, text: string, senderId: string) => Promise<void>;
     markChatRead: (chatId: string) => Promise<void>;
@@ -149,36 +147,6 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const refreshChats = useCallback(async () => {
         if (!user) { setChats([]); return; }
         try {
-            // Try v2 API first
-            console.log('[DataContext] 🔄 Loading chats from v2 API...');
-            const v2Data = await chatApi.getConversations();
-            console.log('[DataContext] ✅ V2 API response:', v2Data);
-
-            if (v2Data.conversations) {
-                const normalizedChats = v2Data.conversations.map(c => ({
-                    id: c.conversationId,
-                    conversationId: c.conversationId,
-                    otherUserId: c.otherUser?.id ?? '',
-                    otherUserName: c.otherUser?.name ?? 'Chat',
-                    lastMessage: c.lastMessage ?? '',
-                    lastMessageAt: c.lastMessageTime ?? new Date().toISOString(),
-                    unreadCount: c.unreadCount ?? 0,
-                    listingId: '',
-                    listingTitle: '',
-                    messages: chatMessages.current[c.conversationId] ?? [],
-                }));
-                console.log('[DataContext] 📊 Normalized chats:', normalizedChats);
-                console.log('[DataContext] 📬 Unread counts:', normalizedChats.map(c => ({ name: c.otherUserName, unread: c.unreadCount })));
-                setChats(normalizedChats);
-                return;
-            }
-        } catch (e) {
-            console.error("[DataContext] ❌ V2 chat API failed, falling back to legacy:", e);
-        }
-
-        // Fallback to legacy API
-        try {
-            console.log('[DataContext] 🔄 Falling back to legacy API...');
             const data = await getChats(user.id);
             const normalizedChats = data.map(c => ({
                 ...c,
@@ -186,9 +154,8 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 messages: chatMessages.current[c.conversationId ?? c.id] ?? [],
             }));
             setChats(dedupeChatsByParticipant(normalizedChats));
-            console.log('[DataContext] ✅ Legacy chats loaded:', normalizedChats.length);
         } catch (e) {
-            console.error("[DataContext] ❌ Could not load chats:", e);
+            console.warn("[Data] Could not load chats:", e);
         }
     }, [user?.id]);
 
@@ -288,17 +255,6 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         [notifications]
     );
 
-    const unreadChatsCount = useMemo(() => {
-        const count = chats.filter(chat => (chat.unreadCount ?? 0) > 0).length;
-        console.log('[DataContext] 🔔 Unread chats count:', count, 'Total chats:', chats.length);
-        console.log('[DataContext] 📋 Chat details:', chats.map(c => ({
-            name: c.otherUserName,
-            unread: c.unreadCount,
-            id: c.id
-        })));
-        return count;
-    }, [chats]);
-
     // ── Listings API ──────────────────────────────────────────────
 
     const addListing = async (
@@ -370,18 +326,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
     const markChatRead = async (chatId: string) => {
         if (!user?.id) return;
-        try {
-            // Use v2 chat API which handles both v2 conversations and legacy chats
-            await chatApi.markRead(chatId);
-        } catch (error) {
-            // Fall back to legacy API if v2 fails
-            try {
-                await apiMarkChatRead(chatId, user.id);
-            } catch {
-                console.warn('[DataContext] markChatRead failed for both v2 and legacy APIs');
-            }
-        }
-        // Update local state to clear badge immediately
+        await apiMarkChatRead(chatId, user.id);
         setChats((currentChats) => currentChats.map((chat) =>
             chat.id === chatId ? { ...chat, unreadCount: 0 } : chat
         ));
@@ -482,7 +427,6 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 deleteListing: handleDeleteListing,
                 refreshListings,
                 chats,
-                unreadChatsCount,
                 startChat,
                 sendMessage,
                 markChatRead,

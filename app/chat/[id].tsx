@@ -259,9 +259,12 @@ export default function ChatScreen() {
     // ── Mark as read ─────────────────────────────────────────────
     useEffect(() => {
         if (!id) return;
-        // Always use DataContext's markChatRead - it updates both DB and local state
-        void markChatRead(id).catch(() => undefined);
-    }, [id, markChatRead]);
+        if (isLegacyMode) {
+            void markChatRead(id).catch(() => undefined);
+            return;
+        }
+        void chatApi.markRead(id).catch(() => undefined);
+    }, [id, isLegacyMode, markChatRead]);
 
     // ── Fetch online status ──────────────────────────────────────
     useEffect(() => {
