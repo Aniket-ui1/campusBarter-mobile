@@ -10,6 +10,9 @@ import ProfileSetupOverlay from '@/components/ProfileSetupOverlay';
 export default function TabLayout() {
   const { user } = useAuth();
   const { unreadChatsCount } = useData();
+
+  console.log('[TabLayout] 🔔 Unread chats count for badge:', unreadChatsCount);
+
   if (!user) return <Redirect href="/(auth)/welcome" />;
 
   return (

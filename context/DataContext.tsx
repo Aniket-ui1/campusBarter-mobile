@@ -150,8 +150,11 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         if (!user) { setChats([]); return; }
         try {
             // Try v2 API first
+            console.log('[DataContext] 🔄 Loading chats from v2 API...');
             const v2Data = await chatApi.getConversations();
-            if (v2Data.conversations && v2Data.conversations.length > 0) {
+            console.log('[DataContext] ✅ V2 API response:', v2Data);
+
+            if (v2Data.conversations) {
                 const normalizedChats = v2Data.conversations.map(c => ({
                     id: c.conversationId,
                     conversationId: c.conversationId,
@@ -164,15 +167,18 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                     listingTitle: '',
                     messages: chatMessages.current[c.conversationId] ?? [],
                 }));
+                console.log('[DataContext] 📊 Normalized chats:', normalizedChats);
+                console.log('[DataContext] 📬 Unread counts:', normalizedChats.map(c => ({ name: c.otherUserName, unread: c.unreadCount })));
                 setChats(normalizedChats);
                 return;
             }
         } catch (e) {
-            console.warn("[Data] V2 chat API failed, falling back to legacy:", e);
+            console.error("[DataContext] ❌ V2 chat API failed, falling back to legacy:", e);
         }
 
         // Fallback to legacy API
         try {
+            console.log('[DataContext] 🔄 Falling back to legacy API...');
             const data = await getChats(user.id);
             const normalizedChats = data.map(c => ({
                 ...c,
@@ -180,8 +186,9 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 messages: chatMessages.current[c.conversationId ?? c.id] ?? [],
             }));
             setChats(dedupeChatsByParticipant(normalizedChats));
+            console.log('[DataContext] ✅ Legacy chats loaded:', normalizedChats.length);
         } catch (e) {
-            console.warn("[Data] Could not load chats:", e);
+            console.error("[DataContext] ❌ Could not load chats:", e);
         }
     }, [user?.id]);
 
@@ -281,10 +288,16 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         [notifications]
     );
 
-    const unreadChatsCount = useMemo(
-        () => chats.filter(chat => (chat.unreadCount ?? 0) > 0).length,
-        [chats]
-    );
+    const unreadChatsCount = useMemo(() => {
+        const count = chats.filter(chat => (chat.unreadCount ?? 0) > 0).length;
+        console.log('[DataContext] 🔔 Unread chats count:', count, 'Total chats:', chats.length);
+        console.log('[DataContext] 📋 Chat details:', chats.map(c => ({
+            name: c.otherUserName,
+            unread: c.unreadCount,
+            id: c.id
+        })));
+        return count;
+    }, [chats]);
 
     // ── Listings API ──────────────────────────────────────────────
 
