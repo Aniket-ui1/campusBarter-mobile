@@ -83,6 +83,7 @@ interface DataContextType {
     refreshListings: () => Promise<void>;
 
     chats: Chat[];
+    unreadChatsCount: number;
     startChat: (listingId: string, listingTitle: string, userIds: string[], listingOwnerId?: string) => Promise<string>;
     sendMessage: (chatId: string, text: string, senderId: string) => Promise<void>;
     markChatRead: (chatId: string) => Promise<void>;
@@ -253,6 +254,11 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const unreadCount = useMemo(
         () => notifications.filter(n => !n.isRead && !n.read).length,
         [notifications]
+    );
+
+    const unreadChatsCount = useMemo(
+        () => chats.filter(chat => (chat.unreadCount ?? 0) > 0).length,
+        [chats]
     );
 
     // ── Listings API ──────────────────────────────────────────────
@@ -427,6 +433,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 deleteListing: handleDeleteListing,
                 refreshListings,
                 chats,
+                unreadChatsCount,
                 startChat,
                 sendMessage,
                 markChatRead,
