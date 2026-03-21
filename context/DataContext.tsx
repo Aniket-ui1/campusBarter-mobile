@@ -36,8 +36,8 @@ import {
     ApiNotification,
 } from "../lib/api";
 import { chatApi } from "../services/chatApi";
-import { onNewMessage, joinChat, leaveChat } from "../lib/socket";
-import { onNotification, onConversationUpdated } from "../services/socketService";
+import { joinChat, leaveChat } from "../lib/socket";
+import { onNotification, onConversationUpdated, onReceiveMessage } from "../services/socketService";
 import { useAuth } from "./AuthContext";
 
 // ── Public types ──────────────────────────────────────────────────
@@ -206,25 +206,34 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         return () => clearInterval(id);
     }, [authLoading, refreshNotifications]);
 
-    // ── Socket.io: listen for new messages ────────────────────────
+
+    // ── Socket.io: listen for new messages (v2 API) ──────────────
     useEffect(() => {
-        const cleanup = onNewMessage((msg) => {
-            const chatId = msg.conversationId ?? msg.chatId;
-            // Append to local message cache
+        const cleanup = onReceiveMessage((msg) => {
+            const chatId = msg.conversationId;
+            if (!chatId) return;
+
+            // Update message cache for legacy subscribeToMessages
             const prev = chatMessages.current[chatId] ?? [];
             const newMsg: ApiMessage = {
-                ...msg,
-                id: `socket-${msg.senderId}-${Date.now()}`, // local id until next REST refresh
+                id: msg.messageId ?? `socket-${msg.senderId}-${Date.now()}`,
+                senderId: msg.senderId ?? '',
+                senderName: msg.senderName ?? '',
+                text: msg.textContent ?? '',
+                sentAt: msg.createdAt ?? new Date().toISOString(),
             };
             chatMessages.current[chatId] = [...prev, newMsg];
-            // Notify any subscribed screen
+
+            // Notify any subscribed screens
             (msgCallbacks.current[chatId] ?? []).forEach(cb =>
                 cb(chatMessages.current[chatId])
             );
-            // Update chat list preview and unread count, or refresh if the chat is hidden/not loaded.
+
+            // Update chat list preview and unread count INSTANTLY for real-time badge
             setChats((currentChats) => {
                 const chatExists = currentChats.some((chat) => chat.id === chatId);
                 if (!chatExists) {
+                    // New conversation - refresh to fetch it
                     void refreshChats();
                     return currentChats;
                 }
@@ -232,6 +241,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 return dedupeChatsByParticipant(currentChats.map((chat) => {
                     if (chat.id !== chatId) return chat;
 
+                    // Check if this chat is currently open (don't increment unread if viewing it)
                     const isActive = (activeChatSubscriptions.current[chatId] ?? 0) > 0;
                     const nextUnreadCount = msg.senderId === user?.id || isActive
                         ? 0
@@ -239,8 +249,8 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
                     return {
                         ...chat,
-                        lastMessage: msg.text,
-                        lastMessageAt: msg.sentAt,
+                        lastMessage: msg.textContent ?? '[Media]',
+                        lastMessageAt: msg.createdAt ?? new Date().toISOString(),
                         unreadCount: nextUnreadCount,
                     };
                 }));
