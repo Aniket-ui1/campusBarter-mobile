@@ -442,6 +442,8 @@ router.post('/:convId/messages',
                 console.log('[Chat] 📤 Emitting receive_message to room:', convId);
                 console.log('[Chat] Message preview:', preview.substring(0, 30) + '...');
                 console.log('[Chat] Sender:', senderId);
+
+                // Emit to conversation room (for users with chat open)
                 io.to(convId).emit('receive_message', message);
                 io.to(convId).emit('conversation_updated', {
                     conversationId: convId,
@@ -449,6 +451,26 @@ router.post('/:convId/messages',
                     lastMessageTime: message.createdAt,
                     lastSenderId:    senderId,
                 });
+
+                // ALSO emit to user rooms (for badge updates when chat is closed)
+                // Get participant IDs from the conversation
+                const participants = await db.request()
+                    .input('cid', sql.NVarChar(300), convId)
+                    .query('SELECT participant1Id, participant2Id FROM Conversations WHERE conversationId = @cid');
+
+                if (participants.recordset.length > 0) {
+                    const { participant1Id, participant2Id } = participants.recordset[0];
+                    // Emit to recipient's user room (not sender)
+                    const recipientId = participant1Id === senderId ? participant2Id : participant1Id;
+                    io.to(`user:${recipientId}`).emit('receive_message', message);
+                    io.to(`user:${recipientId}`).emit('conversation_updated', {
+                        conversationId: convId,
+                        lastMessage:     preview,
+                        lastMessageTime: message.createdAt,
+                        lastSenderId:    senderId,
+                    });
+                }
+
                 console.log('[Chat] ✅ Events emitted successfully');
             } else {
                 console.error('[Chat] ❌ Socket.io instance not available! Cannot broadcast message.');
@@ -489,6 +511,13 @@ router.put('/:convId/read',
             const io = getIO();
             if (io) {
                 io.to(convId).emit('messages_seen', { conversationId: convId, readByUserId: userId });
+                // ALSO emit to reader's user room so their badge updates instantly
+                io.to(`user:${userId}`).emit('conversation_updated', {
+                    conversationId: convId,
+                    lastMessage: null,
+                    lastMessageTime: new Date().toISOString(),
+                    lastSenderId: null,
+                });
             }
 
             res.json({ success: true });
