@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { Avatar } from '@/components/ui/Avatar';
 import { type Conversation, chatApi } from '@/services/chatApi';
 import { onConversationUpdated } from '@/services/socketService';
+import { useData } from '@/context/DataContext';
 
 function formatTime(dateStr?: string): string {
     if (!dateStr) return '';
@@ -21,14 +22,16 @@ function formatTime(dateStr?: string): string {
 
 export default function ChatsScreen() {
     const router = useRouter();
-    const [conversations, setConversations] = useState<Conversation[]>([]);
+    const { chats } = useData();
+    const [v2Conversations, setV2Conversations] = useState<Conversation[]>([]);
     const [refreshing, setRefreshing] = useState(false);
 
+    // Load v2 conversations from API
     const loadConversations = useCallback(async () => {
         try {
             setRefreshing(true);
             const data = await chatApi.getConversations();
-            setConversations(data.conversations ?? []);
+            setV2Conversations(data.conversations ?? []);
         } catch {
             // Silently fail — stale data is better than a crash
         } finally {
@@ -40,16 +43,46 @@ export default function ChatsScreen() {
         void loadConversations();
     }, [loadConversations]);
 
+    // Merge v2 conversations with DataContext chats (for unread counts)
+    const conversations = useMemo(() => {
+        if (v2Conversations.length === 0) {
+            // Fallback to DataContext chats if no v2 conversations loaded yet
+            return chats.map(chat => ({
+                conversationId: chat.id,
+                participant1Id: '',
+                participant2Id: '',
+                lastMessage: chat.lastMessage ?? '',
+                lastMessageTime: chat.lastMessageAt ?? '',
+                lastSenderId: '',
+                createdAt: '',
+                otherUser: {
+                    id: chat.otherUserId ?? '',
+                    name: chat.otherUserName ?? 'Chat',
+                    avatarUrl: null,
+                },
+                unreadCount: chat.unreadCount ?? 0,
+            }));
+        }
+        // Use v2 conversations but sync unread counts from DataContext
+        return v2Conversations.map(conv => {
+            const dataContextChat = chats.find(c => c.id === conv.conversationId);
+            return {
+                ...conv,
+                unreadCount: dataContextChat?.unreadCount ?? conv.unreadCount ?? 0,
+            };
+        });
+    }, [v2Conversations, chats]);
+
     // Real-time: update conversation preview when a new message arrives
     useEffect(() => {
         const unsub = onConversationUpdated((updated) => {
-            setConversations(prev =>
+            setV2Conversations((prev: Conversation[]) =>
                 prev
-                    .map(c => c.conversationId === updated.conversationId
+                    .map((c: Conversation) => c.conversationId === updated.conversationId
                         ? { ...c, lastMessage: updated.lastMessage, lastMessageTime: updated.lastMessageTime, lastSenderId: updated.lastSenderId }
                         : c
                     )
-                    .sort((a, b) => {
+                    .sort((a: Conversation, b: Conversation) => {
                         const ta = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
                         const tb = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
                         return tb - ta;
@@ -71,7 +104,7 @@ export default function ChatsScreen() {
                     onPress: async () => {
                         try {
                             await chatApi.deleteConversation(convId);
-                            setConversations(prev => prev.filter(c => c.conversationId !== convId));
+                            setV2Conversations((prev: Conversation[]) => prev.filter((c: Conversation) => c.conversationId !== convId));
                         } catch {
                             Alert.alert('Delete failed', `Could not delete the conversation with ${displayName}.`);
                         }

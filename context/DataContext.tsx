@@ -35,9 +35,9 @@ import {
     ApiChat,
     ApiNotification,
 } from "../lib/api";
+import { onNewMessage, joinChat, leaveChat } from "../lib/socket";
+import { onNotification } from "../services/socketService";
 import { chatApi } from "../services/chatApi";
-import { joinChat, leaveChat } from "../lib/socket";
-import { onNotification, onConversationUpdated, onReceiveMessage } from "../services/socketService";
 import { useAuth } from "./AuthContext";
 
 // ── Public types ──────────────────────────────────────────────────
@@ -149,37 +149,39 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const refreshChats = useCallback(async () => {
         if (!user) { setChats([]); return; }
         try {
-            // Use NEW chat API (v2) for consistent unread counts
-            const { conversations } = await chatApi.getConversations();
-            const normalizedChats = conversations.map(c => ({
+            // Try v2 API first
+            const v2Data = await chatApi.getConversations();
+            if (v2Data.conversations && v2Data.conversations.length > 0) {
+                const normalizedChats = v2Data.conversations.map(c => ({
+                    id: c.conversationId,
+                    conversationId: c.conversationId,
+                    otherUserId: c.otherUser?.id ?? '',
+                    otherUserName: c.otherUser?.name ?? 'Chat',
+                    lastMessage: c.lastMessage ?? '',
+                    lastMessageAt: c.lastMessageTime ?? new Date().toISOString(),
+                    unreadCount: c.unreadCount ?? 0,
+                    listingId: '',
+                    listingTitle: '',
+                    messages: chatMessages.current[c.conversationId] ?? [],
+                }));
+                setChats(normalizedChats);
+                return;
+            }
+        } catch (e) {
+            console.warn("[Data] V2 chat API failed, falling back to legacy:", e);
+        }
+
+        // Fallback to legacy API
+        try {
+            const data = await getChats(user.id);
+            const normalizedChats = data.map(c => ({
                 ...c,
-                id: c.conversationId,
-                conversationId: c.conversationId,
-                listingId: '',
-                listingTitle: '',
-                lastMessageAt: c.lastMessageTime ?? c.createdAt,
-                lastMessage: c.lastMessage ?? undefined,
-                unreadCount: c.unreadCount ?? 0,
-                otherUserName: c.otherUser?.name,
-                otherUserId: c.otherUser?.id,
-                otherUserAvatarUrl: c.otherUser?.avatarUrl ?? undefined,
-                messages: chatMessages.current[c.conversationId] ?? [],
+                id: c.conversationId ?? c.id,
+                messages: chatMessages.current[c.conversationId ?? c.id] ?? [],
             }));
             setChats(dedupeChatsByParticipant(normalizedChats));
         } catch (e) {
-            console.warn("[Data] Could not load chats (v2):", e);
-            // Fallback to old API if v2 fails
-            try {
-                const data = await getChats(user.id);
-                const normalizedChats = data.map(c => ({
-                    ...c,
-                    id: c.conversationId ?? c.id,
-                    messages: chatMessages.current[c.conversationId ?? c.id] ?? [],
-                }));
-                setChats(dedupeChatsByParticipant(normalizedChats));
-            } catch (fallbackError) {
-                console.warn("[Data] Could not load chats (fallback):", fallbackError);
-            }
+            console.warn("[Data] Could not load chats:", e);
         }
     }, [user?.id]);
 
@@ -206,34 +208,25 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         return () => clearInterval(id);
     }, [authLoading, refreshNotifications]);
 
-
-    // ── Socket.io: listen for new messages (v2 API) ──────────────
+    // ── Socket.io: listen for new messages ────────────────────────
     useEffect(() => {
-        const cleanup = onReceiveMessage((msg) => {
-            const chatId = msg.conversationId;
-            if (!chatId) return;
-
-            // Update message cache for legacy subscribeToMessages
+        const cleanup = onNewMessage((msg) => {
+            const chatId = msg.conversationId ?? msg.chatId;
+            // Append to local message cache
             const prev = chatMessages.current[chatId] ?? [];
             const newMsg: ApiMessage = {
-                id: msg.messageId ?? `socket-${msg.senderId}-${Date.now()}`,
-                senderId: msg.senderId ?? '',
-                senderName: msg.senderName ?? '',
-                text: msg.textContent ?? '',
-                sentAt: msg.createdAt ?? new Date().toISOString(),
+                ...msg,
+                id: `socket-${msg.senderId}-${Date.now()}`, // local id until next REST refresh
             };
             chatMessages.current[chatId] = [...prev, newMsg];
-
-            // Notify any subscribed screens
+            // Notify any subscribed screen
             (msgCallbacks.current[chatId] ?? []).forEach(cb =>
                 cb(chatMessages.current[chatId])
             );
-
-            // Update chat list preview and unread count INSTANTLY for real-time badge
+            // Update chat list preview and unread count, or refresh if the chat is hidden/not loaded.
             setChats((currentChats) => {
                 const chatExists = currentChats.some((chat) => chat.id === chatId);
                 if (!chatExists) {
-                    // New conversation - refresh to fetch it
                     void refreshChats();
                     return currentChats;
                 }
@@ -241,7 +234,6 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 return dedupeChatsByParticipant(currentChats.map((chat) => {
                     if (chat.id !== chatId) return chat;
 
-                    // Check if this chat is currently open (don't increment unread if viewing it)
                     const isActive = (activeChatSubscriptions.current[chatId] ?? 0) > 0;
                     const nextUnreadCount = msg.senderId === user?.id || isActive
                         ? 0
@@ -249,8 +241,8 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
                     return {
                         ...chat,
-                        lastMessage: msg.textContent ?? '[Media]',
-                        lastMessageAt: msg.createdAt ?? new Date().toISOString(),
+                        lastMessage: msg.text,
+                        lastMessageAt: msg.sentAt,
                         unreadCount: nextUnreadCount,
                     };
                 }));
@@ -258,15 +250,6 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         });
         return cleanup;
     }, [refreshChats, user?.id]);
-
-    // ── Socket.io: listen for conversation updates (e.g., read receipts) ───
-    useEffect(() => {
-        const cleanup = onConversationUpdated(() => {
-            // Refresh chats to update unread counts when messages are marked as read
-            void refreshChats();
-        });
-        return cleanup;
-    }, [refreshChats]);
 
     // ── Socket.io: listen for new notifications ───────────────────
     useEffect(() => {
@@ -374,22 +357,21 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
     const markChatRead = async (chatId: string) => {
         if (!user?.id) return;
-
-        // Try v2 API first, fallback to v1
         try {
+            // Use v2 chat API which handles both v2 conversations and legacy chats
             await chatApi.markRead(chatId);
-        } catch (e) {
-            console.warn("[Data] markRead v2 failed, using fallback:", e);
-            await apiMarkChatRead(chatId, user.id);
+        } catch (error) {
+            // Fall back to legacy API if v2 fails
+            try {
+                await apiMarkChatRead(chatId, user.id);
+            } catch {
+                console.warn('[DataContext] markChatRead failed for both v2 and legacy APIs');
+            }
         }
-
-        // Update local state immediately for instant UI feedback
+        // Update local state to clear badge immediately
         setChats((currentChats) => currentChats.map((chat) =>
             chat.id === chatId ? { ...chat, unreadCount: 0 } : chat
         ));
-
-        // Refresh chats from server to ensure accuracy
-        void refreshChats();
     };
 
     const deleteChat = async (chatId: string) => {
