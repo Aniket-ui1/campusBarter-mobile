@@ -34,9 +34,8 @@ import {
     getMessages,
     getNotifications,
 } from "../lib/api";
-import { emitMarkRead, joinChat, leaveChat, onNewListing, onNewMessage } from "../lib/socket";
+import { emitMarkRead, joinChat, leaveChat, onNewListing, onNewMessage, onNewNotification } from "../lib/socket";
 import { chatApi } from "../services/chatApi";
-import { onNotification } from "../services/socketService";
 import { useAuth } from "./AuthContext";
 
 // ── Public types ──────────────────────────────────────────────────
@@ -257,7 +256,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
     // ── Socket.io: listen for new notifications ───────────────────
     useEffect(() => {
-        const cleanup = onNotification((notif) => {
+        const cleanup = onNewNotification((notif) => {
             const incomingId = (notif as any).notificationId ?? `socket-${Date.now()}`;
             setNotifications(prev => {
                 // Skip if already present (prevents duplicate on fast socket + HTTP race)
