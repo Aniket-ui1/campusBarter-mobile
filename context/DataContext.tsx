@@ -35,9 +35,9 @@ import {
     getMessages,
     getNotifications,
 } from "../lib/api";
-import { onNewMessage, joinChat, leaveChat } from "../lib/socket";
-import { onNotification } from "../services/socketService";
+import { joinChat, leaveChat, onNewMessage, onNewListing, onNewNotification } from "../lib/socket";
 import { chatApi } from "../services/chatApi";
+import { onNotification } from "../services/socketService";
 import { useAuth } from "./AuthContext";
 
 // ── Public types ──────────────────────────────────────────────────
