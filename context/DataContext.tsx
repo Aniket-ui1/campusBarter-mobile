@@ -17,23 +17,23 @@ import React, {
     useState,
 } from "react";
 import {
-    getListings,
-    getChats,
-    getMessages,
-    sendMessage as apiSendMessage,
-    startChat as apiStartChat,
-    markChatRead as apiMarkChatRead,
-    deleteChat as apiDeleteChat,
-    getNotifications,
-    markNotificationRead as apiMarkRead,
-    markAllNotificationsRead as apiMarkAllRead,
-    createListing as apiCreateListing,
+    ApiChat,
     closeListing as apiCloseListing,
+    createListing as apiCreateListing,
+    deleteChat as apiDeleteChat,
     deleteListing as apiDeleteListing,
     ApiListing,
+    markAllNotificationsRead as apiMarkAllRead,
+    markChatRead as apiMarkChatRead,
+    markNotificationRead as apiMarkRead,
     ApiMessage,
-    ApiChat,
     ApiNotification,
+    sendMessage as apiSendMessage,
+    startChat as apiStartChat,
+    getChats,
+    getListings,
+    getMessages,
+    getNotifications,
 } from "../lib/api";
 import { onNewMessage, joinChat, leaveChat } from "../lib/socket";
 import { onNotification } from "../services/socketService";
@@ -135,15 +135,18 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, []);
 
-    // Only start fetching listings once auth has fully resolved (token restored from SecureStore).
-    // Without this gate, the very first fetch runs before the token is set, fails silently,
-    // and listings stay empty until the 30-second polling interval fires.
+    // Load initial listings (only once when auth finishes)
     useEffect(() => {
-        if (authLoading) return; // wait for auth to finish initialising
+        if (authLoading) return;
         void refreshListings();
-        const id = setInterval(refreshListings, 30_000); // poll every 30s
-        return () => clearInterval(id);
     }, [authLoading, refreshListings]);
+
+    // Listen to real-time new listings via Socket
+    useEffect(() => {
+        return onNewListing((newListing) => {
+            setListings(prev => [newListing, ...prev.filter(l => l.id !== newListing.id)]);
+        });
+    }, []);
 
     // ── Load chats ────────────────────────────────────────────────
     const refreshChats = useCallback(async () => {
@@ -204,9 +207,14 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     useEffect(() => {
         if (authLoading) return; // wait for auth to resolve before fetching user data
         void refreshNotifications();
-        const id = setInterval(refreshNotifications, 60_000); // poll every 60s
-        return () => clearInterval(id);
     }, [authLoading, refreshNotifications]);
+
+    // Listen to real-time new notifications via Socket
+    useEffect(() => {
+        return onNewNotification((newNotification) => {
+            setNotifications(prev => [newNotification, ...prev.filter(n => n.id !== newNotification.id)]);
+        });
+    }, []);
 
     // ── Socket.io: listen for new messages ────────────────────────
     useEffect(() => {
@@ -292,19 +300,24 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         data: Omit<Listing, "id" | "createdAt" | "status"> & { category?: string }
     ) => {
         // Let creation errors propagate to the caller (post screen shows Alert)
-        await apiCreateListing({
+        const newId = await apiCreateListing({
             type: data.type,
             title: data.title,
             description: data.description,
             credits: data.credits,
             category: data.category,
         });
-        // Refresh is best-effort — if it fails, the 30s poll will pick up the listing
-        try {
-            await refreshListings();
-        } catch (e) {
-            console.warn("[Data] refreshListings after create failed:", e);
-        }
+
+        // 1. Optimistic Update so the current user sees it immediately
+        setListings(prev => [{
+            ...data,
+            id: newId,
+            createdAt: new Date().toISOString(),
+            status: "OPEN" as const
+        } as Listing, ...prev]);
+
+        // 2. Note: Other users will get this via the `new_listing` socket event 
+        // once you deploy the updated backend code to Azure!
     };
 
     const getListingById = (id: string) => listings.find(l => l.id === id);
