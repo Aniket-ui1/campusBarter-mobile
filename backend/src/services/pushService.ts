@@ -93,23 +93,9 @@ export async function notifyOtherParticipant(
         const { senderName, recipientId } = result.recordset[0];
         const bodyText = preview.length > 100 ? preview.slice(0, 97) + '...' : preview;
 
-        console.log('[PushService] 🔔 Creating in-app notification for:', {
-            recipientId,
-            senderName,
-            conversationId,
-            preview: bodyText
-        });
-
-        // Create in-app notification
+        // notifyMessage handles push (when offline) + skips bell DB insert.
+        // Do NOT call sendPushToUser directly here — notifyEvent already does it.
         notifyMessage(recipientId, senderName, conversationId, bodyText);
-
-        // Send push notification
-        await sendPushToUser(
-            recipientId,
-            `New message from ${senderName}`,
-            bodyText,
-            { type: 'new_message', conversationId }
-        );
     } catch (err) {
         console.error('[PushService] notifyOtherParticipant failed:', err);
     }
