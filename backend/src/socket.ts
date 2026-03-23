@@ -13,6 +13,8 @@ import jwksClient from 'jwks-rsa';
 import sql from 'mssql';
 import { Socket, Server as SocketServer } from 'socket.io';
 import { canAccessChat, canAccessConversation, getPool } from './db';
+import { notifyMessage } from './notifyEvent';
+import { getIO } from './socketInstance';
 
 // ── In-memory map of connected users for online status ─────────
 const connectedUsers = new Map<string, boolean>();
@@ -275,7 +277,7 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
                 // Also emit directly to sender (reliable — doesn't depend on ack callbacks)
                 socket.emit('message_sent', { message, tempId: data.tempId });
 
-                // Broadcast to others
+                // Broadcast to others in the chat room (for open chat screens)
                 socket.to(conversationId).emit('receive_message', message);
                 socket.to(conversationId).emit('conversation_updated', {
                     conversationId,
@@ -283,6 +285,35 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
                     lastMessageTime: message.createdAt,
                     lastSenderId: socket.userId!,
                 });
+
+                // Also emit new_message to recipient's personal user room so their
+                // chat badge updates even when they're not in this chat screen.
+                try {
+                    const partRow = await db.request()
+                        .input('cid', sql.NVarChar(300), conversationId)
+                        .input('sid', sql.NVarChar(128), socket.userId!)
+                        .query(`
+                            SELECT CASE WHEN participant1Id = @sid THEN participant2Id ELSE participant1Id END AS recipientId
+                            FROM Conversations WHERE conversationId = @cid
+                        `);
+                    if (partRow.recordset.length > 0) {
+                        const recipientId = partRow.recordset[0].recipientId as string;
+                        const io = getIO();
+                        io.to(`user:${recipientId}`).emit('new_message', {
+                            messageId,
+                            conversationId,
+                            chatId: conversationId,
+                            senderId: socket.userId!,
+                            senderName: socket.displayName,
+                            text: safeText,
+                            sentAt: message.createdAt,
+                        });
+                        // Push notification for offline recipients (notifyMessage checks isUserOnline)
+                        notifyMessage(recipientId, socket.displayName ?? 'Someone', conversationId, safeText);
+                    }
+                } catch (err) {
+                    console.error('[Socket] Failed to emit to user room:', (err as Error).message);
+                }
 
             } catch (e: any) {
                 console.error('[Socket] send_message error:', e.message);
