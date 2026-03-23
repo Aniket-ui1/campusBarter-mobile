@@ -437,6 +437,49 @@ export async function canAccessChat(chatId: string, userId: string): Promise<boo
     return result.recordset.length > 0;
 }
 
+/**
+ * Check if a user can access a conversation in Chat System v2.
+ * Conversations table uses deterministic IDs: userId1_userId2 (sorted).
+ * A user can access a conversation if they are participant1 or participant2.
+ */
+export async function canAccessConversation(conversationId: string, userId: string): Promise<boolean> {
+    try {
+        console.log(`[DB] canAccessConversation checking: conversationId=${conversationId}, userId=${userId}`);
+        const db = await getPool();
+        const result = await db.request()
+            .input('conversationId', sql.NVarChar(300), conversationId)
+            .input('userId', sql.NVarChar(128), userId)
+            .query(`
+                SELECT TOP 1 1 AS allowed, c.participant1Id, c.participant2Id
+                FROM Conversations c
+                WHERE c.conversationId = @conversationId
+                  AND (c.participant1Id = @userId OR c.participant2Id = @userId)
+            `);
+
+        const hasAccess = result.recordset.length > 0;
+        if (hasAccess) {
+            console.log(`[DB] ✅ Access granted: user ${userId} is participant in conversation ${conversationId}`);
+        } else {
+            // Check if conversation exists at all
+            const existsResult = await db.request()
+                .input('conversationId', sql.NVarChar(300), conversationId)
+                .query(`SELECT participant1Id, participant2Id FROM Conversations WHERE conversationId = @conversationId`);
+
+            if (existsResult.recordset.length === 0) {
+                console.log(`[DB] ❌ Conversation ${conversationId} does not exist in Conversations table`);
+            } else {
+                const conv = existsResult.recordset[0];
+                console.log(`[DB] ❌ Access denied: user ${userId} is not a participant. Participants are: ${conv.participant1Id}, ${conv.participant2Id}`);
+            }
+        }
+
+        return hasAccess;
+    } catch (error) {
+        console.error('[DB] canAccessConversation error:', error);
+        return false;
+    }
+}
+
 export async function sendMessage(
     chatId: string,
     senderId: string,
@@ -1010,7 +1053,9 @@ export async function getNotifications(userId: string): Promise<Record<string, u
     const result = await db.request()
         .input('userId', sql.NVarChar(128), userId)
         .query(`
-            SELECT id, type, title, body, [read], relatedId, createdAt
+            SELECT notificationId, userId, type, title, message,
+                   relatedEntityId, relatedEntityType, actionUrl,
+                   isRead, createdAt
             FROM   Notifications
             WHERE  userId = @userId
             ORDER  BY createdAt DESC
@@ -1023,36 +1068,40 @@ export async function markNotificationRead(notificationId: string, userId: strin
     await db.request()
         .input('id', sql.NVarChar(128), notificationId)
         .input('userId', sql.NVarChar(128), userId)
-        .query(`UPDATE Notifications SET [read] = 1 WHERE id = @id AND userId = @userId`);
+        .query(`UPDATE Notifications SET isRead = 1 WHERE notificationId = @id AND userId = @userId`);
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
     const db = await getPool();
     await db.request()
         .input('userId', sql.NVarChar(128), userId)
-        .query(`UPDATE Notifications SET [read] = 1 WHERE userId = @userId`);
+        .query(`UPDATE Notifications SET isRead = 1 WHERE userId = @userId`);
 }
 
 export async function createNotification(
     userId: string,
     type: string,
     title: string,
-    body: string,
-    relatedId?: string
-): Promise<void> {
+    message: string,
+    relatedEntityId?: string,
+    relatedEntityType?: string,
+    actionUrl?: string
+): Promise<string> {
     const db = await getPool();
-    const id = crypto.randomUUID();
-    await db.request()
-        .input('id', sql.NVarChar(128), id)
+    const result = await db.request()
         .input('userId', sql.NVarChar(128), userId)
         .input('type', sql.NVarChar(50), type)
         .input('title', sql.NVarChar(200), title)
-        .input('body', sql.NVarChar(500), body)
-        .input('relatedId', sql.NVarChar(128), relatedId ?? null)
+        .input('message', sql.NVarChar(500), message)
+        .input('relatedEntityId', sql.NVarChar(128), relatedEntityId ?? null)
+        .input('relatedEntityType', sql.NVarChar(50), relatedEntityType ?? null)
+        .input('actionUrl', sql.NVarChar(500), actionUrl ?? null)
         .query(`
-            INSERT INTO Notifications (id, userId, type, title, body, relatedId)
-            VALUES (@id, @userId, @type, @title, @body, @relatedId)
+            INSERT INTO Notifications (userId, type, title, message, relatedEntityId, relatedEntityType, actionUrl)
+            OUTPUT INSERTED.notificationId
+            VALUES (@userId, @type, @title, @message, @relatedEntityId, @relatedEntityType, @actionUrl)
         `);
+    return result.recordset[0].notificationId;
 }
 
 // ── Time Credits ──────────────────────────────────────────────

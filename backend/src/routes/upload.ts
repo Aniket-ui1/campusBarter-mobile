@@ -14,8 +14,22 @@ import crypto from 'crypto';
 export const uploadRouter = Router();
 
 // ── Allowed file types ────────────────────────────────────
-const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+const ALLOWED_TYPES = [
+    'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'audio/m4a',
+    'audio/mp4',
+    'audio/mpeg',
+    'audio/wav',
+    'audio/x-m4a',
+    'audio/webm',
+    'audio/ogg',
+    'audio/3gpp',
+    'audio/3gpp2',
+];
+const MAX_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB (includes audio)
 
 // Store file in memory (not disk) — we stream directly to Azure Blob Storage
 const storage = multer.memoryStorage();
@@ -26,7 +40,7 @@ const upload = multer({
         if (ALLOWED_TYPES.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Only jpg, png, and webp images are allowed'));
+            cb(new Error('Only images (jpg, png, webp, gif), documents (pdf, doc, docx), and audio (m4a, mp3, wav, webm, ogg) are allowed'));
         }
     },
 });
@@ -63,7 +77,7 @@ uploadRouter.post('/', upload.single('image'), async (req: Request, res: Respons
         res.status(201).json({ url });
     } catch (err) {
         if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-            res.status(400).json({ error: 'File too large. Maximum size is 5MB.' });
+            res.status(400).json({ error: 'File too large. Maximum size is 25MB.' });
             return;
         }
         const message = err instanceof Error ? err.message : 'Upload failed';

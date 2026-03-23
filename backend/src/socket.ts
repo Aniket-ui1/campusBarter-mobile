@@ -11,7 +11,7 @@ import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import sql from 'mssql';
 import { Socket, Server as SocketServer } from 'socket.io';
-import { canAccessChat, getPool } from './db';
+import { canAccessChat, canAccessConversation, getPool } from './db';
 
 // ── In-memory map of connected users for online status ─────────
 const connectedUsers = new Map<string, boolean>();
@@ -154,7 +154,7 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
             try {
                 const db = await getPool();
                 await db.request()
-                    .input('uid', sql.NVarChar(200), socket.userId)
+                    .input('uid', sql.NVarChar(128), socket.userId)
                     .query(`
                         UPDATE Users
                         SET lastSeenAt = GETUTCDATE()
@@ -166,16 +166,31 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
         }
 
         const joinConversationRoom = async (conversationId: string) => {
+            console.log(`[Socket] 🚪 joinConversationRoom called by ${socket.userId} for conversation:`, conversationId);
             try {
-                if (!conversationId?.trim()) return;
-                const allowed = await canAccessChat(conversationId, socket.userId!);
+                if (!conversationId?.trim()) {
+                    console.log(`[Socket] ❌ Empty conversationId, aborting join`);
+                    return;
+                }
+
+                // Detect Chat System v2 (userId_userId format) vs legacy (single UUID)
+                const isV2Conversation = conversationId.includes('_') && conversationId.split('_').length === 2;
+
+                console.log(`[Socket] 🔐 Checking access for ${socket.userId} to ${isV2Conversation ? 'v2 conversation' : 'legacy chat'} ${conversationId}`);
+
+                const allowed = isV2Conversation
+                    ? await canAccessConversation(conversationId, socket.userId!)
+                    : await canAccessChat(conversationId, socket.userId!);
+
                 if (!allowed) {
+                    console.log(`[Socket] ❌ Access denied for ${socket.userId} to conversation ${conversationId}`);
                     socket.emit('socket_error', { message: 'Access denied for this conversation' });
                     return;
                 }
                 socket.join(conversationId);
-                console.log(`[Socket] ${socket.userId} joined conversation ${conversationId}`);
-            } catch {
+                console.log(`[Socket] ✅ ${socket.userId} successfully joined conversation ${conversationId}`);
+            } catch (error) {
+                console.error(`[Socket] ❌ Error joining conversation:`, error);
                 socket.emit('socket_error', { message: 'Failed to join conversation' });
             }
         };
@@ -245,7 +260,7 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
                 try {
                     const db = await getPool();
                     await db.request()
-                        .input('uid', sql.NVarChar(200), socket.userId)
+                        .input('uid', sql.NVarChar(128), socket.userId)
                         .query(`
                             UPDATE Users
                             SET lastSeenAt = GETUTCDATE()

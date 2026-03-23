@@ -23,6 +23,19 @@ export interface Conversation {
     };
 }
 
+export interface MessageReaction {
+    emoji: string;
+    userId: string;
+    displayName?: string;
+}
+
+export interface ReplyContext {
+    messageId: string;
+    textContent: string | null;
+    messageType: string;
+    senderName?: string;
+}
+
 export interface ChatMessage {
     messageId: string;
     conversationId: string;
@@ -36,6 +49,17 @@ export interface ChatMessage {
     readAt: string | null;
     isDeleted: boolean;
     createdAt: string;
+    reactions?: MessageReaction[];
+    // Reply threading
+    replyToMessageId?: string | null;
+    replyContext?: ReplyContext | null;
+    // Message editing
+    isEdited?: boolean;
+    editedAt?: string | null;
+    // Pin messages
+    isPinned?: boolean;
+    pinnedAt?: string | null;
+    pinnedBy?: string | null;
 }
 
 function authHeaders(): Record<string, string> {
@@ -314,5 +338,33 @@ export const chatApi = {
     /** Search messages within a conversation. */
     searchConversation(convId: string, q: string): Promise<{ results: ChatMessage[] }> {
         return chatFetch(`${base()}/${encodeURIComponent(convId)}/search?q=${encodeURIComponent(q)}`);
+    },
+
+    /** Add or remove a reaction to a message (toggle behavior). */
+    addReaction(messageId: string, emoji: string): Promise<{ success: boolean; action: 'added' | 'removed'; reactionId?: string }> {
+        return chatFetch(`${base()}/message/${encodeURIComponent(messageId)}/react`, {
+            method: 'POST',
+            body: JSON.stringify({ emoji }),
+        });
+    },
+
+    /** Get all reactions for a message. */
+    getReactions(messageId: string): Promise<{ reactions: MessageReaction[] }> {
+        return chatFetch(`${base()}/message/${encodeURIComponent(messageId)}/reactions`);
+    },
+
+    /** Edit a text message (only sender, within 15 minutes). */
+    editMessage(messageId: string, textContent: string): Promise<{ success: boolean; messageId: string; textContent: string }> {
+        return chatFetch(`${base()}/message/${encodeURIComponent(messageId)}`, {
+            method: 'PUT',
+            body: JSON.stringify({ textContent }),
+        });
+    },
+
+    /** Pin or unpin a message (toggle behavior). */
+    pinMessage(messageId: string): Promise<{ success: boolean; action: 'pinned' | 'unpinned'; isPinned: boolean }> {
+        return chatFetch(`${base()}/message/${encodeURIComponent(messageId)}/pin`, {
+            method: 'POST',
+        });
     },
 };

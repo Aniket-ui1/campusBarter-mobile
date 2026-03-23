@@ -8,6 +8,7 @@
 import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import sql from 'mssql';
 import { getPool } from '../db';
+import { notifyMessage } from '../notifyEvent';
 
 const expo = new Expo();
 
@@ -19,7 +20,7 @@ async function getTokensForUser(userId: string): Promise<string[]> {
     try {
         const db = await getPool();
         const result = await db.request()
-            .input('uid', sql.NVarChar(200), userId)
+            .input('uid', sql.NVarChar(128), userId)
             .query('SELECT pushToken FROM UserPushTokens WHERE userId = @uid');
         return result.recordset.map((r: { pushToken: string }) => r.pushToken);
     } catch {
@@ -75,7 +76,7 @@ export async function notifyOtherParticipant(
     try {
         const result = await pool.request()
             .input('cid', sql.NVarChar(300), conversationId)
-            .input('sid', sql.NVarChar(200), senderId)
+            .input('sid', sql.NVarChar(128), senderId)
             .query(`
                 SELECT u.displayName AS senderName,
                        CASE
@@ -92,6 +93,17 @@ export async function notifyOtherParticipant(
         const { senderName, recipientId } = result.recordset[0];
         const bodyText = preview.length > 100 ? preview.slice(0, 97) + '...' : preview;
 
+        console.log('[PushService] 🔔 Creating in-app notification for:', {
+            recipientId,
+            senderName,
+            conversationId,
+            preview: bodyText
+        });
+
+        // Create in-app notification
+        notifyMessage(recipientId, senderName, conversationId, bodyText);
+
+        // Send push notification
         await sendPushToUser(
             recipientId,
             `New message from ${senderName}`,

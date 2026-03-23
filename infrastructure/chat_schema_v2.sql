@@ -20,11 +20,11 @@ IF NOT EXISTS (
 BEGIN
     CREATE TABLE Conversations (
         conversationId   NVARCHAR(300)  NOT NULL PRIMARY KEY,
-        participant1Id   NVARCHAR(200)  NOT NULL,
-        participant2Id   NVARCHAR(200)  NOT NULL,
+        participant1Id   NVARCHAR(128)  NOT NULL,
+        participant2Id   NVARCHAR(128)  NOT NULL,
         lastMessage      NVARCHAR(500)  NULL,
         lastMessageTime  DATETIME2      NULL,
-        lastSenderId     NVARCHAR(200)  NULL,
+        lastSenderId     NVARCHAR(128)  NULL,
         -- Pipe-separated OID values of users who soft-deleted this chat
         deletedFor       NVARCHAR(500)  NOT NULL DEFAULT '',
         createdAt        DATETIME2      NOT NULL DEFAULT GETUTCDATE(),
@@ -52,7 +52,7 @@ BEGIN
     CREATE TABLE ConversationMessages (
         messageId        NVARCHAR(128)  NOT NULL PRIMARY KEY DEFAULT NEWID(),
         conversationId   NVARCHAR(300)  NOT NULL,
-        senderId         NVARCHAR(200)  NOT NULL,
+        senderId         NVARCHAR(128)  NOT NULL,
         messageType      NVARCHAR(20)   NOT NULL DEFAULT 'text'
                                         CHECK (messageType IN ('text','image','file')),
         textContent      NVARCHAR(2000) NULL,
@@ -86,7 +86,7 @@ IF NOT EXISTS (
 BEGIN
     CREATE TABLE UserPushTokens (
         tokenId    INT            IDENTITY(1,1) PRIMARY KEY,
-        userId     NVARCHAR(200)  NOT NULL,
+        userId     NVARCHAR(128)  NOT NULL,
         pushToken  NVARCHAR(400)  NOT NULL,
         platform   NVARCHAR(20)   NULL CHECK (platform IN ('ios','android','web',NULL)),
         createdAt  DATETIME2      NOT NULL DEFAULT GETUTCDATE(),
@@ -115,9 +115,9 @@ ELSE
     PRINT 'lastSeenAt column already exists — skipped';
 
 -- ── 6. Verify ────────────────────────────────────────────────
-SELECT TABLE_NAME, CREATE_DATE
+SELECT name AS TABLE_NAME, create_date AS CREATE_DATE
 FROM   sys.tables
 WHERE  name IN ('Conversations','ConversationMessages','UserPushTokens')
-ORDER  BY CREATE_DATE;
+ORDER  BY create_date;
 
 SELECT 'Users.lastSeenAt' AS column_name, 'Added' AS status;
