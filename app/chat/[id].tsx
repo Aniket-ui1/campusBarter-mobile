@@ -16,11 +16,12 @@ import {
     onUserTyping,
 } from '@/services/socketService';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import EmojiSelector from 'react-native-emoji-selector';
 // import { useActionSheet } from '@expo/react-native-action-sheet';
+import { getApiBase, getApiToken } from '@/lib/api';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -37,7 +38,6 @@ import {
     TextInput,
     View,
 } from 'react-native';
-import { getApiBase, getApiToken } from '@/lib/api';
 
 // ── Helpers ──────────────────────────────────────────────────────
 function formatTime(iso: string): string {
@@ -227,9 +227,13 @@ export default function ChatScreen() {
         }
     }, [id, isLegacyMode, paramRecipientName, user?.id, recipientId, loadOlderMessages, mapLegacyMessage, getChatById]);
 
+    const loadedChatId = useRef<string | null>(null);
+
     useEffect(() => {
+        if (!id || loadedChatId.current === id) return;
+        loadedChatId.current = id;
         void loadMessages(1);
-    }, [loadMessages]);
+    }, [id, loadMessages]);
 
     // ── Schedule midnight update for date labels ─────────────────
     useEffect(() => {
@@ -257,8 +261,11 @@ export default function ChatScreen() {
     }, []);
 
     // ── Mark as read ─────────────────────────────────────────────
+    const markedReadId = useRef<string | null>(null);
+
     useEffect(() => {
-        if (!id) return;
+        if (!id || markedReadId.current === id) return;
+        markedReadId.current = id;
         // Always use DataContext's markChatRead - it updates both DB and local state
         void markChatRead(id).catch(() => undefined);
     }, [id, markChatRead]);
@@ -348,7 +355,7 @@ export default function ChatScreen() {
                 return updated;
             });
             scrollToLatest();
-            void chatApi.markRead(id).catch(() => undefined);
+            // Automatically marking read on receive is removed to save API calls
         });
 
         const unsubSeen = onMessagesSeen(({ conversationId }) => {
@@ -405,7 +412,8 @@ export default function ChatScreen() {
             unsubReactionAdded();
             unsubReactionRemoved();
         };
-    }, [id, isLegacyMode, user?.id, user?.displayName, subscribeToMessages, mapLegacyMessage]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, isLegacyMode, user?.id, user?.displayName]);
 
     // ── Send message ─────────────────────────────────────────────
     const [sendingMedia, setSendingMedia] = useState(false);

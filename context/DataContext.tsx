@@ -35,7 +35,7 @@ import {
     getMessages,
     getNotifications,
 } from "../lib/api";
-import { joinChat, leaveChat, onNewMessage, onNewListing, onNewNotification } from "../lib/socket";
+import { joinChat, leaveChat, onNewListing, onNewMessage, onNewNotification } from "../lib/socket";
 import { chatApi } from "../services/chatApi";
 import { onNotification } from "../services/socketService";
 import { useAuth } from "./AuthContext";
