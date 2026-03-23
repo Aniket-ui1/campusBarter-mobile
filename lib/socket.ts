@@ -23,6 +23,8 @@ const messageHandlers = new Set<(msg: {
 const typingHandlers = new Set<(data: { conversationId?: string; userId: string; displayName: string }) => void>();
 const listingHandlers = new Set<(listing: any) => void>();
 const notificationHandlers = new Set<(notification: any) => void>();
+const messageSentHandlers = new Set<(data: { message: any; tempId?: string }) => void>();
+const messageSendErrorHandlers = new Set<(data: { error: string; tempId?: string }) => void>();
 
 function normalizeMessage(msg: {
     conversationId?: string;
@@ -129,6 +131,14 @@ export function connectSocket(): Socket {
     _socket.on('user_typing', dispatchTyping);
     _socket.on('new_listing', dispatchNewListing);
     _socket.on('notification', dispatchNewNotification);
+    _socket.on('message_sent', (data) => {
+        console.log('[Socket] ✅ message_sent confirmation:', data?.message?.messageId);
+        messageSentHandlers.forEach((h) => h(data));
+    });
+    _socket.on('message_send_error', (data) => {
+        console.error('[Socket] ❌ message_send_error:', data?.error);
+        messageSendErrorHandlers.forEach((h) => h(data));
+    });
 
     return _socket;
 }
@@ -170,11 +180,38 @@ export function emitTyping(chatId: string) {
     _socket?.emit('typing', chatId);
 }
 
-export function emitConversationMessage(data: {
-    conversationId: string;
-    text: string;
-}) {
-    _socket?.emit('send_message', data);
+/** Send a message via socket (fire-and-forget). Confirmation comes via 'message_sent' event. */
+export function emitConversationMessage(
+    data: {
+        conversationId: string;
+        text: string;
+        tempId?: string;
+    }
+): boolean {
+    if (_socket?.connected) {
+        console.log('[Socket] Emitting send_message:', { conversationId: data.conversationId, tempId: data.tempId });
+        _socket.emit('send_message', data);
+        return true;
+    }
+    console.warn('[Socket] Cannot send — socket not connected');
+    return false;
+}
+
+/** Listen for send confirmations from the server. Returns cleanup fn. */
+export function onMessageSent(handler: (data: { message: any; tempId?: string }) => void): () => void {
+    messageSentHandlers.add(handler);
+    return () => { messageSentHandlers.delete(handler); };
+}
+
+/** Listen for send errors from the server. Returns cleanup fn. */
+export function onMessageSendError(handler: (data: { error: string; tempId?: string }) => void): () => void {
+    messageSendErrorHandlers.add(handler);
+    return () => { messageSendErrorHandlers.delete(handler); };
+}
+
+/** Emit mark_read to mark all messages in a conversation as read. */
+export function emitMarkRead(conversationId: string) {
+    _socket?.emit('mark_read', { conversationId });
 }
 
 /** Emit stop-typing to the chat room. */
