@@ -15,7 +15,7 @@ import {
     onReceiveMessage,
     onUserTyping,
 } from '@/services/socketService';
-import { emitConversationMessage, onMessageSent, onMessageSendError } from '@/lib/socket';
+import { emitConversationMessage, emitMarkRead, onMessageSent, onMessageSendError } from '@/lib/socket';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -354,7 +354,10 @@ export default function ChatScreen() {
                 return updated;
             });
             scrollToLatest();
-            // Automatically marking read on receive is removed to save API calls
+            // Mark incoming messages as read via socket (zero API calls)
+            if (msg.senderId !== user?.id) {
+                emitMarkRead(id);
+            }
         });
 
         const unsubSeen = onMessagesSeen(({ conversationId, readByUserId }) => {
@@ -407,11 +410,17 @@ export default function ChatScreen() {
         const unsubSent = onMessageSent(({ message, tempId }) => {
             if (message.conversationId !== id) return;
             const stableMsg: ChatMessage = {
-                ...message,
                 messageId: message.messageId,
+                conversationId: message.conversationId,
                 senderId: message.senderId,
                 senderName: message.senderName,
+                messageType: message.messageType ?? 'text',
                 textContent: message.textContent,
+                mediaUrl: message.mediaUrl ?? null,
+                mediaName: message.mediaName ?? null,
+                isRead: false,
+                readAt: null,
+                isDeleted: false,
                 createdAt: message.createdAt,
             };
             setMessages(prev => mergeMessages(prev.map(m =>
@@ -902,9 +911,9 @@ export default function ChatScreen() {
                             </Text>
                             {isMe && !item.isDeleted && (
                                 <Ionicons
-                                    name={isOptimistic ? 'time-outline' : (item.isRead ? 'checkmark-done' : 'checkmark')}
+                                    name={isOptimistic ? 'time-outline' : 'checkmark-done'}
                                     size={13}
-                                    color={isOptimistic ? 'rgba(255,255,255,0.7)' : (item.isRead ? '#4FC3F7' : 'rgba(255,255,255,0.7)')}
+                                    color={isOptimistic ? 'rgba(0,0,0,0.3)' : (item.isRead ? '#4FC3F7' : 'rgba(0,0,0,0.4)')}
                                     style={{ marginLeft: 2 }}
                                 />
                             )}
