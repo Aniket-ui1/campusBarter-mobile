@@ -146,12 +146,12 @@ export const chatApi = {
      * Find existing or create new conversation with another user.
      * The server derives currentUserId from the JWT — never send it from client.
      */
-    findOrCreate(otherUserId: string): Promise<{ conversation: Conversation; isNew: boolean }> {
+    findOrCreate(otherUserId: string, listingTitle?: string): Promise<{ conversation: Conversation; isNew: boolean }> {
         return tryFetch([
             async () => {
                 const result = await chatFetch<{ conversation: any; isNew?: boolean }>(`${base()}/conversations`, {
                     method: 'POST',
-                    body: JSON.stringify({ otherUserId }),
+                    body: JSON.stringify({ otherUserId, ...(listingTitle ? { listingTitle } : {}) }),
                 });
                 return {
                     conversation: normalizeConversation(result.conversation),

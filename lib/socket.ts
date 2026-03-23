@@ -95,8 +95,9 @@ export function connectSocket(): Socket {
             cb({ token });
         },
         transports: ['websocket'],
-        reconnectionAttempts: 5,
+        reconnectionAttempts: Infinity,
         reconnectionDelay: 2000,
+        reconnectionDelayMax: 10000,
     });
     console.log('[Socket] Socket instance created');
 

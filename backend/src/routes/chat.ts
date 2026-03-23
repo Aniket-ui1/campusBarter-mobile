@@ -15,6 +15,7 @@ import { validate } from '../middleware/validate';
 import { notifyOtherParticipant } from '../services/pushService';
 import { isUserOnline } from '../socket';
 import { getIO } from '../socketInstance';
+import { notifySkillRequest } from '../notifyEvent';
 
 const router = Router();
 router.use(verifyAzureAdToken);
@@ -32,10 +33,12 @@ router.post('/conversations',
         body('otherUserId')
             .trim().notEmpty().withMessage('otherUserId is required')
             .isLength({ max: 200 }).withMessage('otherUserId too long'),
+        body('listingTitle').optional().trim().isLength({ max: 200 }),
     ]),
     async (req: Request, res: Response) => {
         const currentUserId = req.user!.id;
         const otherUserId = String(req.body.otherUserId).trim();
+        const listingTitle = typeof req.body.listingTitle === 'string' ? req.body.listingTitle.trim() : '';
 
         if (otherUserId === currentUserId) {
             res.status(400).json({ error: 'Cannot start a conversation with yourself' });
@@ -52,6 +55,10 @@ router.post('/conversations',
                 .query('SELECT * FROM Conversations WHERE conversationId = @id');
 
             if (existing.recordset.length > 0) {
+                // Notify even for existing conversations — user explicitly clicked "Request This Skill"
+                if (listingTitle) {
+                    notifySkillRequest(otherUserId, req.user!.displayName, listingTitle, convId);
+                }
                 res.json({ conversation: existing.recordset[0], isNew: false });
                 return;
             }
@@ -69,6 +76,10 @@ router.post('/conversations',
             const created = await db.request()
                 .input('id', sql.NVarChar(300), convId)
                 .query('SELECT * FROM Conversations WHERE conversationId = @id');
+
+            if (listingTitle) {
+                notifySkillRequest(otherUserId, req.user!.displayName, listingTitle, convId);
+            }
 
             res.status(201).json({ conversation: created.recordset[0], isNew: true });
         } catch (e: any) {
@@ -440,8 +451,7 @@ router.post('/:convId/messages',
             const io = getIO();
             if (io) {
                 console.log('[Chat] 📤 Emitting receive_message to room:', convId);
-                console.log('[Chat] Message preview:', preview.substring(0, 30) + '...');
-                console.log('[Chat] Sender:', senderId);
+                // 1. Emit full message to chat room (for users with the chat screen open)
                 io.to(convId).emit('receive_message', message);
                 io.to(convId).emit('conversation_updated', {
                     conversationId: convId,
@@ -449,7 +459,30 @@ router.post('/:convId/messages',
                     lastMessageTime: message.createdAt,
                     lastSenderId:    senderId,
                 });
-                console.log('[Chat] ✅ Events emitted successfully');
+                // 2. Emit new_message to recipient's user room (for badge updates when not in chat)
+                try {
+                    const partRow = await db.request()
+                        .input('cid', sql.NVarChar(300), convId)
+                        .input('sid', sql.NVarChar(128), senderId)
+                        .query(`
+                            SELECT CASE WHEN participant1Id = @sid THEN participant2Id ELSE participant1Id END AS recipientId
+                            FROM Conversations WHERE conversationId = @cid
+                        `);
+                    if (partRow.recordset.length > 0) {
+                        const recipientId = partRow.recordset[0].recipientId;
+                        io.to(`user:${recipientId}`).emit('new_message', {
+                            messageId,
+                            conversationId: convId,
+                            chatId: convId,
+                            senderId,
+                            senderName: req.user!.displayName,
+                            text: safeText ?? preview,
+                            sentAt: message.createdAt,
+                        });
+                    }
+                } catch (e) {
+                    console.error('[Chat] Failed to emit new_message to user room:', e);
+                }
             } else {
                 console.error('[Chat] ❌ Socket.io instance not available! Cannot broadcast message.');
             }

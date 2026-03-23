@@ -23,6 +23,8 @@ export function setupNotificationHandler(): void {
     Notifications.setNotificationHandler({
         handleNotification: async () => ({
             shouldShowAlert: false,  // suppress banner — user sees live socket update
+            shouldShowBanner: false,
+            shouldShowList: false,
             shouldPlaySound: false,
             shouldSetBadge: true,
         }),

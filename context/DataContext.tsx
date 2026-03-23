@@ -34,9 +34,8 @@ import {
     getMessages,
     getNotifications,
 } from "../lib/api";
-import { emitMarkRead, joinChat, leaveChat, onNewListing, onNewMessage } from "../lib/socket";
+import { emitMarkRead, joinChat, leaveChat, onNewListing, onNewMessage, onNewNotification } from "../lib/socket";
 import { chatApi } from "../services/chatApi";
-import { onNotification } from "../services/socketService";
 import { useAuth } from "./AuthContext";
 
 // ── Public types ──────────────────────────────────────────────────
@@ -216,11 +215,15 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     useEffect(() => {
         const cleanup = onNewMessage((msg) => {
             const chatId = msg.conversationId ?? msg.chatId;
-            // Append to local message cache
+            // Dedup: if a messageId is present (v2 system emits to both room + user room),
+            // skip if already in cache to prevent the same message appearing twice.
+            const msgId = (msg as any).messageId;
             const prev = chatMessages.current[chatId] ?? [];
+            if (msgId && prev.some(m => (m as any).messageId === msgId || m.id === msgId)) return;
+            // Append to local message cache
             const newMsg: ApiMessage = {
                 ...msg,
-                id: `socket-${msg.senderId}-${Date.now()}`, // local id until next REST refresh
+                id: msgId ?? `socket-${msg.senderId}-${Date.now()}`,
             };
             chatMessages.current[chatId] = [...prev, newMsg];
             // Notify any subscribed screen
@@ -257,7 +260,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
     // ── Socket.io: listen for new notifications ───────────────────
     useEffect(() => {
-        const cleanup = onNotification((notif) => {
+        const cleanup = onNewNotification((notif) => {
             const incomingId = (notif as any).notificationId ?? `socket-${Date.now()}`;
             setNotifications(prev => {
                 // Skip if already present (prevents duplicate on fast socket + HTTP race)
