@@ -19,6 +19,8 @@ const messageHandlers = new Set<(msg: {
     sentAt: string;
 }) => void>();
 const typingHandlers = new Set<(data: { conversationId?: string; userId: string; displayName: string }) => void>();
+const listingHandlers = new Set<(listing: any) => void>();
+const notificationHandlers = new Set<(notification: any) => void>();
 
 function normalizeMessage(msg: {
     conversationId?: string;
@@ -52,6 +54,14 @@ function dispatchTyping(data: { conversationId?: string; userId: string; display
     typingHandlers.forEach((handler) => handler(data));
 }
 
+function dispatchNewListing(listing: any) {
+    listingHandlers.forEach((handler) => handler(listing));
+}
+
+function dispatchNewNotification(notification: any) {
+    notificationHandlers.forEach((handler) => handler(notification));
+}
+
 /** Connect and authenticate. Call after setApiToken() is set. */
 export function connectSocket(): Socket {
     if (_socket) {
@@ -81,6 +91,8 @@ export function connectSocket(): Socket {
     _socket.on('receive_message', dispatchNewMessage);
     _socket.on('typing', dispatchTyping);
     _socket.on('user_typing', dispatchTyping);
+    _socket.on('new_listing', dispatchNewListing);
+    _socket.on('notification', dispatchNewNotification);
 
     return _socket;
 }
@@ -148,7 +160,17 @@ export function onTyping(
     handler: (data: { conversationId?: string; userId: string; displayName: string }) => void
 ): () => void {
     typingHandlers.add(handler);
-    return () => {
-        typingHandlers.delete(handler);
-    };
+    return () => typingHandlers.delete(handler);
+}
+
+/** Listen for new listings. Returns cleanup function. */
+export function onNewListing(handler: (listing: any) => void): () => void {
+    listingHandlers.add(handler);
+    return () => listingHandlers.delete(handler);
+}
+
+/** Listen for new notifications. Returns cleanup function. */
+export function onNewNotification(handler: (notification: any) => void): () => void {
+    notificationHandlers.add(handler);
+    return () => notificationHandlers.delete(handler);
 }

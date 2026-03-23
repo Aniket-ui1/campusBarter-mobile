@@ -1,21 +1,21 @@
 
+import { Avatar } from '@/components/ui/Avatar';
+import { Card } from '@/components/ui/Card';
+import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
+import { CATEGORIES } from '@/constants/categories';
+import { AppColors, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
+import { getRecommendedUsers, MatchedUser } from '@/lib/matching';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
-import { AppColors, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import { Card } from '@/components/ui/Card';
-import { Avatar } from '@/components/ui/Avatar';
-import { useData } from '@/context/DataContext';
-import { getRecommendedUsers, MatchedUser } from '@/lib/matching';
-import { CATEGORIES } from '@/constants/categories';
-import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { unreadCount, listings, refreshListings } = useData();
+  const { unreadCount, listings } = useData();
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
   const [matches, setMatches] = useState<MatchedUser[]>([]);
@@ -42,7 +42,7 @@ export default function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    const tasks: Promise<any>[] = [refreshListings()];
+    const tasks: Promise<any>[] = [];
     if (user?.id) {
       tasks.push(
         getRecommendedUsers(user.id, user.skills ?? [], user.weaknesses ?? [], user.interests ?? [])

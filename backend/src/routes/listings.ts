@@ -7,6 +7,7 @@ import { closeListing, closeListingAsStaff, createListing, deleteListing, delete
 import { runSmartMatching } from '../matcher';
 import { requireRole } from '../middleware/auth';
 import { validate } from '../middleware/validate';
+import { getIO } from '../socketInstance';
 
 export const listingsRouter = Router();
 
@@ -61,6 +62,25 @@ listingsRouter.post('/', validate(createListingRules), async (req: Request, res:
             postedByUserId: req.user!.id,
             postedByName: req.user!.displayName,
         });
+
+        // Fetch the created listing and emit newly created listing to all clients
+        try {
+            const newListing = {
+                id,
+                type,
+                title: title.trim(),
+                description: description.trim(),
+                credits: Number(credits),
+                userId: req.user!.id,
+                userName: req.user!.displayName,
+                category: req.body.category,
+                status: 'OPEN',
+                createdAt: new Date().toISOString()
+            };
+            getIO().emit('new_listing', newListing);
+        } catch (e) {
+            console.error('[Listings] Failed to emit new_listing event:', e);
+        }
 
         res.status(201).json({ id, message: 'Listing created' });
     } catch (err: any) {
