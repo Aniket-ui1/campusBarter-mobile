@@ -55,6 +55,10 @@ router.post('/conversations',
                 .query('SELECT * FROM Conversations WHERE conversationId = @id');
 
             if (existing.recordset.length > 0) {
+                // Notify even for existing conversations — user explicitly clicked "Request This Skill"
+                if (listingTitle) {
+                    notifySkillRequest(otherUserId, req.user!.displayName, listingTitle, convId);
+                }
                 res.json({ conversation: existing.recordset[0], isNew: false });
                 return;
             }
@@ -73,14 +77,8 @@ router.post('/conversations',
                 .input('id', sql.NVarChar(300), convId)
                 .query('SELECT * FROM Conversations WHERE conversationId = @id');
 
-            // Notify the listing owner that someone requested their skill
             if (listingTitle) {
-                notifySkillRequest(
-                    otherUserId,
-                    req.user!.displayName,
-                    listingTitle,
-                    convId
-                );
+                notifySkillRequest(otherUserId, req.user!.displayName, listingTitle, convId);
             }
 
             res.status(201).json({ conversation: created.recordset[0], isNew: true });
