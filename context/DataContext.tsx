@@ -24,7 +24,6 @@ import {
     deleteListing as apiDeleteListing,
     ApiListing,
     markAllNotificationsRead as apiMarkAllRead,
-    markChatRead as apiMarkChatRead,
     markNotificationRead as apiMarkRead,
     ApiMessage,
     ApiNotification,
@@ -35,9 +34,9 @@ import {
     getMessages,
     getNotifications,
 } from "../lib/api";
-import { onNewMessage, joinChat, leaveChat } from "../lib/socket";
-import { onNotification } from "../services/socketService";
+import { emitMarkRead, joinChat, leaveChat, onNewListing, onNewMessage, onNewNotification } from "../lib/socket";
 import { chatApi } from "../services/chatApi";
+import { onNotification } from "../services/socketService";
 import { useAuth } from "./AuthContext";
 
 // ── Public types ──────────────────────────────────────────────────
@@ -373,17 +372,8 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
     const markChatRead = async (chatId: string) => {
         if (!user?.id) return;
-        try {
-            // Use v2 chat API which handles both v2 conversations and legacy chats
-            await chatApi.markRead(chatId);
-        } catch (error) {
-            // Fall back to legacy API if v2 fails
-            try {
-                await apiMarkChatRead(chatId, user.id);
-            } catch {
-                console.warn('[DataContext] markChatRead failed for both v2 and legacy APIs');
-            }
-        }
+        // Mark read via socket (zero API calls) — backend updates DB + emits messages_seen
+        emitMarkRead(chatId);
         // Update local state to clear badge immediately
         setChats((currentChats) => currentChats.map((chat) =>
             chat.id === chatId ? { ...chat, unreadCount: 0 } : chat
@@ -437,9 +427,8 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         // Join socket room
         joinChat(chatId);
         activeChatSubscriptions.current[chatId] = (activeChatSubscriptions.current[chatId] ?? 0) + 1;
-        void markChatRead(chatId).catch((error) => {
-            console.warn('[Data] markChatRead failed:', error);
-        });
+        // Mark read via socket (no API call)
+        emitMarkRead(chatId);
 
         // Register callback
         if (!msgCallbacks.current[chatId]) msgCallbacks.current[chatId] = [];
