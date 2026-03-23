@@ -1207,6 +1207,47 @@ export async function getPushToken(userId: string): Promise<string | null> {
     return (result.recordset[0]?.pushToken as string) ?? null;
 }
 
+/**
+ * Return all Expo push tokens registered for a user (multi-device table).
+ */
+export async function getUserPushTokens(userId: string): Promise<string[]> {
+    try {
+        const db = await getPool();
+        const result = await db.request()
+            .input('uid', sql.NVarChar(128), userId)
+            .query('SELECT pushToken FROM UserPushTokens WHERE userId = @uid');
+        return result.recordset.map((r: { pushToken: string }) => r.pushToken);
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Upsert an Expo push token into UserPushTokens (multi-device table).
+ * Safe to call repeatedly — duplicate (userId, pushToken) pairs are ignored.
+ */
+export async function saveUserPushToken(
+    userId: string,
+    token: string,
+    platform: string
+): Promise<void> {
+    const db = await getPool();
+    await db.request()
+        .input('uid',   sql.NVarChar(128), userId)
+        .input('token', sql.NVarChar(500), token)
+        .input('plat',  sql.NVarChar(20),  platform || 'unknown')
+        .query(`
+            MERGE UserPushTokens AS target
+            USING (SELECT @uid AS userId, @token AS pushToken) AS source
+            ON target.userId = source.userId AND target.pushToken = source.pushToken
+            WHEN MATCHED THEN
+                UPDATE SET platform = @plat
+            WHEN NOT MATCHED THEN
+                INSERT (userId, pushToken, platform)
+                VALUES (@uid, @token, @plat);
+        `);
+}
+
 // ── Smart Matching ─────────────────────────────────────────────
 
 /**

@@ -34,7 +34,7 @@ import {
     getMessages,
     getNotifications,
 } from "../lib/api";
-import { emitMarkRead, joinChat, leaveChat, onNewListing, onNewMessage, onNewNotification } from "../lib/socket";
+import { emitMarkRead, joinChat, leaveChat, onNewListing, onNewMessage } from "../lib/socket";
 import { chatApi } from "../services/chatApi";
 import { onNotification } from "../services/socketService";
 import { useAuth } from "./AuthContext";
@@ -208,12 +208,9 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         void refreshNotifications();
     }, [authLoading, refreshNotifications]);
 
-    // Listen to real-time new notifications via Socket
-    useEffect(() => {
-        return onNewNotification((newNotification) => {
-            setNotifications(prev => [newNotification, ...prev.filter(n => n.id !== newNotification.id)]);
-        });
-    }, []);
+    // NOTE: Real-time notifications are handled below by the onNotification listener.
+    // The onNewNotification listener was removed to prevent every notification
+    // from being added twice (both handlers fire on the same socket event).
 
     // ── Socket.io: listen for new messages ────────────────────────
     useEffect(() => {
@@ -261,30 +258,39 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     // ── Socket.io: listen for new notifications ───────────────────
     useEffect(() => {
         const cleanup = onNotification((notif) => {
-            // Add new notification to the top of the list
-            setNotifications(prev => [{
-                notificationId: (notif as any).notificationId ?? `socket-${Date.now()}`,
-                userId: user?.id ?? '',
-                type: notif.type,
-                title: notif.title,
-                message: notif.body,
-                relatedEntityId: notif.relatedId ?? null,
-                relatedEntityType: null,
-                actionUrl: null,
-                isRead: false,
-                createdAt: notif.createdAt,
-                // Legacy fields
-                id: (notif as any).notificationId ?? `socket-${Date.now()}`,
-                body: notif.body,
-                read: false,
-                relatedId: notif.relatedId,
-            }, ...prev]);
+            const incomingId = (notif as any).notificationId ?? `socket-${Date.now()}`;
+            setNotifications(prev => {
+                // Skip if already present (prevents duplicate on fast socket + HTTP race)
+                if (prev.some(n => n.notificationId === incomingId)) return prev;
+                return [{
+                    notificationId: incomingId,
+                    userId: user?.id ?? '',
+                    type: notif.type,
+                    title: notif.title,
+                    message: notif.body,
+                    relatedEntityId: notif.relatedId ?? null,
+                    relatedEntityType: null,
+                    actionUrl: null,
+                    isRead: false,
+                    createdAt: notif.createdAt,
+                    // Legacy fields
+                    id: incomingId,
+                    body: notif.body,
+                    read: false,
+                    relatedId: notif.relatedId,
+                }, ...prev];
+            });
         });
         return cleanup;
     }, [user?.id]);
 
+    // Bell badge: only bell-worthy types (request, review, match)
+    // Chat messages and accepted events are push-only and never stored to bell
+    const BELL_TYPES = ['request', 'review', 'match'];
     const unreadCount = useMemo(
-        () => notifications.filter(n => !n.isRead && !n.read).length,
+        () => notifications.filter(n =>
+            BELL_TYPES.includes(n.type) && !n.isRead && !n.read
+        ).length,
         [notifications]
     );
 

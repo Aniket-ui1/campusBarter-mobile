@@ -244,6 +244,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         // while all posting/listing APIs fail with 401.
                         try {
                             await getUserById(parsed.id);
+                            // Session is valid — re-register push token in case it changed
+                            // (can happen after app reinstall or OS update)
+                            void registerDevicePushToken();
                         } catch (error) {
                             if ((error as { status?: number }).status === 401) {
                                 setUser(null);
@@ -263,6 +266,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         })();
     }, []);
 
+    /** Request permission, get Expo push token, and register it with the backend. */
+    async function registerDevicePushToken(): Promise<void> {
+        if (Platform.OS === 'web') return; // push tokens not available on web
+        try {
+            const Notifications = await import('expo-notifications');
+            const { status } = await Notifications.requestPermissionsAsync();
+            if (status !== 'granted') return;
+            const tokenRes = await Notifications.getExpoPushTokenAsync();
+            const expoPushToken = tokenRes.data;
+            const platform = Platform.OS === 'ios' ? 'ios' : 'android';
+            // Register with both endpoints: legacy (Users.pushToken) and new multi-device (UserPushTokens)
+            await registerPushToken(expoPushToken).catch(() => { });
+            const { chatApi } = await import('../services/chatApi');
+            await chatApi.registerPushToken(expoPushToken, platform).catch(() => { });
+        } catch { /* push not available on simulator or restricted environments */ }
+    }
+
     const persistUser = async (u: User, idToken?: string) => {
         setUser(u);
         await storage.setItem(AUTH_KEY, JSON.stringify(u));
@@ -281,21 +301,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             console.error("[Auth] User sync failed:", e);
         }
 
-        // Register push token (best effort — ignore failure)
+        // Register push token on fresh login (best effort — ignore failure)
         if (idToken) {
-            try {
-                const Notifications = await import('expo-notifications');
-                const { status } = await Notifications.requestPermissionsAsync();
-                if (status === 'granted') {
-                    const tokenRes = await Notifications.getExpoPushTokenAsync();
-                    const expoPushToken = tokenRes.data;
-                    const platform = Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
-                    // Register with both old endpoint (legacy) and new chat v2 endpoint
-                    await registerPushToken(expoPushToken).catch(() => { });
-                    const { chatApi } = await import('../services/chatApi');
-                    await chatApi.registerPushToken(expoPushToken, platform).catch(() => { });
-                }
-            } catch { /* push not available on web / simulator */ }
+            void registerDevicePushToken();
         }
     };
 
