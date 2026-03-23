@@ -308,13 +308,16 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
             category: data.category,
         });
 
-        // 1. Optimistic Update so the current user sees it immediately
-        setListings(prev => [{
-            ...data,
-            id: newId,
-            createdAt: new Date().toISOString(),
-            status: "OPEN" as const
-        } as Listing, ...prev]);
+        // 1. Optimistic Update so the current user sees it immediately (handle race condition with socket)
+        setListings(prev => {
+            if (prev.some(l => l.id === newId)) return prev;
+            return [{
+                ...data,
+                id: newId,
+                createdAt: new Date().toISOString(),
+                status: "OPEN" as const
+            } as Listing, ...prev];
+        });
 
         // 2. Note: Other users will get this via the `new_listing` socket event 
         // once you deploy the updated backend code to Azure!
