@@ -235,7 +235,15 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 const chatExists = currentChats.some((chat) => chat.id === chatId);
                 if (!chatExists) {
                     void refreshChats();
-                    return currentChats;
+                    // Optimistically increment unread for the chat with this sender,
+                    // matched by otherUserId, so the badge updates before the API returns.
+                    const chatBySender = currentChats.find(c => c.otherUserId === msg.senderId);
+                    if (!chatBySender) return currentChats;
+                    return dedupeChatsByParticipant(currentChats.map(chat =>
+                        chat.id === chatBySender.id
+                            ? { ...chat, lastMessage: msg.text, lastMessageAt: msg.sentAt, unreadCount: (chat.unreadCount ?? 0) + 1 }
+                            : chat
+                    ));
                 }
 
                 return dedupeChatsByParticipant(currentChats.map((chat) => {
