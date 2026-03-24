@@ -461,6 +461,7 @@ router.post('/:convId/messages',
                 });
                 // 2. Emit new_message to recipient's user room (for badge updates when not in chat)
                 try {
+                    // Try v2 Conversations table first
                     const partRow = await db.request()
                         .input('cid', sql.NVarChar(300), convId)
                         .input('sid', sql.NVarChar(128), senderId)
@@ -468,8 +469,26 @@ router.post('/:convId/messages',
                             SELECT CASE WHEN participant1Id = @sid THEN participant2Id ELSE participant1Id END AS recipientId
                             FROM Conversations WHERE conversationId = @cid
                         `);
+
+                    let recipientId: string | null = null;
                     if (partRow.recordset.length > 0) {
-                        const recipientId = partRow.recordset[0].recipientId;
+                        recipientId = partRow.recordset[0].recipientId as string;
+                    } else {
+                        // Legacy chat fallback — check ChatParticipants table
+                        const legacyRow = await db.request()
+                            .input('cid', sql.NVarChar(300), convId)
+                            .input('sid', sql.NVarChar(128), senderId)
+                            .query(`
+                                SELECT userId AS recipientId
+                                FROM ChatParticipants
+                                WHERE chatId = @cid AND userId != @sid
+                            `);
+                        if (legacyRow.recordset.length > 0) {
+                            recipientId = legacyRow.recordset[0].recipientId as string;
+                        }
+                    }
+
+                    if (recipientId) {
                         io.to(`user:${recipientId}`).emit('new_message', {
                             messageId,
                             conversationId: convId,

@@ -289,6 +289,7 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
                 // Also emit new_message to recipient's personal user room so their
                 // chat badge updates even when they're not in this chat screen.
                 try {
+                    // Try v2 Conversations table first
                     const partRow = await db.request()
                         .input('cid', sql.NVarChar(300), conversationId)
                         .input('sid', sql.NVarChar(128), socket.userId!)
@@ -296,8 +297,26 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
                             SELECT CASE WHEN participant1Id = @sid THEN participant2Id ELSE participant1Id END AS recipientId
                             FROM Conversations WHERE conversationId = @cid
                         `);
+
+                    let recipientId: string | null = null;
                     if (partRow.recordset.length > 0) {
-                        const recipientId = partRow.recordset[0].recipientId as string;
+                        recipientId = partRow.recordset[0].recipientId as string;
+                    } else {
+                        // Legacy chat fallback — check ChatParticipants table
+                        const legacyRow = await db.request()
+                            .input('cid', sql.NVarChar(300), conversationId)
+                            .input('sid', sql.NVarChar(128), socket.userId!)
+                            .query(`
+                                SELECT userId AS recipientId
+                                FROM ChatParticipants
+                                WHERE chatId = @cid AND userId != @sid
+                            `);
+                        if (legacyRow.recordset.length > 0) {
+                            recipientId = legacyRow.recordset[0].recipientId as string;
+                        }
+                    }
+
+                    if (recipientId !== null) {
                         const io = getIO();
                         io.to(`user:${recipientId}`).emit('new_message', {
                             messageId,
