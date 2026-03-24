@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
-import { getPushToken } from './db';
+import { getPushToken, getUserPushTokens } from './db';
 
 const expo = new Expo();
 
@@ -52,6 +52,41 @@ export async function sendPushNotification(
     } catch (err) {
         // Push failures must NEVER crash the API — just log
         console.error('[Push] Failed to send notification:', err);
+    }
+}
+
+/**
+ * Send a push notification to all registered devices for a user.
+ * Reads tokens from UserPushTokens table (multi-device).
+ * Silently ignores users with no tokens. Never throws.
+ */
+export async function sendPushToUser(
+    userId: string,
+    title: string,
+    body: string,
+    data: Record<string, string> = {}
+): Promise<void> {
+    try {
+        const tokens = await getUserPushTokens(userId);
+        if (tokens.length === 0) return;
+
+        const messages: ExpoPushMessage[] = tokens
+            .filter(t => Expo.isExpoPushToken(t))
+            .map(to => ({ to, title, body, data, sound: 'default' as const, priority: 'high' as const }));
+
+        if (messages.length === 0) return;
+
+        const chunks = expo.chunkPushNotifications(messages);
+        for (const chunk of chunks) {
+            const tickets: ExpoPushTicket[] = await expo.sendPushNotificationsAsync(chunk);
+            for (const ticket of tickets) {
+                if (ticket.status === 'error') {
+                    console.warn('[Push] Ticket error:', ticket.message);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('[Push] sendPushToUser failed:', err);
     }
 }
 

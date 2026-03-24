@@ -8,8 +8,9 @@
 // ─────────────────────────────────────────────────────────────
 
 import { createNotification } from './db';
-import { sendPushNotification } from './push';
+import { sendPushToUser } from './push';
 import { getIO } from './socketInstance';
+import { isUserOnline } from './socket';
 
 type NotifType = 'request' | 'accepted' | 'message' | 'review' | 'match';
 
@@ -23,37 +24,67 @@ interface NotifPayload {
     relatedId?: string;
     /** Extra data for the push payload / socket emit */
     data?: Record<string, string>;
+    /**
+     * When true (default): persist to Notifications DB table and emit socket
+     * bell event. Set to false for chat messages and "accepted" events which
+     * should only trigger a push — they must NOT appear in the bell icon.
+     */
+    storeToBell?: boolean;
 }
 
 /**
- * Fire-and-forget: saves notification to DB, emits via Socket.IO,
- * and sends an Expo push notification. Never throws.
+ * Fire-and-forget: conditionally saves to DB + socket-emits (bell),
+ * and sends an Expo push notification only when the user is offline.
+ * Never throws.
  */
 export async function notifyEvent(payload: NotifPayload): Promise<void> {
-    const { recipientId, type, title, body, relatedId, data } = payload;
+    const { recipientId, type, title, body, relatedId, data, storeToBell = true } = payload;
 
-    // 1. Persist to DB (the bell icon in-app)
-    try {
-        await createNotification(recipientId, type, title, body, relatedId);
-    } catch (err) {
-        console.error('[Notify] DB insert failed:', err);
+    // Determine entity type and action URL based on notification type
+    let entityType: string | undefined;
+    let actionUrl: string | undefined;
+
+    if (type === 'message' || type === 'request' || type === 'accepted') {
+        entityType = 'conversation';
+        actionUrl = relatedId ? `/chat/${relatedId}` : undefined;
+    } else if (type === 'match') {
+        entityType = 'listing';
+        actionUrl = relatedId ? `/skill/${relatedId}` : undefined;
+    } else if (type === 'review') {
+        entityType = 'review';
+        actionUrl = recipientId ? `/reviews/${recipientId}` : undefined;
     }
 
-    // 2. Real-time socket emit to the user's personal room
-    try {
-        getIO().to(`user:${recipientId}`).emit('notification', {
-            type, title, body, relatedId,
-            createdAt: new Date().toISOString(),
-        });
-    } catch {
-        // Socket not initialised yet — safe to skip
+    // 1. Persist to DB + emit socket bell — only for bell-worthy events
+    if (storeToBell) {
+        let notificationId: string | undefined;
+        try {
+            notificationId = await createNotification(recipientId, type, title, body, relatedId, entityType, actionUrl);
+            console.log('[Notify] ✅ DB insert successful, ID:', notificationId);
+        } catch (err) {
+            console.error('[Notify] ❌ DB insert failed:', err);
+        }
+
+        try {
+            const io = getIO();
+            io.to(`user:${recipientId}`).emit('notification', {
+                notificationId,
+                type, title, body, relatedId,
+                createdAt: new Date().toISOString(),
+            });
+        } catch (err) {
+            console.error('[Notify] ❌ Socket emit failed:', err);
+        }
     }
 
-    // 3. Push notification (mobile, if token registered)
-    try {
-        await sendPushNotification(recipientId, title, body, { type, ...(data ?? {}) });
-    } catch (err) {
-        console.error('[Notify] Push failed:', err);
+    // 2. Push notification — only when the user is NOT currently connected via socket
+    // (online users already get the socket notification or real-time message in-app)
+    if (!isUserOnline(recipientId)) {
+        try {
+            await sendPushToUser(recipientId, title, body, { type, ...(data ?? {}) });
+        } catch (err) {
+            console.error('[Notify] Push failed:', err);
+        }
     }
 }
 
@@ -80,6 +111,7 @@ export function notifySkillRequest(
 
 /**
  * You received a new chat message.
+ * Push only — must NOT appear in the bell icon.
  */
 export function notifyMessage(
     recipientId: string,
@@ -94,11 +126,13 @@ export function notifyMessage(
         body: preview.length > 80 ? preview.slice(0, 77) + '...' : preview,
         relatedId: chatId,
         data: { chatId },
+        storeToBell: false, // chat messages never appear in bell icon
     });
 }
 
 /**
  * Your skill request was accepted (listing owner started chatting back).
+ * Push only — must NOT appear in the bell icon.
  */
 export function notifyRequestAccepted(
     requesterId: string,
@@ -113,6 +147,7 @@ export function notifyRequestAccepted(
         body: `${ownerName} accepted your request for "${listingTitle}"`,
         relatedId: chatId,
         data: { chatId },
+        storeToBell: false, // accepted events are push-only, not bell
     });
 }
 

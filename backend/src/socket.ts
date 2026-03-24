@@ -6,15 +6,35 @@
 // Rooms: each chat room = chatId string.
 // ─────────────────────────────────────────────────────────────
 
+import crypto from 'crypto';
 import http from 'http';
 import jwt from 'jsonwebtoken';
 import jwksClient from 'jwks-rsa';
 import sql from 'mssql';
 import { Socket, Server as SocketServer } from 'socket.io';
 import { canAccessChat, canAccessConversation, getPool } from './db';
+import { notifyMessage } from './notifyEvent';
+import { getIO } from './socketInstance';
 
 // ── In-memory map of connected users for online status ─────────
 const connectedUsers = new Map<string, boolean>();
+
+/** Check access for both v2 Conversations table and legacy Chats table. */
+async function canAccess(conversationId: string, userId: string): Promise<boolean> {
+    // Try v2 first (Conversations table)
+    try {
+        const allowed = await canAccessConversation(conversationId, userId);
+        if (allowed) return true;
+    } catch {
+        // v2 table may not exist — fall through to legacy
+    }
+    // Fall back to legacy (Chats table)
+    try {
+        return await canAccessChat(conversationId, userId);
+    } catch {
+        return false;
+    }
+}
 
 /** Check if a user is currently online (has an active socket connection). */
 export function isUserOnline(userId: string): boolean {
@@ -51,53 +71,16 @@ interface AuthenticatedSocket extends Socket {
 
 // ── Initialise Socket.io ──────────────────────────────────────
 export function initSocketServer(httpServer: http.Server): SocketServer {
-    const allowedOrigins: Array<string | RegExp> = [
-        'https://campusbarter.azurestaticapps.net',
-    ];
-
-    // Allow localhost in development
-    if (process.env.NODE_ENV === 'development' || process.env.ALLOW_LOCALHOST === 'true') {
-        allowedOrigins.push('http://localhost:8081');
-        allowedOrigins.push('http://localhost:8082');
-        allowedOrigins.push('http://localhost:8083');
-        allowedOrigins.push('http://localhost:3000');
-        allowedOrigins.push(/^http:\/\/localhost:\d+$/);  // Any localhost port
-        allowedOrigins.push(/^http:\/\/192\.168\.\d+\.\d+:\d+$/);  // Local network
-        allowedOrigins.push(/^exp:\/\/.*/);  // Expo Go
-    } else {
-        // Production still allows Expo Go
-        allowedOrigins.push(/^exp:\/\/.*/);
-    }
-    
     const io = new SocketServer(httpServer, {
         cors: {
-            origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-                // Allow requests with no origin (mobile apps, Postman)
-                if (!origin) return callback(null, true);
-
-                // Check against allowed origins
-                const allowed = allowedOrigins.some((pattern: string | RegExp) => {
-                    if (typeof pattern === 'string') {
-                        if (pattern.includes('*')) {
-                            // Convert wildcard to regex
-                            const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
-                            return regex.test(origin);
-                        }
-                        return pattern === origin;
-                    }
-                    // pattern is RegExp
-                    return (pattern as RegExp).test(origin);
-                });
-
-                callback(null, allowed);
-            },
+            origin: [
+                'https://campusbarter.azurestaticapps.net',
+                'exp://*',
+                /^http:\/\/(localhost|127\.0\.0\.1):\d+$/,  // localhost development
+            ],
             methods: ['GET', 'POST'],
             credentials: true,
         },
-        // Force WebSocket transport (no polling fallback)
-        transports: ['websocket', 'polling'],
-        // Try WebSocket upgrade immediately
-        allowUpgrades: true,
         // Allow 1MB payloads (same limit as REST API)
         maxHttpBufferSize: 1e6,
     });
@@ -145,52 +128,52 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
 
     // ── Connection handler ─────────────────────────────────────
     io.on('connection', async (socket: AuthenticatedSocket) => {
-        console.log(`[Socket] Connected: ${socket.userId} (${socket.displayName})`);
-        if (socket.userId) {
-            socket.join(`user:${socket.userId}`);
+        const userId = socket.userId;
+        console.log(`[Socket] Connected: ${userId} (${socket.displayName})`);
+        
+        if (!userId) {
+            console.warn('[Socket] Connection rejected: no userId');
+            socket.disconnect();
+            return;
+        }
+
+        try {
+            socket.join(`user:${userId}`);
             
             // ── Track online status and update lastSeenAt ────────
-            connectedUsers.set(socket.userId, true);
+            connectedUsers.set(userId, true);
+            console.log(`[Socket] Marked ${userId} as online. Total online: ${connectedUsers.size}`);
+            
             try {
                 const db = await getPool();
                 await db.request()
-                    .input('uid', sql.NVarChar(128), socket.userId)
+                    .input('uid', sql.NVarChar(128), userId)
                     .query(`
                         UPDATE Users
                         SET lastSeenAt = GETUTCDATE()
                         WHERE id = @uid
                     `);
+                console.log(`[Socket] Updated lastSeenAt for user ${userId}`);
             } catch (e) {
-                console.error('[Socket] Failed to update lastSeenAt on connect:', (e as Error).message);
+                console.error('[Socket] Failed to update lastSeenAt on connect for', userId, ':', (e as Error).message);
             }
+        } catch (e) {
+            console.error('[Socket] Connection setup failed:', (e as Error).message);
+            socket.disconnect();
+            return;
         }
 
         const joinConversationRoom = async (conversationId: string) => {
-            console.log(`[Socket] 🚪 joinConversationRoom called by ${socket.userId} for conversation:`, conversationId);
             try {
-                if (!conversationId?.trim()) {
-                    console.log(`[Socket] ❌ Empty conversationId, aborting join`);
-                    return;
-                }
-
-                // Detect Chat System v2 (userId_userId format) vs legacy (single UUID)
-                const isV2Conversation = conversationId.includes('_') && conversationId.split('_').length === 2;
-
-                console.log(`[Socket] 🔐 Checking access for ${socket.userId} to ${isV2Conversation ? 'v2 conversation' : 'legacy chat'} ${conversationId}`);
-
-                const allowed = isV2Conversation
-                    ? await canAccessConversation(conversationId, socket.userId!)
-                    : await canAccessChat(conversationId, socket.userId!);
-
+                if (!conversationId?.trim()) return;
+                const allowed = await canAccess(conversationId, socket.userId!);
                 if (!allowed) {
-                    console.log(`[Socket] ❌ Access denied for ${socket.userId} to conversation ${conversationId}`);
                     socket.emit('socket_error', { message: 'Access denied for this conversation' });
                     return;
                 }
                 socket.join(conversationId);
-                console.log(`[Socket] ✅ ${socket.userId} successfully joined conversation ${conversationId}`);
-            } catch (error) {
-                console.error(`[Socket] ❌ Error joining conversation:`, error);
+                console.log(`[Socket] ${socket.userId} joined conversation ${conversationId}`);
+            } catch {
                 socket.emit('socket_error', { message: 'Failed to join conversation' });
             }
         };
@@ -210,34 +193,179 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
         socket.on('typing', async (conversationId: string) => {
             try {
                 if (!conversationId?.trim()) return;
-                const allowed = await canAccessChat(conversationId, socket.userId!);
-                if (!allowed) return;
+                console.log(`[Socket] Typing event from ${socket.userId} in conversation ${conversationId}`);
+                const allowed = await canAccess(conversationId, socket.userId!);
+                if (!allowed) {
+                    console.log(`[Socket] Typing access denied for ${socket.userId} in ${conversationId}`);
+                    return;
+                }
                 const payload = {
                     conversationId,
                     userId: socket.userId,
                     displayName: socket.displayName,
                 };
+                console.log(`[Socket] Broadcasting typing from ${socket.displayName} to room ${conversationId}`);
                 socket.to(conversationId).emit('typing', payload);
                 socket.to(conversationId).emit('user_typing', payload);
-            } catch {
-                // Ignore transient DB errors for typing events.
+            } catch (e) {
+                console.error('[Socket] Typing event error:', (e as Error).message);
             }
         });
 
-        socket.on('send_message', async (data: { conversationId?: string; text?: string }) => {
+        // Send a message over socket AND save it to the DB (saving API POST call)
+        socket.on('send_message', async (data: { conversationId?: string; text?: string; tempId?: string }, callback?: (response: any) => void) => {
+            const conversationId = data?.conversationId?.trim();
+            const textContent = data?.text?.trim();
+
+            if (!conversationId || !textContent) {
+                if (callback) callback({ error: 'Missing conversationId or text' });
+                socket.emit('message_send_error', { error: 'Missing conversationId or text', tempId: data?.tempId });
+                return;
+            }
+
+            try {
+                const allowed = await canAccess(conversationId, socket.userId!);
+                if (!allowed) {
+                    if (callback) callback({ error: 'Forbidden' });
+                    socket.emit('message_send_error', { error: 'Forbidden', tempId: data?.tempId });
+                    return;
+                }
+
+                const db = await getPool();
+                const messageId = crypto.randomUUID();
+                const safeText = textContent;
+
+                await db.request()
+                    .input('mid', sql.NVarChar(128), messageId)
+                    .input('cid', sql.NVarChar(300), conversationId)
+                    .input('sid', sql.NVarChar(128), socket.userId!)
+                    .input('type', sql.NVarChar(20), 'text')
+                    .input('text', sql.NVarChar(2000), safeText)
+                    .query(`
+                        INSERT INTO ConversationMessages
+                            (messageId, conversationId, senderId, messageType, textContent)
+                        VALUES (@mid, @cid, @sid, @type, @text)
+                    `);
+
+                await db.request()
+                    .input('cid', sql.NVarChar(300), conversationId)
+                    .input('msg', sql.NVarChar(500), safeText)
+                    .input('sid', sql.NVarChar(128), socket.userId!)
+                    .query(`
+                        UPDATE Conversations
+                        SET lastMessage = @msg, lastMessageTime = GETUTCDATE(), lastSenderId = @sid
+                        WHERE conversationId = @cid
+                    `);
+
+                const message = {
+                    messageId,
+                    conversationId,
+                    senderId: socket.userId!,
+                    senderName: socket.displayName,
+                    messageType: 'text',
+                    textContent: safeText,
+                    mediaUrl: null,
+                    mediaName: null,
+                    replyToMessageId: null,
+                    isRead: false,
+                    createdAt: new Date().toISOString(),
+                };
+
+                // Acknowledge the sender via callback (if supported)
+                if (callback) callback({ message, tempId: data.tempId });
+
+                // Also emit directly to sender (reliable — doesn't depend on ack callbacks)
+                socket.emit('message_sent', { message, tempId: data.tempId });
+
+                // Broadcast to others in the chat room (for open chat screens)
+                socket.to(conversationId).emit('receive_message', message);
+                socket.to(conversationId).emit('conversation_updated', {
+                    conversationId,
+                    lastMessage: safeText,
+                    lastMessageTime: message.createdAt,
+                    lastSenderId: socket.userId!,
+                });
+
+                // Also emit new_message to recipient's personal user room so their
+                // chat badge updates even when they're not in this chat screen.
+                try {
+                    // Try v2 Conversations table first
+                    const partRow = await db.request()
+                        .input('cid', sql.NVarChar(300), conversationId)
+                        .input('sid', sql.NVarChar(128), socket.userId!)
+                        .query(`
+                            SELECT CASE WHEN participant1Id = @sid THEN participant2Id ELSE participant1Id END AS recipientId
+                            FROM Conversations WHERE conversationId = @cid
+                        `);
+
+                    let recipientId: string | null = null;
+                    if (partRow.recordset.length > 0) {
+                        recipientId = partRow.recordset[0].recipientId as string;
+                    } else {
+                        // Legacy chat fallback — check ChatParticipants table
+                        const legacyRow = await db.request()
+                            .input('cid', sql.NVarChar(300), conversationId)
+                            .input('sid', sql.NVarChar(128), socket.userId!)
+                            .query(`
+                                SELECT userId AS recipientId
+                                FROM ChatParticipants
+                                WHERE chatId = @cid AND userId != @sid
+                            `);
+                        if (legacyRow.recordset.length > 0) {
+                            recipientId = legacyRow.recordset[0].recipientId as string;
+                        }
+                    }
+
+                    if (recipientId !== null) {
+                        const io = getIO();
+                        io.to(`user:${recipientId}`).emit('new_message', {
+                            messageId,
+                            conversationId,
+                            chatId: conversationId,
+                            senderId: socket.userId!,
+                            senderName: socket.displayName,
+                            text: safeText,
+                            sentAt: message.createdAt,
+                        });
+                        // Push notification for offline recipients (notifyMessage checks isUserOnline)
+                        notifyMessage(recipientId, socket.displayName ?? 'Someone', conversationId, safeText);
+                    }
+                } catch (err) {
+                    console.error('[Socket] Failed to emit to user room:', (err as Error).message);
+                }
+
+            } catch (e: any) {
+                console.error('[Socket] send_message error:', e.message);
+                if (callback) callback({ error: e.message });
+                socket.emit('message_send_error', { error: e.message, tempId: data.tempId });
+            }
+        });
+
+        // Mark messages as read entirely via Socket to save API PUT calls
+        socket.on('mark_read', async (data: { conversationId?: string }) => {
             const conversationId = data?.conversationId?.trim();
             if (!conversationId) return;
+
             try {
-                const allowed = await canAccessChat(conversationId, socket.userId!);
+                const allowed = await canAccess(conversationId, socket.userId!);
                 if (!allowed) return;
-                socket.to(conversationId).emit('receive_message', {
-                    ...data,
-                    conversationId,
-                    senderId: socket.userId,
-                    senderName: socket.displayName,
-                });
-            } catch {
-                // Ignore transient DB errors for socket-only message fanout.
+
+                const db = await getPool();
+                await db.request()
+                    .input('cid', sql.NVarChar(300), conversationId)
+                    .input('uid', sql.NVarChar(128), socket.userId!)
+                    .query(`
+                        UPDATE ConversationMessages
+                        SET isRead = 1, readAt = GETUTCDATE()
+                        WHERE conversationId = @cid
+                          AND senderId != @uid
+                          AND isRead = 0
+                    `);
+
+                // Notify sender their messages were read
+                io.to(conversationId).emit('messages_seen', { conversationId, readByUserId: socket.userId! });
+            } catch (e: any) {
+                console.error('[Socket] mark_read error:', e.message);
             }
         });
 
@@ -245,29 +373,33 @@ export function initSocketServer(httpServer: http.Server): SocketServer {
         socket.on('stop_typing', async (conversationId: string) => {
             try {
                 if (!conversationId?.trim()) return;
-                const allowed = await canAccessChat(conversationId, socket.userId!);
+                console.log(`[Socket] Stop typing from ${socket.userId} in conversation ${conversationId}`);
+                const allowed = await canAccess(conversationId, socket.userId!);
                 if (!allowed) return;
                 socket.to(conversationId).emit('stop_typing', { conversationId, userId: socket.userId });
-            } catch {
-                // Ignore transient DB errors for typing events.
+            } catch (e) {
+                console.error('[Socket] Stop typing error:', (e as Error).message);
             }
         });
 
         socket.on('disconnect', async () => {
-            console.log(`[Socket] Disconnected: ${socket.userId}`);
-            if (socket.userId) {
-                connectedUsers.delete(socket.userId);
+            const userId = socket.userId;
+            console.log(`[Socket] Disconnected: ${userId}`);
+            if (userId) {
+                connectedUsers.delete(userId);
+                console.log(`[Socket] Marked ${userId} as offline. Total online: ${connectedUsers.size}`);
                 try {
                     const db = await getPool();
                     await db.request()
-                        .input('uid', sql.NVarChar(128), socket.userId)
+                        .input('uid', sql.NVarChar(128), userId)
                         .query(`
                             UPDATE Users
                             SET lastSeenAt = GETUTCDATE()
                             WHERE id = @uid
                         `);
+                    console.log(`[Socket] Updated lastSeenAt on disconnect for user ${userId}`);
                 } catch (e) {
-                    console.error('[Socket] Failed to update lastSeenAt on disconnect:', (e as Error).message);
+                    console.error('[Socket] Failed to update lastSeenAt on disconnect for', userId, ':', (e as Error).message);
                 }
             }
         });

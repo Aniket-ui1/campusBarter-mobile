@@ -44,7 +44,7 @@ export default function SkillDetailScreen() {
     const handleRequest = async () => {
         if (!user) return;
         try {
-            const conv = await chatApi.findOrCreate(listing.userId);
+            const conv = await chatApi.findOrCreate(listing.userId, listing.title);
             const convId = (conv as any)?.conversation?.conversationId ?? (conv as any)?.conversationId;
             if (!convId) throw new Error('Invalid conversation response');
             Alert.alert(

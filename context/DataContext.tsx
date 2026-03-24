@@ -17,25 +17,25 @@ import React, {
     useState,
 } from "react";
 import {
-    getListings,
-    getChats,
-    getMessages,
-    sendMessage as apiSendMessage,
-    startChat as apiStartChat,
-    markChatRead as apiMarkChatRead,
-    deleteChat as apiDeleteChat,
-    getNotifications,
-    markNotificationRead as apiMarkRead,
-    markAllNotificationsRead as apiMarkAllRead,
-    createListing as apiCreateListing,
+    ApiChat,
     closeListing as apiCloseListing,
+    createListing as apiCreateListing,
+    deleteChat as apiDeleteChat,
     deleteListing as apiDeleteListing,
     ApiListing,
+    markAllNotificationsRead as apiMarkAllRead,
+    markNotificationRead as apiMarkRead,
     ApiMessage,
-    ApiChat,
     ApiNotification,
+    sendMessage as apiSendMessage,
+    startChat as apiStartChat,
+    getChats,
+    getListings,
+    getMessages,
+    getNotifications,
 } from "../lib/api";
-import { onNewMessage, joinChat, leaveChat } from "../lib/socket";
+import { emitMarkRead, joinChat, leaveChat, onNewListing, onNewMessage, onNewNotification } from "../lib/socket";
+import { chatApi } from "../services/chatApi";
 import { useAuth } from "./AuthContext";
 
 // ── Public types ──────────────────────────────────────────────────
@@ -82,6 +82,7 @@ interface DataContextType {
     refreshListings: () => Promise<void>;
 
     chats: Chat[];
+    unreadChatsCount: number;
     startChat: (listingId: string, listingTitle: string, userIds: string[], listingOwnerId?: string) => Promise<string>;
     sendMessage: (chatId: string, text: string, senderId: string) => Promise<void>;
     markChatRead: (chatId: string) => Promise<void>;
@@ -132,19 +133,46 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         }
     }, []);
 
-    // Only start fetching listings once auth has fully resolved (token restored from SecureStore).
-    // Without this gate, the very first fetch runs before the token is set, fails silently,
-    // and listings stay empty until the 30-second polling interval fires.
+    // Load initial listings (only once when auth finishes)
     useEffect(() => {
-        if (authLoading) return; // wait for auth to finish initialising
+        if (authLoading) return;
         void refreshListings();
-        const id = setInterval(refreshListings, 30_000); // poll every 30s
-        return () => clearInterval(id);
     }, [authLoading, refreshListings]);
+
+    // Listen to real-time new listings via Socket
+    useEffect(() => {
+        return onNewListing((newListing) => {
+            setListings(prev => [newListing, ...prev.filter(l => l.id !== newListing.id)]);
+        });
+    }, []);
 
     // ── Load chats ────────────────────────────────────────────────
     const refreshChats = useCallback(async () => {
         if (!user) { setChats([]); return; }
+        try {
+            // Try v2 API first
+            const v2Data = await chatApi.getConversations();
+            if (v2Data.conversations && v2Data.conversations.length > 0) {
+                const normalizedChats = v2Data.conversations.map(c => ({
+                    id: c.conversationId,
+                    conversationId: c.conversationId,
+                    otherUserId: c.otherUser?.id ?? '',
+                    otherUserName: c.otherUser?.name ?? 'Chat',
+                    lastMessage: c.lastMessage ?? '',
+                    lastMessageAt: c.lastMessageTime ?? new Date().toISOString(),
+                    unreadCount: c.unreadCount ?? 0,
+                    listingId: '',
+                    listingTitle: '',
+                    messages: chatMessages.current[c.conversationId] ?? [],
+                }));
+                setChats(normalizedChats);
+                return;
+            }
+        } catch (e) {
+            console.warn("[Data] V2 chat API failed, falling back to legacy:", e);
+        }
+
+        // Fallback to legacy API
         try {
             const data = await getChats(user.id);
             const normalizedChats = data.map(c => ({
@@ -177,19 +205,25 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     useEffect(() => {
         if (authLoading) return; // wait for auth to resolve before fetching user data
         void refreshNotifications();
-        const id = setInterval(refreshNotifications, 60_000); // poll every 60s
-        return () => clearInterval(id);
     }, [authLoading, refreshNotifications]);
+
+    // NOTE: Real-time notifications are handled below by the onNotification listener.
+    // The onNewNotification listener was removed to prevent every notification
+    // from being added twice (both handlers fire on the same socket event).
 
     // ── Socket.io: listen for new messages ────────────────────────
     useEffect(() => {
         const cleanup = onNewMessage((msg) => {
             const chatId = msg.conversationId ?? msg.chatId;
-            // Append to local message cache
+            // Dedup: if a messageId is present (v2 system emits to both room + user room),
+            // skip if already in cache to prevent the same message appearing twice.
+            const msgId = (msg as any).messageId;
             const prev = chatMessages.current[chatId] ?? [];
+            if (msgId && prev.some(m => (m as any).messageId === msgId || m.id === msgId)) return;
+            // Append to local message cache
             const newMsg: ApiMessage = {
                 ...msg,
-                id: `socket-${msg.senderId}-${Date.now()}`, // local id until next REST refresh
+                id: msgId ?? `socket-${msg.senderId}-${Date.now()}`,
             };
             chatMessages.current[chatId] = [...prev, newMsg];
             // Notify any subscribed screen
@@ -201,7 +235,15 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 const chatExists = currentChats.some((chat) => chat.id === chatId);
                 if (!chatExists) {
                     void refreshChats();
-                    return currentChats;
+                    // Optimistically increment unread for the chat with this sender,
+                    // matched by otherUserId, so the badge updates before the API returns.
+                    const chatBySender = currentChats.find(c => c.otherUserId === msg.senderId);
+                    if (!chatBySender) return currentChats;
+                    return dedupeChatsByParticipant(currentChats.map(chat =>
+                        chat.id === chatBySender.id
+                            ? { ...chat, lastMessage: msg.text, lastMessageAt: msg.sentAt, unreadCount: (chat.unreadCount ?? 0) + 1 }
+                            : chat
+                    ));
                 }
 
                 return dedupeChatsByParticipant(currentChats.map((chat) => {
@@ -224,9 +266,48 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         return cleanup;
     }, [refreshChats, user?.id]);
 
+    // ── Socket.io: listen for new notifications ───────────────────
+    useEffect(() => {
+        const cleanup = onNewNotification((notif) => {
+            const incomingId = (notif as any).notificationId ?? `socket-${Date.now()}`;
+            setNotifications(prev => {
+                // Skip if already present (prevents duplicate on fast socket + HTTP race)
+                if (prev.some(n => n.notificationId === incomingId)) return prev;
+                return [{
+                    notificationId: incomingId,
+                    userId: user?.id ?? '',
+                    type: notif.type,
+                    title: notif.title,
+                    message: notif.body,
+                    relatedEntityId: notif.relatedId ?? null,
+                    relatedEntityType: null,
+                    actionUrl: null,
+                    isRead: false,
+                    createdAt: notif.createdAt,
+                    // Legacy fields
+                    id: incomingId,
+                    body: notif.body,
+                    read: false,
+                    relatedId: notif.relatedId,
+                }, ...prev];
+            });
+        });
+        return cleanup;
+    }, [user?.id]);
+
+    // Bell badge: only bell-worthy types (request, review, match)
+    // Chat messages and accepted events are push-only and never stored to bell
+    const BELL_TYPES = ['request', 'review', 'match'];
     const unreadCount = useMemo(
-        () => notifications.filter(n => !n.read).length,
+        () => notifications.filter(n =>
+            BELL_TYPES.includes(n.type) && !n.isRead && !n.read
+        ).length,
         [notifications]
+    );
+
+    const unreadChatsCount = useMemo(
+        () => chats.filter(chat => (chat.unreadCount ?? 0) > 0).length,
+        [chats]
     );
 
     // ── Listings API ──────────────────────────────────────────────
@@ -235,19 +316,27 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         data: Omit<Listing, "id" | "createdAt" | "status"> & { category?: string }
     ) => {
         // Let creation errors propagate to the caller (post screen shows Alert)
-        await apiCreateListing({
+        const newId = await apiCreateListing({
             type: data.type,
             title: data.title,
             description: data.description,
             credits: data.credits,
             category: data.category,
         });
-        // Refresh is best-effort — if it fails, the 30s poll will pick up the listing
-        try {
-            await refreshListings();
-        } catch (e) {
-            console.warn("[Data] refreshListings after create failed:", e);
-        }
+
+        // 1. Optimistic Update so the current user sees it immediately (handle race condition with socket)
+        setListings(prev => {
+            if (prev.some(l => l.id === newId)) return prev;
+            return [{
+                ...data,
+                id: newId,
+                createdAt: new Date().toISOString(),
+                status: "OPEN" as const
+            } as Listing, ...prev];
+        });
+
+        // 2. Note: Other users will get this via the `new_listing` socket event 
+        // once you deploy the updated backend code to Azure!
     };
 
     const getListingById = (id: string) => listings.find(l => l.id === id);
@@ -300,7 +389,9 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
     const markChatRead = async (chatId: string) => {
         if (!user?.id) return;
-        await apiMarkChatRead(chatId, user.id);
+        // Mark read via socket (zero API calls) — backend updates DB + emits messages_seen
+        emitMarkRead(chatId);
+        // Update local state to clear badge immediately
         setChats((currentChats) => currentChats.map((chat) =>
             chat.id === chatId ? { ...chat, unreadCount: 0 } : chat
         ));
@@ -353,9 +444,8 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         // Join socket room
         joinChat(chatId);
         activeChatSubscriptions.current[chatId] = (activeChatSubscriptions.current[chatId] ?? 0) + 1;
-        void markChatRead(chatId).catch((error) => {
-            console.warn('[Data] markChatRead failed:', error);
-        });
+        // Mark read via socket (no API call)
+        emitMarkRead(chatId);
 
         // Register callback
         if (!msgCallbacks.current[chatId]) msgCallbacks.current[chatId] = [];
@@ -382,13 +472,13 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const markRead = async (notifId: string) => {
         await apiMarkRead(notifId);
         setNotifications(ns => ns.map(n =>
-            n.id === notifId ? { ...n, read: true } : n
+            (n.notificationId === notifId || n.id === notifId) ? { ...n, read: true, isRead: true } : n
         ));
     };
 
     const markAllRead = async () => {
         await apiMarkAllRead();
-        setNotifications(ns => ns.map(n => ({ ...n, read: true })));
+        setNotifications(ns => ns.map(n => ({ ...n, read: true, isRead: true })));
     };
 
     return (
@@ -401,6 +491,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 deleteListing: handleDeleteListing,
                 refreshListings,
                 chats,
+                unreadChatsCount,
                 startChat,
                 sendMessage,
                 markChatRead,

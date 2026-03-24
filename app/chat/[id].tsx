@@ -15,11 +15,14 @@ import {
     onReceiveMessage,
     onUserTyping,
 } from '@/services/socketService';
+import { emitConversationMessage, emitMarkRead, onMessageSent, onMessageSendError } from '@/lib/socket';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import EmojiSelector from 'react-native-emoji-selector';
+// import { useActionSheet } from '@expo/react-native-action-sheet';
+import { getApiBase, getApiToken } from '@/lib/api';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -36,7 +39,6 @@ import {
     TextInput,
     View,
 } from 'react-native';
-import { getApiBase, getApiToken } from '@/lib/api';
 
 // ── Helpers ──────────────────────────────────────────────────────
 function formatTime(iso: string): string {
@@ -123,17 +125,16 @@ export default function ChatScreen() {
     const {
         getChatById,
         loadOlderMessages,
-        sendMessage: sendLegacyMessage,
         markChatRead,
         subscribeToMessages,
     } = useData();
+    // const { showActionSheetWithOptions } = useActionSheet();
 
     const [otherName, setOtherName] = useState(paramRecipientName ?? 'Chat');
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [isLegacyMode, setIsLegacyMode] = useState(false);
     const [loading, setLoading] = useState(true);
     const [text, setText] = useState('');
-    const [sending, setSending] = useState(false);
     const [typingName, setTypingName] = useState<string | null>(null);
     const [recipientId, setRecipientId] = useState(paramRecipientId ?? '');
     const [page, setPage] = useState(1);
@@ -225,9 +226,13 @@ export default function ChatScreen() {
         }
     }, [id, isLegacyMode, paramRecipientName, user?.id, recipientId, loadOlderMessages, mapLegacyMessage, getChatById]);
 
+    const loadedChatId = useRef<string | null>(null);
+
     useEffect(() => {
+        if (!id || loadedChatId.current === id) return;
+        loadedChatId.current = id;
         void loadMessages(1);
-    }, [loadMessages]);
+    }, [id, loadMessages]);
 
     // ── Schedule midnight update for date labels ─────────────────
     useEffect(() => {
@@ -255,14 +260,14 @@ export default function ChatScreen() {
     }, []);
 
     // ── Mark as read ─────────────────────────────────────────────
+    const markedReadId = useRef<string | null>(null);
+
     useEffect(() => {
-        if (!id) return;
-        if (isLegacyMode) {
-            void markChatRead(id).catch(() => undefined);
-            return;
-        }
-        void chatApi.markRead(id).catch(() => undefined);
-    }, [id, isLegacyMode, markChatRead]);
+        if (!id || markedReadId.current === id) return;
+        markedReadId.current = id;
+        // markChatRead uses socket (emitMarkRead) + updates local unread badge — zero API calls
+        void markChatRead(id).catch(() => undefined);
+    }, [id, markChatRead]);
 
     // ── Fetch online status ──────────────────────────────────────
     useEffect(() => {
@@ -349,11 +354,16 @@ export default function ChatScreen() {
                 return updated;
             });
             scrollToLatest();
-            void chatApi.markRead(id).catch(() => undefined);
+            // Mark incoming messages as read via socket (zero API calls)
+            if (msg.senderId !== user?.id) {
+                emitMarkRead(id);
+            }
         });
 
-        const unsubSeen = onMessagesSeen(({ conversationId }) => {
+        const unsubSeen = onMessagesSeen(({ conversationId, readByUserId }) => {
             if (conversationId !== id) return;
+            // Only update when someone ELSE reads our messages (not when we read theirs)
+            if (readByUserId === user?.id) return;
             setMessages(prev => prev.map(m =>
                 m.senderId === user?.id ? { ...m, isRead: true } : m
             ));
@@ -396,6 +406,36 @@ export default function ChatScreen() {
             }));
         });
 
+        // Listen for send confirmations — replace optimistic messages with real server messages
+        const unsubSent = onMessageSent(({ message, tempId }) => {
+            if (message.conversationId !== id) return;
+            const stableMsg: ChatMessage = {
+                messageId: message.messageId,
+                conversationId: message.conversationId,
+                senderId: message.senderId,
+                senderName: message.senderName,
+                messageType: message.messageType ?? 'text',
+                textContent: message.textContent,
+                mediaUrl: message.mediaUrl ?? null,
+                mediaName: message.mediaName ?? null,
+                isRead: false,
+                readAt: null,
+                isDeleted: false,
+                createdAt: message.createdAt,
+            };
+            setMessages(prev => mergeMessages(prev.map(m =>
+                m.messageId === tempId ? stableMsg : m
+            )));
+        });
+
+        // Listen for send errors — remove optimistic message and alert
+        const unsubSendErr = onMessageSendError(({ error, tempId }) => {
+            if (tempId) {
+                setMessages(prev => prev.filter(m => m.messageId !== tempId));
+            }
+            Alert.alert('Send failed', error || 'Message could not be sent');
+        });
+
         return () => {
             leaveConversation(id);
             typingEmitter.current?.cleanup();
@@ -405,8 +445,11 @@ export default function ChatScreen() {
             unsubDeleted();
             unsubReactionAdded();
             unsubReactionRemoved();
+            unsubSent();
+            unsubSendErr();
         };
-    }, [id, isLegacyMode, user?.id, user?.displayName, subscribeToMessages, mapLegacyMessage]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, isLegacyMode, user?.id, user?.displayName]);
 
     // ── Send message ─────────────────────────────────────────────
     const [sendingMedia, setSendingMedia] = useState(false);
@@ -611,13 +654,15 @@ export default function ChatScreen() {
     };
 
 
-    const handleSend = async () => {
+    const handleSend = () => {
         const t = text.trim();
-        if (!t || !user?.id || !id || sending) return;
+        if (!t || !user?.id || !id) return;
 
-        // Optimistic update
+        const tempId = `opt-${Date.now()}`;
+
+        // Optimistic update — message appears instantly
         const optimisticMsg: ChatMessage = {
-            messageId:      `opt-${Date.now()}`,
+            messageId:      tempId,
             conversationId: id,
             senderId:       user.id,
             senderName:     user.displayName,
@@ -633,38 +678,13 @@ export default function ChatScreen() {
         setMessages(prev => mergeMessages([optimisticMsg, ...prev]));
         scrollToLatest(false);
         setText('');
-        setSending(true);
 
-        try {
-            if (isLegacyMode) {
-                await sendLegacyMessage(id, t, user.id);
-                setMessages(prev => prev.filter(m => m.messageId !== optimisticMsg.messageId));
-                await loadMessages(1);
-            } else {
-                const { message } = await chatApi.sendMessage(id, t, {
-                    id: user.id,
-                    name: user.displayName,
-                });
-                const stableMessage: ChatMessage = {
-                    ...message,
-                    messageId: message.messageId || optimisticMsg.messageId,
-                    senderId: message.senderId || user.id,
-                    senderName: message.senderName || user.displayName,
-                    textContent: message.textContent ?? t,
-                    createdAt: message.createdAt || optimisticMsg.createdAt,
-                };
-                setMessages(prev => mergeMessages(prev.map(m =>
-                    m.messageId === optimisticMsg.messageId ? stableMessage : m
-                )));
-                scrollToLatest(false);
-            }
-        } catch (error) {
-            setMessages(prev => prev.filter(m => m.messageId !== optimisticMsg.messageId));
+        // Fire-and-forget via socket — confirmation arrives via 'message_sent' event
+        const emitted = emitConversationMessage({ conversationId: id, text: t, tempId });
+        if (!emitted) {
+            setMessages(prev => prev.filter(m => m.messageId !== tempId));
             setText(t);
-            const message = (error as { message?: string })?.message || 'Message could not be sent. Please try again.';
-            Alert.alert('Send failed', message);
-        } finally {
-            setSending(false);
+            Alert.alert('Send failed', 'Not connected to chat server.');
         }
     };
 
@@ -684,6 +704,65 @@ export default function ChatScreen() {
             Alert.alert('Error', 'Could not add reaction');
         }
         setReactingToMessageId(null);
+    };
+
+    // ── Message Actions Menu ─────────────────────────────────────
+    const handleMessageLongPress = (message: ChatMessage) => {
+        if (message.isDeleted) return;
+
+        const isMe = message.senderId === user?.id;
+
+        // Simple Alert.alert menu (temporary until ActionSheet is fixed)
+        Alert.alert('Message Actions', 'Choose an action', [
+            {
+                text: 'Reply',
+                onPress: () => Alert.alert('Reply', 'Reply feature coming soon!'),
+            },
+            ...(isMe && message.messageType === 'text' ? [{
+                text: 'Edit',
+                onPress: () => Alert.alert('Edit', 'Edit feature coming soon!'),
+            }] : []),
+            {
+                text: 'Pin',
+                onPress: () => Alert.alert('Pin', 'Pin feature coming soon!'),
+            },
+            {
+                text: 'Delete for me',
+                style: 'destructive' as const,
+                onPress: async () => {
+                    try {
+                        await chatApi.deleteMessage(message.messageId, false);
+                        setMessages(prev => prev.map(m =>
+                            m.messageId === message.messageId
+                                ? { ...m, isDeleted: true, textContent: null }
+                                : m
+                        ));
+                    } catch (e) {
+                        Alert.alert('Error', 'Failed to delete message');
+                    }
+                },
+            },
+            ...(isMe ? [{
+                text: 'Delete for everyone',
+                style: 'destructive' as const,
+                onPress: async () => {
+                    try {
+                        await chatApi.deleteMessage(message.messageId, true);
+                        setMessages(prev => prev.map(m =>
+                            m.messageId === message.messageId
+                                ? { ...m, isDeleted: true, textContent: null }
+                                : m
+                        ));
+                    } catch (e) {
+                        Alert.alert('Error', 'Failed to delete message for everyone');
+                    }
+                },
+            }] : []),
+            {
+                text: 'Cancel',
+                style: 'cancel' as const,
+            },
+        ]);
     };
 
     const handleLoadOlder = async () => {
@@ -725,69 +804,7 @@ export default function ChatScreen() {
                             item.isDeleted && styles.bubbleDeleted,
                             highlightedMessageId === item.messageId && styles.bubbleHighlighted,
                         ]}
-                        onLongPress={() => {
-                            if (item.isDeleted) return;
-                            
-                            if (isMe) {
-                                // Sent by me — show both delete options
-                                Alert.alert('Delete message', 'Choose how to delete this message', [
-                                    {
-                                        text: 'Delete for me',
-                                        onPress: async () => {
-                                            try {
-                                                await chatApi.deleteMessage(item.messageId, false);
-                                                setMessages(prev => prev.map(m =>
-                                                    m.messageId === item.messageId
-                                                        ? { ...m, isDeleted: true, textContent: null }
-                                                        : m
-                                                ));
-                                            } catch (e) {
-                                                Alert.alert('Error', 'Failed to delete message');
-                                            }
-                                        },
-                                        style: 'default',
-                                    },
-                                    {
-                                        text: 'Delete for everyone',
-                                        onPress: async () => {
-                                            try {
-                                                await chatApi.deleteMessage(item.messageId, true);
-                                                setMessages(prev => prev.map(m =>
-                                                    m.messageId === item.messageId
-                                                        ? { ...m, isDeleted: true, textContent: null }
-                                                        : m
-                                                ));
-                                            } catch (e) {
-                                                Alert.alert('Error', 'Failed to delete message for everyone');
-                                            }
-                                        },
-                                        style: 'destructive',
-                                    },
-                                    { text: 'Cancel', style: 'cancel' },
-                                ]);
-                            } else {
-                                // Received message — only delete for me
-                                Alert.alert('Delete message', 'Delete this message?', [
-                                    {
-                                        text: 'Delete for me',
-                                        onPress: async () => {
-                                            try {
-                                                await chatApi.deleteMessage(item.messageId, false);
-                                                setMessages(prev => prev.map(m =>
-                                                    m.messageId === item.messageId
-                                                        ? { ...m, isDeleted: true, textContent: null }
-                                                        : m
-                                                ));
-                                            } catch (e) {
-                                                Alert.alert('Error', 'Failed to delete message');
-                                            }
-                                        },
-                                        style: 'destructive',
-                                    },
-                                    { text: 'Cancel', style: 'cancel' },
-                                ]);
-                            }
-                        }}
+                        onLongPress={() => handleMessageLongPress(item)}
                     >
                         {/* Show deleted placeholder or message content */}
                         {item.isDeleted ? (
@@ -894,9 +911,9 @@ export default function ChatScreen() {
                             </Text>
                             {isMe && !item.isDeleted && (
                                 <Ionicons
-                                    name={isOptimistic ? 'checkmark' : (item.isRead ? 'checkmark-done' : 'checkmark')}
+                                    name={isOptimistic ? 'time-outline' : 'checkmark-done'}
                                     size={13}
-                                    color={isOptimistic ? 'rgba(255,255,255,0.5)' : (item.isRead ? '#4FC3F7' : 'rgba(0,0,0,0.4)')}
+                                    color={isOptimistic ? 'rgba(0,0,0,0.3)' : (item.isRead ? '#4FC3F7' : 'rgba(0,0,0,0.4)')}
                                     style={{ marginLeft: 2 }}
                                 />
                             )}
@@ -1078,9 +1095,9 @@ export default function ChatScreen() {
                     <Pressable
                         style={styles.sendBtn}
                         onPress={handleSend}
-                        disabled={!text.trim() || sending || sendingMedia}
+                        disabled={!text.trim() || sendingMedia}
                     >
-                        {sending || sendingMedia ? (
+                        {sendingMedia ? (
                             <ActivityIndicator color="#FFF" size="small" />
                         ) : (
                             <Ionicons

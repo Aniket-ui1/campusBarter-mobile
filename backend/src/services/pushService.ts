@@ -8,6 +8,7 @@
 import Expo, { ExpoPushMessage, ExpoPushTicket } from 'expo-server-sdk';
 import sql from 'mssql';
 import { getPool } from '../db';
+import { notifyMessage } from '../notifyEvent';
 
 const expo = new Expo();
 
@@ -92,12 +93,9 @@ export async function notifyOtherParticipant(
         const { senderName, recipientId } = result.recordset[0];
         const bodyText = preview.length > 100 ? preview.slice(0, 97) + '...' : preview;
 
-        await sendPushToUser(
-            recipientId,
-            `New message from ${senderName}`,
-            bodyText,
-            { type: 'new_message', conversationId }
-        );
+        // notifyMessage handles push (when offline) + skips bell DB insert.
+        // Do NOT call sendPushToUser directly here — notifyEvent already does it.
+        notifyMessage(recipientId, senderName, conversationId, bodyText);
     } catch (err) {
         console.error('[PushService] notifyOtherParticipant failed:', err);
     }

@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "Bash(npx tsc:*)",
+      "Bash(npx expo:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(where gh:*)",
+      "Bash(git add:*)",
+      "Bash(grep -r \"registerForPushNotifications\\\\|NotificationChannelAndroid\\\\|useNotifications\" /c/Users/anike/Projects/campusBarter-mobile --include=\"*.tsx\" --include=\"*.ts\" ! -path \"*/node_modules/*\")",
+      "Bash(grep -r \"registerForPushNotifications\\\\|NotificationChannelAndroid\\\\|useNotifications\" /c/Users/anike/Projects/campusBarter-mobile --include=*.tsx --include=*.ts ! -path */node_modules/*)",
+      "Bash(xargs grep:*)",
+      "Bash(grep -rn \"setInterval.*notification\\\\|setTimeout.*notification\" /c/Users/anike/Projects/campusBarter-mobile --include=\"*.tsx\" --include=\"*.ts\" ! -path \"*/node_modules/*\")",
+      "Read(//c/Users/anike/.vscode/extensions//**)",
+      "Bash(find /c/Users/anike/Projects/campusBarter-mobile -name *.sql -type f)",
+      "Bash(grep -n \"ALTER TABLE Users\" /c/Users/anike/Projects/campusBarter-mobile/infrastructure/*.sql)",
+      "Bash(gh pr:*)",
+      "Bash(winget install:*)",
+      "Bash(find /c/Users/anike/Projects/campusBarter-mobile -type f -name *api.ts)",
+      "Bash(find /c/Users/anike/Projects/campusBarter-mobile/backend -type f -name *.ts -o -name *.js -o -name *.sql)",
+      "Bash(find /c/Users/anike/Projects/campusBarter-mobile -type f -name *init* -o -name *schema* -o -name *migration*)"
+    ]
+  }
+}

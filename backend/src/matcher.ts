@@ -14,8 +14,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { findMatchingUsers } from './db';
-import { sendPushNotification } from './push';
-import { createNotification } from './db';
+import { notifySmartMatch } from './notifyEvent';
 
 // Common English stop-words to strip before keyword matching
 const STOP_WORDS = new Set([
@@ -51,7 +50,7 @@ export async function runSmartMatching(params: {
     postedByName: string;
 }): Promise<void> {
     try {
-        const { newListingId, type, title, description, postedByUserId, postedByName } = params;
+        const { newListingId, type, title, description, postedByUserId } = params;
 
         const keywords = extractKeywords(title, description);
         if (keywords.length === 0) return;
@@ -70,26 +69,11 @@ export async function runSmartMatching(params: {
         console.log(`[Matcher] Found ${matches.length} potential matches for listing ${newListingId}`);
 
         // Notify each matched user — in parallel
-        const verb = type === 'OFFER' ? 'is offering' : 'is looking for';
-        const notifyAll = matches.map(async (match) => {
+        // notifySmartMatch handles: DB bell insert + socket emit + push (when offline)
+        const notifyAll = matches.map((match) => {
             const userId = match.userId as string;
-
-            // 1. Push notification (works even if app is closed)
-            await sendPushNotification(
-                userId,
-                '🎯 Potential Match Found!',
-                `${postedByName} ${verb} "${title}" — check it out!`,
-                { type: 'match', listingId: newListingId }
-            );
-
-            // 2. In-app notification (shows in bell icon)
-            await createNotification(
-                userId,
-                'MATCH',
-                '🎯 Potential Match Found!',
-                `${postedByName} ${verb} "${title}"`,
-                newListingId
-            );
+            notifySmartMatch(userId, title, newListingId);
+            return Promise.resolve();
         });
 
         await Promise.allSettled(notifyAll); // allSettled = one failure doesn't stop others

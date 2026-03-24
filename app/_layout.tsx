@@ -2,13 +2,18 @@ import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
+import { useEffect } from 'react';
 import { AppColors } from '@/constants/theme';
 import { AuthProvider } from '@/context/AuthContext';
 import { DataProvider } from '@/context/DataContext';
 import { OnboardingProvider } from '@/context/OnboardingContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { setupNotificationHandler, setupNotificationResponseListener } from '@/lib/notifications';
+// import { ActionSheetProvider } from '@expo/react-native-action-sheet';
 
+// Configure foreground notification display once, before any screen mounts
+setupNotificationHandler();
 
 const CampusBarterTheme = {
   ...DefaultTheme,
@@ -24,6 +29,11 @@ const CampusBarterTheme = {
 };
 
 export default function RootLayout() {
+  // Register the notification tap handler and clean it up when layout unmounts
+  useEffect(() => {
+    return setupNotificationResponseListener();
+  }, []);
+
   return (
     <ErrorBoundary>
       <ThemeProvider value={CampusBarterTheme}>

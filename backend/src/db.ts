@@ -1053,7 +1053,9 @@ export async function getNotifications(userId: string): Promise<Record<string, u
     const result = await db.request()
         .input('userId', sql.NVarChar(128), userId)
         .query(`
-            SELECT id, type, title, body, [read], relatedId, createdAt
+            SELECT notificationId, userId, type, title, message,
+                   relatedEntityId, relatedEntityType, actionUrl,
+                   isRead, createdAt
             FROM   Notifications
             WHERE  userId = @userId
             ORDER  BY createdAt DESC
@@ -1066,36 +1068,40 @@ export async function markNotificationRead(notificationId: string, userId: strin
     await db.request()
         .input('id', sql.NVarChar(128), notificationId)
         .input('userId', sql.NVarChar(128), userId)
-        .query(`UPDATE Notifications SET [read] = 1 WHERE id = @id AND userId = @userId`);
+        .query(`UPDATE Notifications SET isRead = 1 WHERE notificationId = @id AND userId = @userId`);
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
     const db = await getPool();
     await db.request()
         .input('userId', sql.NVarChar(128), userId)
-        .query(`UPDATE Notifications SET [read] = 1 WHERE userId = @userId`);
+        .query(`UPDATE Notifications SET isRead = 1 WHERE userId = @userId`);
 }
 
 export async function createNotification(
     userId: string,
     type: string,
     title: string,
-    body: string,
-    relatedId?: string
-): Promise<void> {
+    message: string,
+    relatedEntityId?: string,
+    relatedEntityType?: string,
+    actionUrl?: string
+): Promise<string> {
     const db = await getPool();
-    const id = crypto.randomUUID();
-    await db.request()
-        .input('id', sql.NVarChar(128), id)
+    const result = await db.request()
         .input('userId', sql.NVarChar(128), userId)
         .input('type', sql.NVarChar(50), type)
         .input('title', sql.NVarChar(200), title)
-        .input('body', sql.NVarChar(500), body)
-        .input('relatedId', sql.NVarChar(128), relatedId ?? null)
+        .input('message', sql.NVarChar(500), message)
+        .input('relatedEntityId', sql.NVarChar(128), relatedEntityId ?? null)
+        .input('relatedEntityType', sql.NVarChar(50), relatedEntityType ?? null)
+        .input('actionUrl', sql.NVarChar(500), actionUrl ?? null)
         .query(`
-            INSERT INTO Notifications (id, userId, type, title, body, relatedId)
-            VALUES (@id, @userId, @type, @title, @body, @relatedId)
+            INSERT INTO Notifications (userId, type, title, message, relatedEntityId, relatedEntityType, actionUrl)
+            OUTPUT INSERTED.notificationId
+            VALUES (@userId, @type, @title, @message, @relatedEntityId, @relatedEntityType, @actionUrl)
         `);
+    return result.recordset[0].notificationId;
 }
 
 // ── Time Credits ──────────────────────────────────────────────
@@ -1199,6 +1205,47 @@ export async function getPushToken(userId: string): Promise<string | null> {
         .input('userId', sql.NVarChar(128), userId)
         .query(`SELECT pushToken FROM Users WHERE id = @userId`);
     return (result.recordset[0]?.pushToken as string) ?? null;
+}
+
+/**
+ * Return all Expo push tokens registered for a user (multi-device table).
+ */
+export async function getUserPushTokens(userId: string): Promise<string[]> {
+    try {
+        const db = await getPool();
+        const result = await db.request()
+            .input('uid', sql.NVarChar(128), userId)
+            .query('SELECT pushToken FROM UserPushTokens WHERE userId = @uid');
+        return result.recordset.map((r: { pushToken: string }) => r.pushToken);
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Upsert an Expo push token into UserPushTokens (multi-device table).
+ * Safe to call repeatedly — duplicate (userId, pushToken) pairs are ignored.
+ */
+export async function saveUserPushToken(
+    userId: string,
+    token: string,
+    platform: string
+): Promise<void> {
+    const db = await getPool();
+    await db.request()
+        .input('uid',   sql.NVarChar(128), userId)
+        .input('token', sql.NVarChar(500), token)
+        .input('plat',  sql.NVarChar(20),  platform || 'unknown')
+        .query(`
+            MERGE UserPushTokens AS target
+            USING (SELECT @uid AS userId, @token AS pushToken) AS source
+            ON target.userId = source.userId AND target.pushToken = source.pushToken
+            WHEN MATCHED THEN
+                UPDATE SET platform = @plat
+            WHEN NOT MATCHED THEN
+                INSERT (userId, pushToken, platform)
+                VALUES (@uid, @token, @plat);
+        `);
 }
 
 // ── Smart Matching ─────────────────────────────────────────────

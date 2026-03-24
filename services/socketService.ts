@@ -51,6 +51,20 @@ export interface ReactionRemovedPayload {
     emoji: string;
 }
 
+export interface MessageEditedPayload {
+    messageId: string;
+    textContent: string;
+    isEdited: boolean;
+    editedAt: string;
+}
+
+export interface MessagePinnedPayload {
+    messageId: string;
+    isPinned: boolean;
+    pinnedAt: string | null;
+    pinnedBy: string | null;
+}
+
 // ── Connect / Disconnect ──────────────────────────────────────
 /** Connect the socket (call after login). */
 export { connectSocket as connectChatSocket, disconnectSocket as disconnectChatSocket };
@@ -168,4 +182,50 @@ export function onReactionRemoved(
     const sock = getSocket() ?? connectSocket();
     sock.on('reaction_removed', handler);
     return () => sock.off('reaction_removed', handler);
+}
+
+// ── Edit & Pin Events ─────────────────────────────────────────
+/** Listen for messages being edited. */
+export function onMessageEdited(
+    handler: (payload: MessageEditedPayload) => void
+): () => void {
+    const sock = getSocket() ?? connectSocket();
+    sock.on('message_edited', handler);
+    return () => sock.off('message_edited', handler);
+}
+
+/** Listen for messages being pinned. */
+export function onMessagePinned(
+    handler: (payload: MessagePinnedPayload) => void
+): () => void {
+    const sock = getSocket() ?? connectSocket();
+    sock.on('message_pinned', handler);
+    return () => sock.off('message_pinned', handler);
+}
+
+/** Listen for messages being unpinned. */
+export function onMessageUnpinned(
+    handler: (payload: MessagePinnedPayload) => void
+): () => void {
+    const sock = getSocket() ?? connectSocket();
+    sock.on('message_unpinned', handler);
+    return () => sock.off('message_unpinned', handler);
+}
+
+// ── Notification Events ───────────────────────────────────────
+export interface NotificationPayload {
+    type: string;
+    title: string;
+    body: string;
+    relatedId?: string;
+    createdAt: string;
+}
+
+/** Listen for new in-app notifications. */
+export function onNotification(
+    handler: (payload: NotificationPayload) => void
+): () => void {
+    const sock = getSocket() ?? connectSocket();
+    sock.on('notification', handler);
+    return () => sock.off('notification', handler);
 }
