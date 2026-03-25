@@ -143,7 +143,8 @@ async function fetch_history(): Promise<CreditTransaction[]> {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         if (!res.ok) return [];
-        return res.json();
+        const data = await res.json();
+        return Array.isArray(data) ? data : (data.transactions ?? []);
     } catch { return []; }
 }
 
