@@ -35,11 +35,13 @@ exchangesRouter.post('/',
             res.status(201).json({ exchangeId });
         } catch (err: any) {
             const msg = err?.message ?? '';
+            console.error('[Exchanges] POST / error:', msg, err);
             if (msg === 'Insufficient credits') { res.status(402).json({ error: 'Insufficient credits' }); return; }
-            if (msg.includes('duplicate') || msg.includes('UQ_') || msg.includes('UX_')) {
+            if (msg.includes('Cannot exchange with yourself')) { res.status(400).json({ error: 'Cannot request your own listing' }); return; }
+            if (msg.includes('duplicate') || msg.includes('UQ_') || msg.includes('UX_') || msg.includes('unique') || msg.includes('Violation')) {
                 res.status(409).json({ error: 'You already have an active request for this listing' }); return;
             }
-            res.status(500).json({ error: 'Could not create exchange' });
+            res.status(500).json({ error: `Could not create exchange: ${msg}` });
         }
     }
 );
