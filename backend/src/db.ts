@@ -675,8 +675,7 @@ export async function upsertUserProfile(
 
     if (existing.recordset.length === 0) {
         console.log(`[DB] Creating NEW user record for ${userId} (${data.email})`);
-        // First time login — CREATE user record
-        // Default credits = 10 (per schema.sql)
+        // First time login — CREATE user record with 3 welcome credits
         try {
             await db.request()
                 .input('id', sql.NVarChar(128), userId)
@@ -688,10 +687,19 @@ export async function upsertUserProfile(
                 .input('avatarUrl', sql.NVarChar(500), data.avatarUrl || null)
                 .input('profileComplete', sql.Bit, data.profileComplete ? 1 : 0)
                 .query(`
-                    INSERT INTO Users (id, email, displayName, bio, program, semester, avatarUrl, profileComplete)
-                    VALUES (@id, @email, @name, @bio, @program, @semester, @avatarUrl, @profileComplete)
+                    INSERT INTO Users (id, email, displayName, bio, program, semester, avatarUrl, profileComplete, creditsBalance)
+                    VALUES (@id, @email, @name, @bio, @program, @semester, @avatarUrl, @profileComplete, 5)
                 `);
-            console.log(`[DB] Successfully created user ${userId}`);
+            // Log welcome bonus to TimeCredits ledger
+            const welcomeId = require('crypto').randomUUID();
+            await db.request()
+                .input('id', sql.NVarChar(128), welcomeId)
+                .input('userId', sql.NVarChar(128), userId)
+                .query(`
+                    INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason)
+                    VALUES (@id, @userId, @userId, 5, 'Welcome bonus')
+                `);
+            console.log(`[DB] Successfully created user ${userId} with 3 welcome credits`);
         } catch (err: any) {
             console.error(`[DB] Failed to create user ${userId}:`, err.message);
             throw err;
@@ -1106,12 +1114,79 @@ export async function createNotification(
 
 // ── Time Credits ──────────────────────────────────────────────
 
-export async function getCreditsBalance(userId: string): Promise<number> {
+export async function getCreditsBalance(userId: string): Promise<{ balance: number; reserved: number }> {
     const db = await getPool();
-    const result = await db.request()
-        .input('userId', sql.NVarChar(128), userId)
-        .query(`SELECT creditsBalance FROM Users WHERE id = @userId`);
-    return (result.recordset[0]?.creditsBalance as number) ?? 0;
+    // Try with reservedCredits column (post-migration); fall back to just creditsBalance if column doesn't exist yet
+    let result: any;
+    try {
+        result = await db.request()
+            .input('userId', sql.NVarChar(128), userId)
+            .query(`SELECT creditsBalance, ISNULL(reservedCredits, 0) AS reservedCredits FROM Users WHERE id = @userId`);
+    } catch {
+        result = await db.request()
+            .input('userId', sql.NVarChar(128), userId)
+            .query(`SELECT creditsBalance, 0 AS reservedCredits FROM Users WHERE id = @userId`);
+    }
+    return {
+        balance:  (result.recordset[0]?.creditsBalance  as number) ?? 0,
+        reserved: (result.recordset[0]?.reservedCredits as number) ?? 0,
+    };
+}
+
+// Grant 5 welcome credits to any user who has 0 balance and no prior credit history.
+// Called at server startup to backfill users who registered before this feature.
+export async function backfillWelcomeCredits(): Promise<number> {
+    const db = await getPool();
+    const users = await db.request().query(`
+        SELECT u.id FROM Users u
+        WHERE u.creditsBalance = 0
+          AND NOT EXISTS (SELECT 1 FROM TimeCredits tc WHERE tc.toUserId = u.id)
+    `);
+    if (users.recordset.length === 0) return 0;
+    for (const row of users.recordset) {
+        const uid = row.id as string;
+        const txId = require('crypto').randomUUID();
+        await db.request()
+            .input('id',  sql.NVarChar(128), txId)
+            .input('uid', sql.NVarChar(128), uid)
+            .query(`
+                UPDATE Users SET creditsBalance = 5 WHERE id = @uid;
+                INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason)
+                VALUES (@id, @uid, @uid, 5, 'Welcome bonus');
+            `);
+    }
+    console.log(`[Credits] Backfilled welcome credits for ${users.recordset.length} user(s)`);
+    return users.recordset.length;
+}
+
+// Grant 3 monthly credits to every user who hasn't received them in the last 30 days.
+// Returns the number of users credited.
+export async function grantMonthlyCredits(): Promise<number> {
+    const db = await getPool();
+    const eligible = await db.request().query(`
+        SELECT id FROM Users
+        WHERE NOT EXISTS (
+            SELECT 1 FROM TimeCredits tc
+            WHERE tc.toUserId = Users.id
+              AND tc.reason = 'Monthly credit'
+              AND tc.createdAt >= DATEADD(DAY, -30, GETUTCDATE())
+        )
+    `);
+    if (eligible.recordset.length === 0) return 0;
+    for (const row of eligible.recordset) {
+        const uid = row.id as string;
+        const txId = require('crypto').randomUUID();
+        await db.request()
+            .input('id',  sql.NVarChar(128), txId)
+            .input('uid', sql.NVarChar(128), uid)
+            .query(`
+                UPDATE Users SET creditsBalance = creditsBalance + 3 WHERE id = @uid;
+                INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason)
+                VALUES (@id, @uid, @uid, 3, 'Monthly credit');
+            `);
+    }
+    console.log(`[Credits] Granted 3 monthly credits to ${eligible.recordset.length} user(s)`);
+    return eligible.recordset.length;
 }
 
 export async function getCreditsHistory(
@@ -1457,6 +1532,398 @@ export async function adminAnonymizeUser(userId: string, actorUserId: string): P
 
     await auditLog(actorUserId, 'ADMIN_ANONYMIZE_USER', `User:${userId}`);
     return true;
+}
+
+// ── Skill Exchange System ─────────────────────────────────────
+
+export interface SkillExchangeRow {
+    id: string;
+    listingId: string;
+    listingTitle: string;
+    requesterId: string;
+    requesterName: string;
+    providerId: string;
+    providerName: string;
+    credits: number;
+    status: 'REQUESTED' | 'ACCEPTED' | 'COMPLETED' | 'CANCELLED' | 'DISPUTED';
+    requesterConfirmed: boolean;
+    providerConfirmed: boolean;
+    acceptedAt: string | null;
+    requesterConfirmedAt: string | null;
+    providerConfirmedAt: string | null;
+    completedAt: string | null;
+    autoCompleted: boolean;
+    cancelledBy: string | null;
+    cancelReason: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface ExchangeDisputeRow {
+    id: string;
+    exchangeId: string;
+    listingTitle: string;
+    requesterId: string;
+    requesterName: string;
+    providerId: string;
+    providerName: string;
+    credits: number;
+    raisedBy: string;
+    raisedByName: string;
+    reason: string;
+    status: 'OPEN' | 'RESOLVED' | 'DISMISSED';
+    resolvedBy: string | null;
+    resolution: string | null;
+    outcome: 'COMPLETED' | 'CANCELLED' | null;
+    createdAt: string;
+    resolvedAt: string | null;
+}
+
+const SE_SELECT = `
+    SELECT
+        se.id, se.listingId, l.title AS listingTitle,
+        se.requesterId, ur.displayName AS requesterName,
+        se.providerId,  up.displayName AS providerName,
+        se.credits, se.status,
+        se.requesterConfirmed, se.providerConfirmed,
+        se.acceptedAt, se.requesterConfirmedAt, se.providerConfirmedAt,
+        se.completedAt, se.autoCompleted,
+        se.cancelledBy, se.cancelReason,
+        se.createdAt, se.updatedAt
+    FROM SkillExchanges se
+    JOIN Listings l  ON l.id  = se.listingId
+    JOIN Users   ur  ON ur.id = se.requesterId
+    JOIN Users   up  ON up.id = se.providerId
+`;
+
+export async function createSkillExchange(
+    listingId: string,
+    requesterId: string,
+    providerId: string,
+    credits: number
+): Promise<string> {
+    if (requesterId === providerId) throw new Error('Cannot exchange with yourself');
+    const db = await getPool();
+    const id = crypto.randomUUID();
+    const txn = new sql.Transaction(db);
+    await txn.begin();
+    try {
+        const esc = await new sql.Request(txn)
+            .input('requesterId', sql.NVarChar(128), requesterId)
+            .input('credits', sql.Int, credits)
+            .query(`
+                UPDATE Users
+                SET creditsBalance  = creditsBalance  - @credits,
+                    reservedCredits = ISNULL(reservedCredits, 0) + @credits,
+                    updatedAt       = GETUTCDATE()
+                WHERE id = @requesterId AND creditsBalance >= @credits
+            `);
+        if (esc.rowsAffected[0] === 0) throw new Error('Insufficient credits');
+
+        await new sql.Request(txn)
+            .input('id',          sql.NVarChar(128), id)
+            .input('listingId',   sql.NVarChar(128), listingId)
+            .input('requesterId', sql.NVarChar(128), requesterId)
+            .input('providerId',  sql.NVarChar(128), providerId)
+            .input('credits',     sql.Int, credits)
+            .query(`
+                INSERT INTO SkillExchanges (id, listingId, requesterId, providerId, credits, status)
+                VALUES (@id, @listingId, @requesterId, @providerId, @credits, 'REQUESTED')
+            `);
+
+        await txn.commit();
+        return id;
+    } catch (err) {
+        await txn.rollback();
+        throw err;
+    }
+}
+
+export async function getSkillExchanges(userId: string): Promise<SkillExchangeRow[]> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`${SE_SELECT} WHERE se.requesterId = @userId OR se.providerId = @userId ORDER BY se.createdAt DESC`);
+    return result.recordset as SkillExchangeRow[];
+}
+
+export async function getSkillExchangeById(id: string, userId: string): Promise<SkillExchangeRow | null> {
+    const db = await getPool();
+    const result = await db.request()
+        .input('id',     sql.NVarChar(128), id)
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`${SE_SELECT} WHERE se.id = @id AND (se.requesterId = @userId OR se.providerId = @userId)`);
+    return (result.recordset[0] as SkillExchangeRow) ?? null;
+}
+
+export async function acceptSkillExchange(id: string, providerId: string): Promise<void> {
+    const db = await getPool();
+    const r = await db.request()
+        .input('id',         sql.NVarChar(128), id)
+        .input('providerId', sql.NVarChar(128), providerId)
+        .query(`
+            UPDATE SkillExchanges
+            SET status = 'ACCEPTED', acceptedAt = GETUTCDATE(), updatedAt = GETUTCDATE()
+            WHERE id = @id AND providerId = @providerId AND status = 'REQUESTED'
+        `);
+    if (r.rowsAffected[0] === 0) throw new Error('Exchange not found or cannot be accepted');
+}
+
+export async function confirmSkillExchange(
+    id: string,
+    userId: string
+): Promise<{ completed: boolean; requesterId: string; providerId: string; credits: number }> {
+    const db = await getPool();
+    const txn = new sql.Transaction(db);
+    await txn.begin();
+    try {
+        const fetch = await new sql.Request(txn)
+            .input('id',     sql.NVarChar(128), id)
+            .input('userId', sql.NVarChar(128), userId)
+            .query(`
+                SELECT requesterId, providerId, credits, requesterConfirmed, providerConfirmed
+                FROM SkillExchanges
+                WHERE id = @id AND (requesterId = @userId OR providerId = @userId) AND status = 'ACCEPTED'
+            `);
+        const ex = fetch.recordset[0];
+        if (!ex) throw new Error('Exchange not found or not in ACCEPTED state');
+
+        const isRequester = ex.requesterId === userId;
+        if (isRequester  && ex.requesterConfirmed) throw new Error('Already confirmed');
+        if (!isRequester && ex.providerConfirmed)  throw new Error('Already confirmed');
+
+        const now = new Date();
+        await new sql.Request(txn)
+            .input('id',  sql.NVarChar(128), id)
+            .input('now', sql.DateTime2, now)
+            .query(isRequester
+                ? `UPDATE SkillExchanges SET requesterConfirmed = 1, requesterConfirmedAt = @now, updatedAt = @now WHERE id = @id`
+                : `UPDATE SkillExchanges SET providerConfirmed  = 1, providerConfirmedAt  = @now, updatedAt = @now WHERE id = @id`
+            );
+
+        const bothConfirmed = isRequester ? !!ex.providerConfirmed : !!ex.requesterConfirmed;
+        if (bothConfirmed) {
+            await new sql.Request(txn)
+                .input('credits',     sql.Int,          ex.credits)
+                .input('requesterId', sql.NVarChar(128), ex.requesterId)
+                .query(`UPDATE Users SET reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @requesterId`);
+            await new sql.Request(txn)
+                .input('credits',    sql.Int,          ex.credits)
+                .input('providerId', sql.NVarChar(128), ex.providerId)
+                .query(`UPDATE Users SET creditsBalance = creditsBalance + @credits, updatedAt = GETUTCDATE() WHERE id = @providerId`);
+            const txId = crypto.randomUUID();
+            await new sql.Request(txn)
+                .input('id',   sql.NVarChar(128), txId)
+                .input('from', sql.NVarChar(128), ex.requesterId)
+                .input('to',   sql.NVarChar(128), ex.providerId)
+                .input('amt',  sql.Int,           ex.credits)
+                .query(`INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason) VALUES (@id, @from, @to, @amt, 'Skill exchange completed')`);
+            await new sql.Request(txn)
+                .input('id',  sql.NVarChar(128), id)
+                .input('now', sql.DateTime2, now)
+                .query(`UPDATE SkillExchanges SET status = 'COMPLETED', completedAt = @now, updatedAt = @now WHERE id = @id`);
+        }
+
+        await txn.commit();
+        return { completed: bothConfirmed, requesterId: ex.requesterId, providerId: ex.providerId, credits: ex.credits };
+    } catch (err) {
+        await txn.rollback();
+        throw err;
+    }
+}
+
+export async function cancelSkillExchange(
+    id: string,
+    userId: string,
+    reason?: string
+): Promise<{ requesterId: string; providerId: string; credits: number }> {
+    const db = await getPool();
+    const txn = new sql.Transaction(db);
+    await txn.begin();
+    try {
+        const fetch = await new sql.Request(txn)
+            .input('id',     sql.NVarChar(128), id)
+            .input('userId', sql.NVarChar(128), userId)
+            .query(`
+                SELECT requesterId, providerId, credits
+                FROM SkillExchanges
+                WHERE id = @id AND (requesterId = @userId OR providerId = @userId)
+                  AND status IN ('REQUESTED','ACCEPTED')
+            `);
+        const ex = fetch.recordset[0];
+        if (!ex) throw new Error('Exchange not found or cannot be cancelled');
+
+        await new sql.Request(txn)
+            .input('credits',     sql.Int,          ex.credits)
+            .input('requesterId', sql.NVarChar(128), ex.requesterId)
+            .query(`UPDATE Users SET creditsBalance = creditsBalance + @credits, reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @requesterId`);
+        await new sql.Request(txn)
+            .input('id',     sql.NVarChar(128), id)
+            .input('userId', sql.NVarChar(128), userId)
+            .input('reason', sql.NVarChar(500), reason ?? null)
+            .query(`UPDATE SkillExchanges SET status = 'CANCELLED', cancelledBy = @userId, cancelReason = @reason, updatedAt = GETUTCDATE() WHERE id = @id`);
+
+        await txn.commit();
+        return { requesterId: ex.requesterId, providerId: ex.providerId, credits: ex.credits };
+    } catch (err) {
+        await txn.rollback();
+        throw err;
+    }
+}
+
+export async function raiseDispute(exchangeId: string, userId: string, reason: string): Promise<void> {
+    const db = await getPool();
+    const txn = new sql.Transaction(db);
+    await txn.begin();
+    try {
+        const check = await new sql.Request(txn)
+            .input('exchangeId', sql.NVarChar(128), exchangeId)
+            .input('userId',     sql.NVarChar(128), userId)
+            .query(`SELECT id FROM SkillExchanges WHERE id = @exchangeId AND (requesterId = @userId OR providerId = @userId) AND status = 'ACCEPTED'`);
+        if (!check.recordset[0]) throw new Error('Exchange not found or not in ACCEPTED state');
+
+        await new sql.Request(txn)
+            .input('exchangeId', sql.NVarChar(128), exchangeId)
+            .query(`UPDATE SkillExchanges SET status = 'DISPUTED', updatedAt = GETUTCDATE() WHERE id = @exchangeId`);
+
+        await new sql.Request(txn)
+            .input('id',         sql.NVarChar(128), crypto.randomUUID())
+            .input('exchangeId', sql.NVarChar(128), exchangeId)
+            .input('raisedBy',   sql.NVarChar(128), userId)
+            .input('reason',     sql.NVarChar(1000), reason)
+            .query(`INSERT INTO ExchangeDisputes (id, exchangeId, raisedBy, reason, status) VALUES (@id, @exchangeId, @raisedBy, @reason, 'OPEN')`);
+
+        await txn.commit();
+    } catch (err) {
+        await txn.rollback();
+        throw err;
+    }
+}
+
+export async function getOpenDisputes(): Promise<ExchangeDisputeRow[]> {
+    const db = await getPool();
+    const result = await db.request().query(`
+        SELECT d.id, d.exchangeId, l.title AS listingTitle,
+               se.requesterId, ur.displayName AS requesterName,
+               se.providerId,  up.displayName AS providerName,
+               se.credits, d.raisedBy, ub.displayName AS raisedByName,
+               d.reason, d.status, d.resolvedBy, d.resolution, d.outcome,
+               d.createdAt, d.resolvedAt
+        FROM ExchangeDisputes d
+        JOIN SkillExchanges se ON se.id = d.exchangeId
+        JOIN Listings l        ON l.id  = se.listingId
+        JOIN Users ur          ON ur.id = se.requesterId
+        JOIN Users up          ON up.id = se.providerId
+        JOIN Users ub          ON ub.id = d.raisedBy
+        WHERE d.status = 'OPEN'
+        ORDER BY d.createdAt DESC
+    `);
+    return result.recordset as ExchangeDisputeRow[];
+}
+
+export async function resolveDispute(
+    disputeId: string,
+    adminId: string,
+    outcome: 'COMPLETED' | 'CANCELLED',
+    resolution: string
+): Promise<{ requesterId: string; providerId: string; credits: number }> {
+    const db = await getPool();
+    const txn = new sql.Transaction(db);
+    await txn.begin();
+    try {
+        const fetch = await new sql.Request(txn)
+            .input('disputeId', sql.NVarChar(128), disputeId)
+            .query(`
+                SELECT d.exchangeId, se.requesterId, se.providerId, se.credits
+                FROM ExchangeDisputes d JOIN SkillExchanges se ON se.id = d.exchangeId
+                WHERE d.id = @disputeId AND d.status = 'OPEN'
+            `);
+        const d = fetch.recordset[0];
+        if (!d) throw new Error('Dispute not found or already resolved');
+
+        if (outcome === 'COMPLETED') {
+            await new sql.Request(txn).input('credits', sql.Int, d.credits).input('req', sql.NVarChar(128), d.requesterId)
+                .query(`UPDATE Users SET reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @req`);
+            await new sql.Request(txn).input('credits', sql.Int, d.credits).input('pro', sql.NVarChar(128), d.providerId)
+                .query(`UPDATE Users SET creditsBalance = creditsBalance + @credits, updatedAt = GETUTCDATE() WHERE id = @pro`);
+            await new sql.Request(txn)
+                .input('id', sql.NVarChar(128), crypto.randomUUID())
+                .input('from', sql.NVarChar(128), d.requesterId).input('to', sql.NVarChar(128), d.providerId).input('amt', sql.Int, d.credits)
+                .query(`INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason) VALUES (@id, @from, @to, @amt, 'Dispute resolved - exchange completed')`);
+            await new sql.Request(txn).input('eid', sql.NVarChar(128), d.exchangeId)
+                .query(`UPDATE SkillExchanges SET status = 'COMPLETED', completedAt = GETUTCDATE(), updatedAt = GETUTCDATE() WHERE id = @eid`);
+        } else {
+            await new sql.Request(txn).input('credits', sql.Int, d.credits).input('req', sql.NVarChar(128), d.requesterId)
+                .query(`UPDATE Users SET creditsBalance = creditsBalance + @credits, reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @req`);
+            await new sql.Request(txn).input('eid', sql.NVarChar(128), d.exchangeId).input('adminId', sql.NVarChar(128), adminId)
+                .query(`UPDATE SkillExchanges SET status = 'CANCELLED', cancelledBy = @adminId, cancelReason = 'Dispute resolved - cancelled by admin', updatedAt = GETUTCDATE() WHERE id = @eid`);
+        }
+
+        await new sql.Request(txn)
+            .input('disputeId',  sql.NVarChar(128),  disputeId)
+            .input('adminId',    sql.NVarChar(128),  adminId)
+            .input('outcome',    sql.NVarChar(20),   outcome)
+            .input('resolution', sql.NVarChar(1000), resolution)
+            .query(`UPDATE ExchangeDisputes SET status = 'RESOLVED', resolvedBy = @adminId, outcome = @outcome, resolution = @resolution, resolvedAt = GETUTCDATE() WHERE id = @disputeId`);
+
+        await txn.commit();
+        return { requesterId: d.requesterId, providerId: d.providerId, credits: d.credits };
+    } catch (err) {
+        await txn.rollback();
+        throw err;
+    }
+}
+
+export async function autoCompleteStaleExchanges(): Promise<Array<{ requesterId: string; providerId: string; credits: number }>> {
+    const db = await getPool();
+    const stale = await db.request().query(`
+        SELECT id, requesterId, providerId, credits FROM SkillExchanges
+        WHERE status = 'ACCEPTED' AND providerConfirmed = 1 AND requesterConfirmed = 0
+          AND providerConfirmedAt < DATEADD(HOUR, -48, GETUTCDATE())
+    `);
+    const completed: Array<{ requesterId: string; providerId: string; credits: number }> = [];
+    for (const ex of stale.recordset) {
+        const txn = new sql.Transaction(db);
+        await txn.begin();
+        try {
+            await new sql.Request(txn).input('c', sql.Int, ex.credits).input('req', sql.NVarChar(128), ex.requesterId)
+                .query(`UPDATE Users SET reservedCredits = ISNULL(reservedCredits,0) - @c, updatedAt = GETUTCDATE() WHERE id = @req`);
+            await new sql.Request(txn).input('c', sql.Int, ex.credits).input('pro', sql.NVarChar(128), ex.providerId)
+                .query(`UPDATE Users SET creditsBalance = creditsBalance + @c, updatedAt = GETUTCDATE() WHERE id = @pro`);
+            await new sql.Request(txn)
+                .input('id', sql.NVarChar(128), crypto.randomUUID())
+                .input('from', sql.NVarChar(128), ex.requesterId).input('to', sql.NVarChar(128), ex.providerId).input('c', sql.Int, ex.credits)
+                .query(`INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason) VALUES (@id, @from, @to, @c, 'Auto-completed: provider confirmed, requester silent 48h')`);
+            await new sql.Request(txn).input('id', sql.NVarChar(128), ex.id)
+                .query(`UPDATE SkillExchanges SET status='COMPLETED', completedAt=GETUTCDATE(), autoCompleted=1, requesterConfirmed=1, updatedAt=GETUTCDATE() WHERE id=@id`);
+            await txn.commit();
+            completed.push({ requesterId: ex.requesterId, providerId: ex.providerId, credits: ex.credits });
+        } catch { await txn.rollback(); }
+    }
+    return completed;
+}
+
+export async function autoCancelAbandonedExchanges(): Promise<Array<{ requesterId: string; credits: number }>> {
+    const db = await getPool();
+    const abandoned = await db.request().query(`
+        SELECT id, requesterId, credits FROM SkillExchanges
+        WHERE status = 'ACCEPTED' AND acceptedAt < DATEADD(DAY, -7, GETUTCDATE())
+          AND requesterConfirmed = 0 AND providerConfirmed = 0
+    `);
+    const cancelled: Array<{ requesterId: string; credits: number }> = [];
+    for (const ex of abandoned.recordset) {
+        const txn = new sql.Transaction(db);
+        await txn.begin();
+        try {
+            await new sql.Request(txn).input('c', sql.Int, ex.credits).input('req', sql.NVarChar(128), ex.requesterId)
+                .query(`UPDATE Users SET creditsBalance = creditsBalance + @c, reservedCredits = ISNULL(reservedCredits,0) - @c, updatedAt = GETUTCDATE() WHERE id = @req`);
+            await new sql.Request(txn).input('id', sql.NVarChar(128), ex.id)
+                .query(`UPDATE SkillExchanges SET status='CANCELLED', cancelReason='Auto-cancelled: no activity for 7 days', updatedAt=GETUTCDATE() WHERE id=@id`);
+            await txn.commit();
+            cancelled.push({ requesterId: ex.requesterId, credits: ex.credits });
+        } catch { await txn.rollback(); }
+    }
+    return cancelled;
 }
 
 export async function confirmExchange(qrCode: string, userId: string): Promise<{ credits: number; otherParty: string }> {

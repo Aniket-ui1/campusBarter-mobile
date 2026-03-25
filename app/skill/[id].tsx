@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/Button';
 import { AppColors, CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
+import { createExchangeRequest, getCreditsBalance } from '@/lib/api';
 import { chatApi } from '@/services/chatApi';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -43,55 +44,40 @@ export default function SkillDetailScreen() {
 
     const handleRequest = async () => {
         if (!user) return;
+
+        // Credit pre-check (UX only — backend also enforces)
         try {
-            const conv = await chatApi.findOrCreate(listing.userId, listing.title);
-            const convId = (conv as any)?.conversation?.conversationId ?? (conv as any)?.conversationId;
-            if (!convId) throw new Error('Invalid conversation response');
+            const { balance } = await getCreditsBalance();
+            if (balance < listing.credits) {
+                Alert.alert(
+                    'Not Enough Credits',
+                    `You have ${balance} credit${balance !== 1 ? 's' : ''} available, but this skill costs ${listing.credits}. Earn more by teaching your own skills.`
+                );
+                return;
+            }
+        } catch { /* skip — backend will enforce */ }
+
+        // Create exchange — notifies the provider server-side
+        try {
+            const { exchangeId } = await createExchangeRequest(listing.id);
             Alert.alert(
                 'Request Sent! 🎉',
-                `Your request for "${listing.title}" has been sent to ${listing.userName}. A chat has been started.`,
+                `${listing.userName} has been notified that you want to learn "${listing.title}".`,
                 [
-                    {
-                        text: 'View Chat',
-                        onPress: () => router.push({
-                            pathname: '/chat/[id]' as any,
-                            params: {
-                                id: convId,
-                                recipientId: listing.userId,
-                                recipientName: listing.userName,
-                            },
-                        }),
-                    },
-                    { text: 'OK', style: 'cancel' },
+                    { text: 'View Exchange', onPress: () => router.push({ pathname: '/exchange/[id]' as any, params: { id: exchangeId } }) },
+                    { text: 'OK', style: 'cancel' as const },
                 ]
             );
-        } catch {
-            try {
-                const legacyChatId = await startChat(
-                    listing.id,
-                    listing.title,
-                    [user.id, listing.userId],
-                    listing.userId
-                );
-                Alert.alert(
-                    'Request Sent! 🎉',
-                    `Your request for "${listing.title}" has been sent to ${listing.userName}. A chat has been started.`,
-                    [
-                        {
-                            text: 'View Chat',
-                            onPress: () => router.push({
-                                pathname: '/chat/[id]' as any,
-                                params: {
-                                    id: legacyChatId,
-                                    recipientId: listing.userId,
-                                    recipientName: listing.userName,
-                                },
-                            }),
-                        },
-                        { text: 'OK', style: 'cancel' },
-                    ]
-                );
-            } catch {
+        } catch (err: any) {
+            const msg = err?.message ?? '';
+            if (msg === 'Insufficient credits') {
+                Alert.alert('Not Enough Credits', 'You do not have enough credits for this exchange.');
+            } else if (msg.includes('already') || msg.includes('active') || msg.includes('duplicate')) {
+                Alert.alert('Already Requested', 'You already have an active request for this listing.', [
+                    { text: 'View Exchanges', onPress: () => router.push('/exchanges' as any) },
+                    { text: 'OK', style: 'cancel' as const },
+                ]);
+            } else {
                 Alert.alert('Error', 'Could not send request. Please try again.');
             }
         }

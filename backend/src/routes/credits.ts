@@ -10,8 +10,8 @@ export const creditsRouter = Router();
 // GET /api/credits/balance
 creditsRouter.get('/balance', async (req: Request, res: Response) => {
     try {
-        const balance = await getCreditsBalance(req.user!.id);
-        res.json({ userId: req.user!.id, balance });
+        const { balance, reserved } = await getCreditsBalance(req.user!.id);
+        res.json({ balance, reserved });
     } catch {
         res.status(500).json({ error: 'Failed to fetch credits balance' });
     }
