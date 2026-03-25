@@ -1201,7 +1201,15 @@ export async function getCreditsHistory(
         .input('pageSize', sql.Int, pageSize)
         .input('offset', sql.Int, offset)
         .query(`
-            SELECT id, fromUserId, toUserId, amount, reason, createdAt
+            SELECT
+                id,
+                amount,
+                reason,
+                createdAt,
+                CASE
+                    WHEN toUserId = @userId THEN 'EARNED'
+                    ELSE 'SPENT'
+                END AS type
             FROM   TimeCredits
             WHERE  fromUserId = @userId OR toUserId = @userId
             ORDER  BY createdAt DESC
