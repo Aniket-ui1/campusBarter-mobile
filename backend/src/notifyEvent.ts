@@ -12,7 +12,7 @@ import { sendPushToUser } from './push';
 import { getIO } from './socketInstance';
 import { isUserOnline } from './socket';
 
-type NotifType = 'request' | 'accepted' | 'message' | 'review' | 'match';
+type NotifType = 'request' | 'accepted' | 'message' | 'review' | 'match' | 'exchange';
 
 interface NotifPayload {
     /** User to receive the notification */
@@ -53,6 +53,9 @@ export async function notifyEvent(payload: NotifPayload): Promise<void> {
     } else if (type === 'review') {
         entityType = 'review';
         actionUrl = recipientId ? `/reviews/${recipientId}` : undefined;
+    } else if (type === 'exchange') {
+        entityType = 'exchange';
+        actionUrl = relatedId ? `/exchange/${relatedId}` : undefined;
     }
 
     // 1. Persist to DB + emit socket bell — only for bell-worthy events
@@ -171,6 +174,36 @@ export function notifyReview(
 /**
  * Smart matching found a potential partner for your listing.
  */
+// ── Skill Exchange Notifications ─────────────────────────────
+
+export function notifyExchangeRequested(providerId: string, requesterName: string, listingTitle: string, exchangeId: string) {
+    void notifyEvent({ recipientId: providerId, type: 'exchange', title: '📥 New skill request', body: `${requesterName} requested "${listingTitle}"`, relatedId: exchangeId });
+}
+
+export function notifyExchangeAccepted(requesterId: string, providerName: string, listingTitle: string, exchangeId: string) {
+    void notifyEvent({ recipientId: requesterId, type: 'exchange', title: '✅ Request accepted', body: `${providerName} accepted your request for "${listingTitle}"`, relatedId: exchangeId });
+}
+
+export function notifyExchangeConfirmed(recipientId: string, confirmerName: string, listingTitle: string, exchangeId: string) {
+    void notifyEvent({ recipientId, type: 'exchange', title: '👍 Exchange confirmed', body: `${confirmerName} confirmed the exchange for "${listingTitle}"`, relatedId: exchangeId });
+}
+
+export function notifyExchangeCompleted(recipientId: string, listingTitle: string, credits: number, exchangeId: string) {
+    void notifyEvent({ recipientId, type: 'exchange', title: '🎉 Exchange completed!', body: `"${listingTitle}" — ${credits} credit${credits !== 1 ? 's' : ''} transferred`, relatedId: exchangeId });
+}
+
+export function notifyExchangeCancelled(recipientId: string, listingTitle: string, exchangeId: string) {
+    void notifyEvent({ recipientId, type: 'exchange', title: '❌ Exchange cancelled', body: `The exchange for "${listingTitle}" was cancelled`, relatedId: exchangeId });
+}
+
+export function notifyDisputeRaised(recipientId: string, raisedByName: string, listingTitle: string, exchangeId: string) {
+    void notifyEvent({ recipientId, type: 'exchange', title: '🚩 Dispute raised', body: `${raisedByName} raised a dispute for "${listingTitle}"`, relatedId: exchangeId });
+}
+
+export function notifyDisputeResolved(recipientId: string, outcome: string, listingTitle: string, exchangeId: string) {
+    void notifyEvent({ recipientId, type: 'exchange', title: '⚖️ Dispute resolved', body: `"${listingTitle}" dispute resolved as ${outcome}`, relatedId: exchangeId });
+}
+
 export function notifySmartMatch(
     userId: string,
     matchedListingTitle: string,

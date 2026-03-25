@@ -32,6 +32,7 @@ export default function ProfileScreen() {
     const MENU_ITEMS: MenuItem[] = [
         { icon: 'list-outline', label: 'My Listings', onPress: () => router.push('/my-listings') },
         { icon: 'git-pull-request-outline', label: 'My Requests', onPress: () => router.push('/my-requests') },
+        { icon: 'swap-horizontal-outline', label: 'My Exchanges', onPress: () => router.push('/exchanges' as any) },
         { icon: 'time-outline', label: 'Time Credits', onPress: () => router.push('/credits' as any) },
         { icon: 'bookmark-outline', label: 'Drafts', onPress: () => router.push('/drafts') },
         { icon: 'star-outline', label: 'Reviews', onPress: () => router.push({ pathname: '/reviews/[userId]', params: { userId: user?.id ?? 'u1' } }) },
