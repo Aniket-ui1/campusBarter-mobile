@@ -234,7 +234,7 @@ export default function ExchangeDetailScreen() {
                     <Animated.View entering={FadeInDown.delay(160).duration(300)} style={[styles.banner, { backgroundColor: '#F59E0B15', borderColor: '#F59E0B' }]}>
                         <Ionicons name="time-outline" size={16} color="#F59E0B" />
                         <Text style={[styles.bannerText, { color: '#F59E0B' }]}>
-                            Auto-completes in {autoCompleteIn} if you don't confirm
+                            Auto-completes in {autoCompleteIn} if you don&apos;t confirm
                         </Text>
                     </Animated.View>
                 )}
