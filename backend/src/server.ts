@@ -9,12 +9,15 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import http from 'http';
-import { auditLog, closePool, getAuditLogEntries } from './db';
+import { auditLog, closePool, getAuditLogEntries, getOpenDisputes, resolveDispute } from './db';
+import { notifyDisputeResolved } from './notifyEvent';
+import { startExchangeExpiryJobs } from './jobs/exchangeExpiry';
 import { requireRole, verifyAzureAdToken } from './middleware/auth';
 import { initSocketServer } from './socket';
 import { setIO } from './socketInstance';
 
 // Route handlers
+import { exchangesRouter } from './routes/exchanges';
 import { chatsRouter } from './routes/chats';
 import { registerChatRoutes } from './routes/chat';
 import { conversationsRouter } from './routes/conversations';
@@ -121,6 +124,36 @@ app.use('/api/v1/credits', creditsRouter);
 app.use('/api/v1/upload', uploadRouter);
 app.use('/api/v1/tokens', tokensRouter);
 app.use('/api/v1/insights', insightsRouter);
+app.use('/api/v1/exchanges', exchangesRouter);
+
+// Admin — disputes
+app.get('/api/v1/admin/disputes', verifyAzureAdToken, requireRole('Moderator'), async (_req: express.Request, res: express.Response) => {
+    try {
+        const disputes = await getOpenDisputes();
+        res.json({ disputes });
+    } catch {
+        res.status(500).json({ error: 'Failed to fetch disputes' });
+    }
+});
+
+app.post('/api/v1/admin/disputes/:id/resolve', verifyAzureAdToken, requireRole('Moderator'), async (req: express.Request, res: express.Response) => {
+    try {
+        const { outcome, resolution } = req.body;
+        if (!outcome || !['COMPLETED', 'CANCELLED'].includes(outcome)) {
+            res.status(400).json({ error: 'outcome must be COMPLETED or CANCELLED' }); return;
+        }
+        if (!resolution?.trim()) {
+            res.status(400).json({ error: 'resolution is required' }); return;
+        }
+        const result = await resolveDispute(req.params.id, req.user!.id, outcome, resolution.trim());
+        notifyDisputeResolved(result.requesterId, outcome, '', req.params.id);
+        notifyDisputeResolved(result.providerId,  outcome, '', req.params.id);
+        res.json({ message: `Dispute resolved as ${outcome}` });
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to resolve dispute';
+        res.status(400).json({ error: msg });
+    }
+});
 
 // Admin-only audit log
 app.get('/api/v1/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
@@ -186,6 +219,7 @@ registerChatRoutes(app);
 
 httpServer.listen(PORT, () => {
     console.log(`CampusBarter API + WebSocket running on port ${PORT}`);
+    void startExchangeExpiryJobs();
 });
 
 // ── Graceful shutdown ────────────────────────────────────────

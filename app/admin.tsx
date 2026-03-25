@@ -12,9 +12,9 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import { getApiToken, getApiBase } from '@/lib/api';
+import { getApiToken, getApiBase, getAdminDisputes, resolveAdminDispute, ExchangeDispute } from '@/lib/api';
 
-type Tab = 'listings' | 'users' | 'audit';
+type Tab = 'listings' | 'users' | 'audit' | 'disputes';
 
 async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
     const token = getApiToken();
@@ -34,22 +34,26 @@ export default function AdminDashboard() {
     const router = useRouter();
     const { user } = useAuth();
     const [tab, setTab] = useState<Tab>('listings');
-    const [listings, setListings] = useState<any[]>([]);
-    const [users, setUsers] = useState<any[]>([]);
-    const [auditLog, setAuditLog] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [listings, setListings]   = useState<any[]>([]);
+    const [users, setUsers]         = useState<any[]>([]);
+    const [auditLog, setAuditLog]   = useState<any[]>([]);
+    const [disputes, setDisputes]   = useState<ExchangeDispute[]>([]);
+    const [resolving, setResolving] = useState<string | null>(null);
+    const [loading, setLoading]     = useState(true);
 
     const loadData = async () => {
         setLoading(true);
         try {
-            const [l, u, a] = await Promise.allSettled([
+            const [l, u, a, d] = await Promise.allSettled([
                 adminFetch<any[]>('/api/listings'),
                 adminFetch<any[]>('/api/users'),
                 adminFetch<any[]>('/api/audit'),
+                getAdminDisputes(),
             ]);
             if (l.status === 'fulfilled') setListings(l.value);
             if (u.status === 'fulfilled') setUsers(u.value);
             if (a.status === 'fulfilled') setAuditLog(a.value);
+            if (d.status === 'fulfilled') setDisputes(d.value);
         } catch (e) {
             console.warn('[Admin] Load error:', e);
         } finally {
@@ -80,7 +84,42 @@ export default function AdminDashboard() {
         ]);
     };
 
+    const handleResolve = (d: ExchangeDispute, outcome: 'COMPLETED' | 'CANCELLED') => {
+        const confirmResolve = async (resolution: string) => {
+            setResolving(d.id);
+            try {
+                await resolveAdminDispute(d.id, outcome, resolution);
+                setDisputes(prev => prev.filter(x => x.id !== d.id));
+                Alert.alert('Resolved', `Dispute resolved as ${outcome}.`);
+            } catch { Alert.alert('Error', 'Failed to resolve dispute.'); }
+            finally { setResolving(null); }
+        };
+        if (Alert.prompt) {
+            Alert.prompt(
+                outcome === 'COMPLETED' ? 'Complete Exchange' : 'Cancel Exchange',
+                'Enter resolution notes:',
+                [
+                    { text: 'Back', style: 'cancel' },
+                    { text: 'Confirm', onPress: (txt?: string) => { if (txt?.trim()) void confirmResolve(txt.trim()); else Alert.alert('Required', 'Resolution notes are required.'); } },
+                ],
+                'plain-text'
+            );
+        } else {
+            Alert.alert(
+                outcome === 'COMPLETED' ? 'Complete Exchange' : 'Cancel Exchange',
+                'Resolve this dispute?',
+                [
+                    { text: 'Back', style: 'cancel' },
+                    { text: 'Confirm', onPress: () => void confirmResolve(`Resolved as ${outcome} via mobile admin`) },
+                ]
+            );
+        }
+    };
+
+    const openDisputes = disputes.filter(d => d.status === 'OPEN');
+
     const TABS: { key: Tab; label: string; icon: string; count: number }[] = [
+        { key: 'disputes', label: 'Disputes', icon: 'flag-outline', count: openDisputes.length },
         { key: 'listings', label: 'Listings', icon: 'list-outline', count: listings.length },
         { key: 'users', label: 'Users', icon: 'people-outline', count: users.length },
         { key: 'audit', label: 'Audit Log', icon: 'document-text-outline', count: auditLog.length },
@@ -127,6 +166,50 @@ export default function AdminDashboard() {
                 <View style={styles.center}><ActivityIndicator size="large" color={AppColors.primary} /></View>
             ) : (
                 <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
+                    {/* Disputes tab */}
+                    {tab === 'disputes' && (
+                        openDisputes.length === 0 ? (
+                            <View style={styles.empty}>
+                                <Text style={styles.emptyEmoji}>✅</Text>
+                                <Text style={styles.emptyText}>No open disputes</Text>
+                            </View>
+                        ) : openDisputes.map((d, i) => (
+                            <Animated.View key={d.id} entering={FadeInDown.delay(i * 40).duration(300)}>
+                                <View style={styles.disputeCard}>
+                                    <View style={styles.disputeHeader}>
+                                        <View style={styles.disputeFlag}>
+                                            <Ionicons name="flag" size={14} color="#EF4444" />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={styles.cardTitle} numberOfLines={1}>{d.listingTitle}</Text>
+                                            <Text style={styles.cardMeta}>Raised by {d.raisedByName} · {new Date(d.createdAt).toLocaleDateString()}</Text>
+                                        </View>
+                                        <Text style={styles.disputeCredits}>{d.credits} cr</Text>
+                                    </View>
+                                    <Text style={styles.disputeReason} numberOfLines={3}>{d.reason}</Text>
+                                    <View style={styles.disputeParties}>
+                                        <Text style={styles.disputeParty}>Requester: {d.requesterName}</Text>
+                                        <Text style={styles.disputeParty}>Provider: {d.providerName}</Text>
+                                    </View>
+                                    {resolving === d.id ? (
+                                        <ActivityIndicator size="small" color={AppColors.primary} style={{ marginTop: 8 }} />
+                                    ) : (
+                                        <View style={styles.disputeActions}>
+                                            <Pressable style={[styles.resolveBtn, { backgroundColor: AppColors.success }]} onPress={() => handleResolve(d, 'COMPLETED')}>
+                                                <Ionicons name="checkmark-circle-outline" size={16} color="#FFF" />
+                                                <Text style={styles.resolveBtnText}>Complete</Text>
+                                            </Pressable>
+                                            <Pressable style={[styles.resolveBtn, { backgroundColor: AppColors.error }]} onPress={() => handleResolve(d, 'CANCELLED')}>
+                                                <Ionicons name="close-circle-outline" size={16} color="#FFF" />
+                                                <Text style={styles.resolveBtnText}>Cancel</Text>
+                                            </Pressable>
+                                        </View>
+                                    )}
+                                </View>
+                            </Animated.View>
+                        ))
+                    )}
 
                     {/* Listings tab */}
                     {tab === 'listings' && (
@@ -254,4 +337,18 @@ const styles = StyleSheet.create({
     empty: { alignItems: 'center', paddingVertical: 60, gap: 8 },
     emptyEmoji: { fontSize: 40 },
     emptyText: { fontSize: 16, fontWeight: '600', color: AppColors.textSecondary },
+
+    disputeCard: {
+        backgroundColor: '#FFF', borderRadius: Radii.md,
+        padding: Spacing.lg, borderWidth: 1, borderColor: AppColors.border, gap: 10,
+    },
+    disputeHeader:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    disputeFlag:    { width: 28, height: 28, borderRadius: 14, backgroundColor: '#EF444415', alignItems: 'center', justifyContent: 'center' },
+    disputeCredits: { fontSize: 13, fontWeight: '700', color: AppColors.text },
+    disputeReason:  { fontSize: 13, color: AppColors.textSecondary, lineHeight: 19 },
+    disputeParties: { flexDirection: 'row', gap: Spacing.lg },
+    disputeParty:   { fontSize: 12, color: AppColors.textMuted },
+    disputeActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+    resolveBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: Radii.sm },
+    resolveBtnText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
 });

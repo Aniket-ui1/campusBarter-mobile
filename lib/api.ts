@@ -394,9 +394,99 @@ export async function markAllNotificationsRead(): Promise<void> {
 
 // ── Credits ───────────────────────────────────────────────────
 
-export async function getCreditsBalance(): Promise<number> {
-    const res = await apiFetch<{ balance: number }>('/api/v1/credits/balance');
-    return res.balance;
+export async function getCreditsBalance(): Promise<{ balance: number; reserved: number }> {
+    return apiFetch<{ balance: number; reserved: number }>('/api/v1/credits/balance');
+}
+
+// ── Skill Exchanges ───────────────────────────────────────────
+
+export interface SkillExchange {
+    id: string;
+    listingId: string;
+    listingTitle: string;
+    requesterId: string;
+    requesterName: string;
+    providerId: string;
+    providerName: string;
+    credits: number;
+    status: 'REQUESTED' | 'ACCEPTED' | 'COMPLETED' | 'CANCELLED' | 'DISPUTED';
+    requesterConfirmed: boolean;
+    providerConfirmed: boolean;
+    acceptedAt: string | null;
+    requesterConfirmedAt: string | null;
+    providerConfirmedAt: string | null;
+    completedAt: string | null;
+    autoCompleted: boolean;
+    cancelledBy: string | null;
+    cancelReason: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface ExchangeDispute {
+    id: string;
+    exchangeId: string;
+    listingTitle: string;
+    requesterId: string;
+    requesterName: string;
+    providerId: string;
+    providerName: string;
+    credits: number;
+    raisedBy: string;
+    raisedByName: string;
+    reason: string;
+    status: 'OPEN' | 'RESOLVED' | 'DISMISSED';
+    resolvedBy: string | null;
+    resolution: string | null;
+    outcome: 'COMPLETED' | 'CANCELLED' | null;
+    createdAt: string;
+    resolvedAt: string | null;
+}
+
+export async function createExchangeRequest(listingId: string): Promise<{ exchangeId: string }> {
+    return apiFetch('/api/v1/exchanges', { method: 'POST', body: JSON.stringify({ listingId }) });
+}
+
+export async function getMyExchanges(): Promise<SkillExchange[]> {
+    return apiFetch('/api/v1/exchanges');
+}
+
+export async function getExchangeById(id: string): Promise<SkillExchange> {
+    return apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}`);
+}
+
+export async function acceptExchange(id: string): Promise<void> {
+    await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/accept`, { method: 'POST' });
+}
+
+export async function confirmExchangeApi(id: string): Promise<{ completed: boolean }> {
+    return apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/confirm`, { method: 'POST' });
+}
+
+export async function cancelExchange(id: string, reason?: string): Promise<void> {
+    await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+    });
+}
+
+export async function raiseExchangeDispute(id: string, reason: string): Promise<void> {
+    await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/dispute`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+    });
+}
+
+export async function getAdminDisputes(): Promise<ExchangeDispute[]> {
+    const res = await apiFetch<{ disputes: ExchangeDispute[] }>('/api/v1/admin/disputes');
+    return res.disputes;
+}
+
+export async function resolveAdminDispute(id: string, outcome: 'COMPLETED' | 'CANCELLED', resolution: string): Promise<void> {
+    await apiFetch(`/api/v1/admin/disputes/${encodeURIComponent(id)}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ outcome, resolution }),
+    });
 }
 
 export async function transferCredits(

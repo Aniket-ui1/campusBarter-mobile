@@ -18,9 +18,10 @@ interface CreditTransaction {
 
 export default function CreditsScreen() {
     const router = useRouter();
-    const [balance, setBalance] = useState<number | null>(null);
-    const [history, setHistory] = useState<CreditTransaction[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [balance, setBalance]   = useState<number | null>(null);
+    const [reserved, setReserved] = useState(0);
+    const [history, setHistory]   = useState<CreditTransaction[]>([]);
+    const [loading, setLoading]   = useState(true);
 
     useEffect(() => {
         (async () => {
@@ -29,7 +30,8 @@ export default function CreditsScreen() {
                     getCreditsBalance(),
                     fetch_history(),
                 ]);
-                setBalance(bal);
+                setBalance(bal.balance);
+                setReserved(bal.reserved ?? 0);
                 setHistory(hist);
             } catch (e) {
                 console.warn('[Credits] Load error:', e);
@@ -61,12 +63,21 @@ export default function CreditsScreen() {
 
                     {/* Balance Card */}
                     <Animated.View entering={FadeInDown.delay(80).duration(400)} style={styles.balanceCard}>
-                        <Text style={styles.balanceLabel}>Your Balance</Text>
+                        <Text style={styles.balanceLabel}>Available Balance</Text>
                         <View style={styles.balanceRow}>
                             <Text style={styles.balanceNum}>{balance ?? 0}</Text>
                             <Text style={styles.balanceCoin}>⏱️</Text>
                         </View>
                         <Text style={styles.balanceHint}>Credits are earned by helping others</Text>
+                        {reserved > 0 && (
+                            <Pressable style={styles.reservedRow} onPress={() => router.push('/exchanges' as any)}>
+                                <Ionicons name="lock-closed-outline" size={14} color="rgba(255,255,255,0.7)" />
+                                <Text style={styles.reservedText}>
+                                    {reserved} credit{reserved !== 1 ? 's' : ''} reserved in active exchanges
+                                </Text>
+                                <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.5)" />
+                            </Pressable>
+                        )}
                     </Animated.View>
 
                     {/* How it works */}
@@ -132,7 +143,8 @@ async function fetch_history(): Promise<CreditTransaction[]> {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         if (!res.ok) return [];
-        return res.json();
+        const data = await res.json();
+        return Array.isArray(data) ? data : (data.transactions ?? []);
     } catch { return []; }
 }
 
@@ -160,6 +172,12 @@ const styles = StyleSheet.create({
     balanceNum: { fontSize: 64, fontWeight: '900', color: '#FFFFFF', letterSpacing: -2 },
     balanceCoin: { fontSize: 36 },
     balanceHint: { color: 'rgba(255,255,255,0.5)', fontSize: 13, marginTop: 8 },
+    reservedRow: {
+        flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12,
+        backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 12,
+        paddingVertical: 8, borderRadius: Radii.sm,
+    },
+    reservedText: { flex: 1, color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '600' },
 
     sectionTitle: { fontSize: 18, fontWeight: '800', color: AppColors.text, marginBottom: Spacing.md, letterSpacing: -0.3 },
 

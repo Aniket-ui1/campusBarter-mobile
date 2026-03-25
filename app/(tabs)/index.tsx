@@ -7,6 +7,7 @@ import { AppColors, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
 import { getRecommendedUsers, MatchedUser } from '@/lib/matching';
+import { getCreditsBalance } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -20,6 +21,7 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = React.useState(false);
   const [matches, setMatches] = useState<MatchedUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [credits, setCredits] = useState<number | null>(null);
 
   const activeListings = listings.filter((l) => l.status === 'OPEN');
   const myListingsCount = listings.filter((l) => l.userId === user?.id).length;
@@ -40,13 +42,19 @@ export default function HomeScreen() {
       .then(setMatches).catch(console.warn);
   }, [user?.id, user?.profileComplete]);
 
+  useEffect(() => {
+    if (!user?.id) return;
+    getCreditsBalance().then(({ balance }) => setCredits(balance)).catch(() => {});
+  }, [user?.id]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     const tasks: Promise<any>[] = [];
     if (user?.id) {
       tasks.push(
         getRecommendedUsers(user.id, user.skills ?? [], user.weaknesses ?? [], user.interests ?? [])
-          .then(setMatches).catch(() => {})
+          .then(setMatches).catch(() => {}),
+        getCreditsBalance().then(({ balance }) => setCredits(balance)).catch(() => {}),
       );
     }
     await Promise.all(tasks);
@@ -69,6 +77,11 @@ export default function HomeScreen() {
           </View>
         </Pressable>
         <View style={styles.headerRight}>
+          <Pressable style={styles.creditPill} onPress={() => router.push('/credits' as any)}
+            accessibilityRole="button" accessibilityLabel="View credit balance">
+            <Text style={styles.creditPillEmoji}>⏱️</Text>
+            <Text style={styles.creditPillNum}>{credits ?? '—'}</Text>
+          </Pressable>
           <Pressable style={styles.iconBtn} onPress={() => router.push('/notifications')}
             accessibilityRole="button" accessibilityLabel={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}>
             <Ionicons name="notifications-outline" size={21} color={AppColors.text} />
@@ -236,7 +249,14 @@ const styles = StyleSheet.create({
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   greeting: { fontSize: 12, color: AppColors.textMuted, fontWeight: '500' },
   userName: { fontSize: 18, fontWeight: '800', color: AppColors.text, letterSpacing: -0.3 },
-  headerRight: { flexDirection: 'row', gap: Spacing.sm },
+  headerRight: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
+  creditPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: AppColors.primaryDark, borderRadius: Radii.full,
+    paddingHorizontal: 12, paddingVertical: 8,
+  },
+  creditPillEmoji: { fontSize: 13 },
+  creditPillNum: { fontSize: 14, fontWeight: '800', color: '#FFFFFF' },
   iconBtn: {
     width: 42, height: 42, borderRadius: Radii.md,
     backgroundColor: AppColors.surface, borderWidth: 1, borderColor: AppColors.border,
