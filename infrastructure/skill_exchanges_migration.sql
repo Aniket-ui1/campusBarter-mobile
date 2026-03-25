@@ -92,7 +92,7 @@ ELSE
 INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason)
 SELECT NEWID(), u.id, u.id, 5, 'Welcome bonus (backfill)'
 FROM Users u
-WHERE u.creditsBalance = 0
+WHERE u.credits = 0
   AND NOT EXISTS (
     SELECT 1 FROM TimeCredits tc
     WHERE tc.toUserId = u.id AND tc.reason LIKE 'Welcome bonus%'
@@ -100,8 +100,8 @@ WHERE u.creditsBalance = 0
 
 -- Then update their balance to 5
 UPDATE Users
-SET creditsBalance = 5
-WHERE creditsBalance = 0;
+SET credits = 5
+WHERE credits = 0;
 
 PRINT 'Backfilled welcome credits for existing zero-balance users.';
 PRINT 'Migration complete.';

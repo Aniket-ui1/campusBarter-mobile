@@ -687,7 +687,7 @@ export async function upsertUserProfile(
                 .input('avatarUrl', sql.NVarChar(500), data.avatarUrl || null)
                 .input('profileComplete', sql.Bit, data.profileComplete ? 1 : 0)
                 .query(`
-                    INSERT INTO Users (id, email, displayName, bio, program, semester, avatarUrl, profileComplete, creditsBalance)
+                    INSERT INTO Users (id, email, displayName, bio, program, semester, avatarUrl, profileComplete, credits)
                     VALUES (@id, @email, @name, @bio, @program, @semester, @avatarUrl, @profileComplete, 5)
                 `);
             // Log welcome bonus to TimeCredits ledger
@@ -1116,19 +1116,19 @@ export async function createNotification(
 
 export async function getCreditsBalance(userId: string): Promise<{ balance: number; reserved: number }> {
     const db = await getPool();
-    // Try with reservedCredits column (post-migration); fall back to just creditsBalance if column doesn't exist yet
+    // Try with reservedCredits column (post-migration); fall back to just credits if column doesn't exist yet
     let result: any;
     try {
         result = await db.request()
             .input('userId', sql.NVarChar(128), userId)
-            .query(`SELECT creditsBalance, ISNULL(reservedCredits, 0) AS reservedCredits FROM Users WHERE id = @userId`);
+            .query(`SELECT credits, ISNULL(reservedCredits, 0) AS reservedCredits FROM Users WHERE id = @userId`);
     } catch {
         result = await db.request()
             .input('userId', sql.NVarChar(128), userId)
-            .query(`SELECT creditsBalance, 0 AS reservedCredits FROM Users WHERE id = @userId`);
+            .query(`SELECT credits, 0 AS reservedCredits FROM Users WHERE id = @userId`);
     }
     return {
-        balance:  (result.recordset[0]?.creditsBalance  as number) ?? 0,
+        balance:  (result.recordset[0]?.credits  as number) ?? 0,
         reserved: (result.recordset[0]?.reservedCredits as number) ?? 0,
     };
 }
@@ -1139,7 +1139,7 @@ export async function backfillWelcomeCredits(): Promise<number> {
     const db = await getPool();
     const users = await db.request().query(`
         SELECT u.id FROM Users u
-        WHERE u.creditsBalance = 0
+        WHERE u.credits = 0
           AND NOT EXISTS (SELECT 1 FROM TimeCredits tc WHERE tc.toUserId = u.id)
     `);
     if (users.recordset.length === 0) return 0;
@@ -1150,7 +1150,7 @@ export async function backfillWelcomeCredits(): Promise<number> {
             .input('id',  sql.NVarChar(128), txId)
             .input('uid', sql.NVarChar(128), uid)
             .query(`
-                UPDATE Users SET creditsBalance = 5 WHERE id = @uid;
+                UPDATE Users SET credits = 5 WHERE id = @uid;
                 INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason)
                 VALUES (@id, @uid, @uid, 5, 'Welcome bonus');
             `);
@@ -1180,7 +1180,7 @@ export async function grantMonthlyCredits(): Promise<number> {
             .input('id',  sql.NVarChar(128), txId)
             .input('uid', sql.NVarChar(128), uid)
             .query(`
-                UPDATE Users SET creditsBalance = creditsBalance + 3 WHERE id = @uid;
+                UPDATE Users SET credits = credits + 3 WHERE id = @uid;
                 INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason)
                 VALUES (@id, @uid, @uid, 3, 'Monthly credit');
             `);
@@ -1227,21 +1227,21 @@ export async function transferCredits(
         // Check sender has enough balance
         const balanceResult = await new sql.Request(txn)
             .input('fromUserId', sql.NVarChar(128), fromUserId)
-            .query(`SELECT creditsBalance FROM Users WHERE id = @fromUserId`);
-        const currentBalance = (balanceResult.recordset[0]?.creditsBalance as number) ?? 0;
+            .query(`SELECT credits FROM Users WHERE id = @fromUserId`);
+        const currentBalance = (balanceResult.recordset[0]?.credits as number) ?? 0;
         if (currentBalance < amount) throw new Error('Insufficient credits');
 
         // Debit sender
         await new sql.Request(txn)
             .input('amount', sql.Int, amount)
             .input('fromUserId', sql.NVarChar(128), fromUserId)
-            .query(`UPDATE Users SET creditsBalance = creditsBalance - @amount WHERE id = @fromUserId`);
+            .query(`UPDATE Users SET credits = credits - @amount WHERE id = @fromUserId`);
 
         // Credit receiver
         await new sql.Request(txn)
             .input('amount', sql.Int, amount)
             .input('toUserId', sql.NVarChar(128), toUserId)
-            .query(`UPDATE Users SET creditsBalance = creditsBalance + @amount WHERE id = @toUserId`);
+            .query(`UPDATE Users SET credits = credits + @amount WHERE id = @toUserId`);
 
         // Log the transaction
         const txId = crypto.randomUUID();
@@ -1613,10 +1613,10 @@ export async function createSkillExchange(
             .input('credits', sql.Int, credits)
             .query(`
                 UPDATE Users
-                SET creditsBalance  = creditsBalance  - @credits,
+                SET credits  = credits  - @credits,
                     reservedCredits = ISNULL(reservedCredits, 0) + @credits,
                     updatedAt       = GETUTCDATE()
-                WHERE id = @requesterId AND creditsBalance >= @credits
+                WHERE id = @requesterId AND credits >= @credits
             `);
         if (esc.rowsAffected[0] === 0) throw new Error('Insufficient credits');
 
@@ -1710,7 +1710,7 @@ export async function confirmSkillExchange(
             await new sql.Request(txn)
                 .input('credits',    sql.Int,          ex.credits)
                 .input('providerId', sql.NVarChar(128), ex.providerId)
-                .query(`UPDATE Users SET creditsBalance = creditsBalance + @credits, updatedAt = GETUTCDATE() WHERE id = @providerId`);
+                .query(`UPDATE Users SET credits = credits + @credits, updatedAt = GETUTCDATE() WHERE id = @providerId`);
             const txId = crypto.randomUUID();
             await new sql.Request(txn)
                 .input('id',   sql.NVarChar(128), txId)
@@ -1756,7 +1756,7 @@ export async function cancelSkillExchange(
         await new sql.Request(txn)
             .input('credits',     sql.Int,          ex.credits)
             .input('requesterId', sql.NVarChar(128), ex.requesterId)
-            .query(`UPDATE Users SET creditsBalance = creditsBalance + @credits, reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @requesterId`);
+            .query(`UPDATE Users SET credits = credits + @credits, reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @requesterId`);
         await new sql.Request(txn)
             .input('id',     sql.NVarChar(128), id)
             .input('userId', sql.NVarChar(128), userId)
@@ -1845,7 +1845,7 @@ export async function resolveDispute(
             await new sql.Request(txn).input('credits', sql.Int, d.credits).input('req', sql.NVarChar(128), d.requesterId)
                 .query(`UPDATE Users SET reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @req`);
             await new sql.Request(txn).input('credits', sql.Int, d.credits).input('pro', sql.NVarChar(128), d.providerId)
-                .query(`UPDATE Users SET creditsBalance = creditsBalance + @credits, updatedAt = GETUTCDATE() WHERE id = @pro`);
+                .query(`UPDATE Users SET credits = credits + @credits, updatedAt = GETUTCDATE() WHERE id = @pro`);
             await new sql.Request(txn)
                 .input('id', sql.NVarChar(128), crypto.randomUUID())
                 .input('from', sql.NVarChar(128), d.requesterId).input('to', sql.NVarChar(128), d.providerId).input('amt', sql.Int, d.credits)
@@ -1854,7 +1854,7 @@ export async function resolveDispute(
                 .query(`UPDATE SkillExchanges SET status = 'COMPLETED', completedAt = GETUTCDATE(), updatedAt = GETUTCDATE() WHERE id = @eid`);
         } else {
             await new sql.Request(txn).input('credits', sql.Int, d.credits).input('req', sql.NVarChar(128), d.requesterId)
-                .query(`UPDATE Users SET creditsBalance = creditsBalance + @credits, reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @req`);
+                .query(`UPDATE Users SET credits = credits + @credits, reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @req`);
             await new sql.Request(txn).input('eid', sql.NVarChar(128), d.exchangeId).input('adminId', sql.NVarChar(128), adminId)
                 .query(`UPDATE SkillExchanges SET status = 'CANCELLED', cancelledBy = @adminId, cancelReason = 'Dispute resolved - cancelled by admin', updatedAt = GETUTCDATE() WHERE id = @eid`);
         }
@@ -1889,7 +1889,7 @@ export async function autoCompleteStaleExchanges(): Promise<Array<{ requesterId:
             await new sql.Request(txn).input('c', sql.Int, ex.credits).input('req', sql.NVarChar(128), ex.requesterId)
                 .query(`UPDATE Users SET reservedCredits = ISNULL(reservedCredits,0) - @c, updatedAt = GETUTCDATE() WHERE id = @req`);
             await new sql.Request(txn).input('c', sql.Int, ex.credits).input('pro', sql.NVarChar(128), ex.providerId)
-                .query(`UPDATE Users SET creditsBalance = creditsBalance + @c, updatedAt = GETUTCDATE() WHERE id = @pro`);
+                .query(`UPDATE Users SET credits = credits + @c, updatedAt = GETUTCDATE() WHERE id = @pro`);
             await new sql.Request(txn)
                 .input('id', sql.NVarChar(128), crypto.randomUUID())
                 .input('from', sql.NVarChar(128), ex.requesterId).input('to', sql.NVarChar(128), ex.providerId).input('c', sql.Int, ex.credits)
@@ -1916,7 +1916,7 @@ export async function autoCancelAbandonedExchanges(): Promise<Array<{ requesterI
         await txn.begin();
         try {
             await new sql.Request(txn).input('c', sql.Int, ex.credits).input('req', sql.NVarChar(128), ex.requesterId)
-                .query(`UPDATE Users SET creditsBalance = creditsBalance + @c, reservedCredits = ISNULL(reservedCredits,0) - @c, updatedAt = GETUTCDATE() WHERE id = @req`);
+                .query(`UPDATE Users SET credits = credits + @c, reservedCredits = ISNULL(reservedCredits,0) - @c, updatedAt = GETUTCDATE() WHERE id = @req`);
             await new sql.Request(txn).input('id', sql.NVarChar(128), ex.id)
                 .query(`UPDATE SkillExchanges SET status='CANCELLED', cancelReason='Auto-cancelled: no activity for 7 days', updatedAt=GETUTCDATE() WHERE id=@id`);
             await txn.commit();
