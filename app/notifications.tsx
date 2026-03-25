@@ -8,12 +8,11 @@ import { useData } from '@/context/DataContext';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 const ICON_MAP: Record<string, { name: string; color: string }> = {
-    request:  { name: 'hand-left-outline',         color: AppColors.primary },
-    accepted: { name: 'checkmark-circle-outline',  color: AppColors.success },
-    message:  { name: 'chatbubble-outline',         color: AppColors.secondary },
-    review:   { name: 'star-outline',               color: '#FACC15' },
-    match:    { name: 'people-outline',             color: '#6B8F71' },
-    exchange: { name: 'swap-horizontal-outline',    color: '#6366F1' },
+    request: { name: 'hand-left-outline', color: AppColors.primary },
+    accepted: { name: 'checkmark-circle-outline', color: AppColors.success },
+    message: { name: 'chatbubble-outline', color: AppColors.secondary },
+    review: { name: 'star-outline', color: '#FACC15' },
+    match: { name: 'people-outline', color: '#6B8F71' },
 };
 
 export default function NotificationsScreen() {

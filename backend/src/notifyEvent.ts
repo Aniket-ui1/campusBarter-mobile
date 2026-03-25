@@ -22,8 +22,6 @@ interface NotifPayload {
     body: string;
     /** Optional related entity id (listingId, chatId, etc.) */
     relatedId?: string;
-    /** Override the auto-computed actionUrl stored in the DB */
-    actionUrlOverride?: string;
     /** Extra data for the push payload / socket emit */
     data?: Record<string, string>;
     /**
@@ -40,7 +38,7 @@ interface NotifPayload {
  * Never throws.
  */
 export async function notifyEvent(payload: NotifPayload): Promise<void> {
-    const { recipientId, type, title, body, relatedId, actionUrlOverride, data, storeToBell = true } = payload;
+    const { recipientId, type, title, body, relatedId, data, storeToBell = true } = payload;
 
     // Determine entity type and action URL based on notification type
     let entityType: string | undefined;
@@ -59,9 +57,6 @@ export async function notifyEvent(payload: NotifPayload): Promise<void> {
         entityType = 'exchange';
         actionUrl = relatedId ? `/exchange/${relatedId}` : undefined;
     }
-
-    // Allow caller to override the actionUrl (e.g. exchange request → open chat with requester)
-    if (actionUrlOverride) actionUrl = actionUrlOverride;
 
     // 1. Persist to DB + emit socket bell — only for bell-worthy events
     if (storeToBell) {
@@ -181,23 +176,8 @@ export function notifyReview(
  */
 // ── Skill Exchange Notifications ─────────────────────────────
 
-export function notifyExchangeRequested(
-    providerId: string,
-    requesterName: string,
-    listingTitle: string,
-    exchangeId: string,
-    requesterId: string,
-) {
-    // actionUrl opens a chat with the requester directly from the bell notification
-    const chatUrl = `/chat/start/${requesterId}?name=${encodeURIComponent(requesterName)}&exchangeId=${exchangeId}`;
-    void notifyEvent({
-        recipientId: providerId,
-        type: 'exchange',
-        title: '📥 New skill request',
-        body: `${requesterName} wants to learn "${listingTitle}"`,
-        relatedId: exchangeId,
-        actionUrlOverride: chatUrl,
-    });
+export function notifyExchangeRequested(providerId: string, requesterName: string, listingTitle: string, exchangeId: string) {
+    void notifyEvent({ recipientId: providerId, type: 'exchange', title: '📥 New skill request', body: `${requesterName} requested "${listingTitle}"`, relatedId: exchangeId });
 }
 
 export function notifyExchangeAccepted(requesterId: string, providerName: string, listingTitle: string, exchangeId: string) {

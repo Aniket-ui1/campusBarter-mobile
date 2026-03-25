@@ -78,7 +78,7 @@ export default function SkillDetailScreen() {
                     { text: 'OK', style: 'cancel' as const },
                 ]);
             } else {
-                Alert.alert('Error', msg || 'Could not send request. Please try again.');
+                Alert.alert('Error', 'Could not send request. Please try again.');
             }
         }
     };
