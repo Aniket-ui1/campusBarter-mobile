@@ -34,6 +34,7 @@ import {
     getMessages,
     getNotifications,
 } from "../lib/api";
+import { Alert } from "react-native";
 import { emitMarkRead, joinChat, leaveChat, onNewListing, onNewMessage, onNewNotification } from "../lib/socket";
 import { chatApi } from "../services/chatApi";
 import { useAuth } from "./AuthContext";
@@ -291,13 +292,15 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                     relatedId: notif.relatedId,
                 }, ...prev];
             });
+            // Show an in-app alert for exchange/request notifications
+            Alert.alert(notif.title, notif.body);
         });
         return cleanup;
     }, [user?.id]);
 
     // Bell badge: only bell-worthy types (request, review, match)
     // Chat messages and accepted events are push-only and never stored to bell
-    const BELL_TYPES = ['request', 'review', 'match'];
+    const BELL_TYPES = ['request', 'review', 'match', 'exchange'];
     const unreadCount = useMemo(
         () => notifications.filter(n =>
             BELL_TYPES.includes(n.type) && !n.isRead && !n.read
