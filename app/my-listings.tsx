@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
@@ -12,53 +12,24 @@ import { useData } from '@/context/DataContext';
 export default function MyListingsScreen() {
     const router = useRouter();
     const { user } = useAuth();
-    const { listings, deleteListing, closeListing } = useData();
+    const { listings, closeListing } = useData();
 
-    // Filter to only this user's listings
+    // Which listing id is awaiting delete confirmation
+    const [confirmId, setConfirmId] = useState<string | null>(null);
+
     const myListings = listings.filter((l) => l.userId === user?.id);
 
     const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'subtle'> = {
         OPEN: 'success', CLOSED: 'subtle',
     };
 
-    const handleDelete = (id: string, title: string) => {
-        Alert.alert(
-            'Delete Listing',
-            `Are you sure you want to delete "${title}"? This cannot be undone.`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Delete', style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            await deleteListing(id);
-                        } catch {
-                            Alert.alert('Error', 'Failed to delete listing.');
-                        }
-                    },
-                },
-            ]
-        );
-    };
-
-    const handleClose = (id: string, title: string) => {
-        Alert.alert(
-            'Close Listing',
-            `Mark "${title}" as closed? It will no longer be visible to others.`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Close', style: 'default',
-                    onPress: async () => {
-                        try {
-                            await closeListing(id);
-                        } catch {
-                            Alert.alert('Error', 'Failed to close listing.');
-                        }
-                    },
-                },
-            ]
-        );
+    const handleDelete = async (id: string) => {
+        setConfirmId(null);
+        try {
+            await closeListing(id);
+        } catch {
+            Alert.alert('Error', 'Failed to delete listing.');
+        }
     };
 
     return (
@@ -97,19 +68,33 @@ export default function MyListingsScreen() {
                                     <Text style={styles.cardCredits}>{l.credits} credit{l.credits !== 1 ? 's' : ''}</Text>
                                 </View>
 
-                                {/* Actions */}
-                                <View style={styles.actionsRow}>
-                                    {l.status === 'OPEN' && (
-                                        <Pressable style={styles.actionBtn} onPress={() => handleClose(l.id, l.title)}>
-                                            <Ionicons name="checkmark-circle-outline" size={16} color={AppColors.textSecondary} />
-                                            <Text style={styles.actionText}>Close</Text>
+                                {/* Actions — only for OPEN listings */}
+                                {l.status === 'OPEN' && <View style={styles.actionsRow}>
+                                    {confirmId === l.id ? (
+                                        // Inline confirmation
+                                        <View style={styles.confirmRow}>
+                                            <Ionicons name="warning-outline" size={15} color={AppColors.error} />
+                                            <Text style={styles.confirmText}>This cannot be undone.</Text>
+                                            <View style={styles.confirmBtns}>
+                                                <Pressable style={styles.cancelConfirmBtn} onPress={() => setConfirmId(null)}>
+                                                    <Text style={styles.cancelConfirmText}>Cancel</Text>
+                                                </Pressable>
+                                                <Pressable style={styles.confirmDeleteBtn} onPress={() => handleDelete(l.id)}>
+                                                    <Ionicons name="trash-outline" size={13} color="#FFF" />
+                                                    <Text style={styles.confirmDeleteText}>Yes, Delete</Text>
+                                                </Pressable>
+                                            </View>
+                                        </View>
+                                    ) : (
+                                        <Pressable
+                                            style={[styles.actionBtn, styles.deleteBtn]}
+                                            onPress={() => setConfirmId(l.id)}
+                                        >
+                                            <Ionicons name="trash-outline" size={16} color={AppColors.error} />
+                                            <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
                                         </Pressable>
                                     )}
-                                    <Pressable style={[styles.actionBtn, styles.deleteBtn]} onPress={() => handleDelete(l.id, l.title)}>
-                                        <Ionicons name="trash-outline" size={16} color={AppColors.error} />
-                                        <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
-                                    </Pressable>
-                                </View>
+                                </View>}
                             </View>
                         </Animated.View>
                     ))
@@ -148,7 +133,6 @@ const styles = StyleSheet.create({
     cardDate: { fontSize: 11, color: AppColors.textMuted },
     cardCredits: { fontSize: 12, color: AppColors.primary, fontWeight: '600' },
     actionsRow: {
-        flexDirection: 'row', gap: Spacing.md,
         borderTopWidth: 1, borderTopColor: AppColors.border,
         paddingTop: Spacing.sm, marginTop: Spacing.xs,
     },
@@ -156,8 +140,30 @@ const styles = StyleSheet.create({
         flexDirection: 'row', alignItems: 'center', gap: 4,
         paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
         backgroundColor: AppColors.surface, borderWidth: 1, borderColor: AppColors.border,
+        alignSelf: 'flex-start',
     },
     actionText: { fontSize: 12, fontWeight: '600', color: AppColors.textSecondary },
     deleteBtn: { borderColor: AppColors.error + '30', backgroundColor: AppColors.error + '10' },
     deleteText: { color: AppColors.error },
+
+    // Inline confirmation
+    confirmRow: {
+        flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+        backgroundColor: AppColors.error + '08',
+        borderRadius: Radii.sm, padding: Spacing.sm,
+        borderWidth: 1, borderColor: AppColors.error + '25',
+    },
+    confirmText: { fontSize: 12, color: AppColors.error, fontWeight: '600', flex: 1 },
+    confirmBtns: { flexDirection: 'row', gap: 6 },
+    cancelConfirmBtn: {
+        paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6,
+        backgroundColor: AppColors.surface, borderWidth: 1, borderColor: AppColors.border,
+    },
+    cancelConfirmText: { fontSize: 12, fontWeight: '600', color: AppColors.textSecondary },
+    confirmDeleteBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6,
+        backgroundColor: AppColors.error,
+    },
+    confirmDeleteText: { fontSize: 12, fontWeight: '700', color: '#FFF' },
 });

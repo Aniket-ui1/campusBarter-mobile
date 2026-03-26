@@ -140,7 +140,7 @@ export default function HomeScreen() {
             <Text style={styles.quickEmoji}>📊</Text>
             <Text style={styles.quickLabel}>Insights</Text>
           </Pressable>
-          <Pressable style={[styles.quickCard, { backgroundColor: AppColors.primary }]} onPress={() => router.push('/exchange' as any)}>
+          <Pressable style={[styles.quickCard, { backgroundColor: AppColors.primary }]} onPress={() => router.push('/exchanges' as any)}>
             <Text style={styles.quickEmoji}>🔄</Text>
             <Text style={styles.quickLabel}>Exchange</Text>
           </Pressable>
