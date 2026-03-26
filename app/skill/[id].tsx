@@ -3,11 +3,11 @@ import { Button } from '@/components/ui/Button';
 import { AppColors, CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
-import { createExchangeRequest, getApiToken, getCreditsBalance } from '@/lib/api';
+import { createExchangeRequest, getApiToken, getCreditsBalance, getMyExchanges } from '@/lib/api';
 import { chatApi } from '@/services/chatApi';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -18,6 +18,28 @@ export default function SkillDetailScreen() {
     const { getListingById, startChat } = useData();
     const listing = getListingById(id);
     const [requesting, setRequesting] = useState(false);
+    const [requestSent, setRequestSent] = useState(false);
+
+    const isOwner = listing?.userId === user?.id;
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!user || !listing || isOwner) return;
+
+        (async () => {
+            try {
+                const exchanges = await getMyExchanges();
+                const hasActive = exchanges.some((ex) =>
+                    ex.listingId === listing.id && (ex.status === 'REQUESTED' || ex.status === 'ACCEPTED' || ex.status === 'DISPUTED')
+                );
+                if (!cancelled) setRequestSent(hasActive);
+            } catch {
+                // Leave optimistic state as-is if lookup fails.
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [isOwner, listing, user]);
 
     if (!listing) {
         return (
@@ -39,7 +61,7 @@ export default function SkillDetailScreen() {
         );
     }
 
-    const isOwner = listing.userId === user?.id;
+    const isOwnerListing = listing.userId === user?.id;
     const catColor = CATEGORY_COLORS[(listing as any).category ?? ''] ?? AppColors.primary;
     const catEmoji = CATEGORY_EMOJIS[(listing as any).category ?? ''] ?? '✨';
 
@@ -50,6 +72,10 @@ export default function SkillDetailScreen() {
         }
         if (!getApiToken()) {
             Alert.alert('Session expired', 'Please sign in again and retry.');
+            return;
+        }
+        if (requestSent) {
+            Alert.alert('Already Requested', 'You already sent a request for this skill.');
             return;
         }
         if (requesting) return;
@@ -71,9 +97,10 @@ export default function SkillDetailScreen() {
 
             // Create exchange — notifies the provider server-side
             const { exchangeId } = await createExchangeRequest(listing.id);
+            setRequestSent(true);
             Alert.alert(
                 'Request Sent! 🎉',
-                `${listing.userName} has been notified that you want to learn "${listing.title}".`,
+                `${listing.userName} has been notified that you want to learn "${listing.title}". To track this request, go to Profile -> My Exchanges.`,
                 [
                     { text: 'View Exchange', onPress: () => router.push({ pathname: '/exchange/[id]' as any, params: { id: exchangeId } }) },
                     { text: 'OK', style: 'cancel' as const },
@@ -84,6 +111,7 @@ export default function SkillDetailScreen() {
             if (msg === 'Insufficient credits') {
                 Alert.alert('Not Enough Credits', 'You do not have enough credits for this exchange.');
             } else if (msg.includes('already') || msg.includes('active') || msg.includes('duplicate')) {
+                setRequestSent(true);
                 Alert.alert('Already Requested', 'You already have an active request for this listing.', [
                     { text: 'View Exchanges', onPress: () => router.push('/exchanges' as any) },
                     { text: 'OK', style: 'cancel' as const },
@@ -198,12 +226,13 @@ export default function SkillDetailScreen() {
                 </Animated.View>
 
                 {/* CTA */}
-                {!isOwner && (
+                {!isOwnerListing && (
                     <Animated.View entering={FadeInDown.delay(350).duration(350)} style={styles.ctaSection}>
-                        <Pressable style={[styles.ctaBtn, { backgroundColor: catColor }, requesting && { opacity: 0.7 }]} onPress={handleRequest} disabled={requesting}>
+                        <Pressable style={[styles.ctaBtn, { backgroundColor: catColor }, (requesting || requestSent) && { opacity: 0.7 }]} onPress={handleRequest} disabled={requesting || requestSent}>
                             <Ionicons name="hand-left-outline" size={20} color="#FFFFFF" />
-                            <Text style={styles.ctaBtnText}>{requesting ? 'Sending Request...' : 'Request This Skill'}</Text>
+                            <Text style={styles.ctaBtnText}>{requesting ? 'Sending Request...' : requestSent ? 'Request Sent' : 'Request This Skill'}</Text>
                         </Pressable>
+                        {requestSent && <Text style={styles.requestStatus}>Request has been sent. Go to Profile {'>'} My Exchanges to track it.</Text>}
                         <Pressable style={styles.msgBtn} onPress={handleMessage}>
                             <Ionicons name="chatbubble-outline" size={18} color={AppColors.primary} />
                             <Text style={styles.msgBtnText}>Send a Message</Text>
@@ -302,6 +331,7 @@ const styles = StyleSheet.create({
         ...Shadows.sm,
     } as any,
     ctaBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+    requestStatus: { fontSize: 12, color: AppColors.textSecondary, textAlign: 'center' },
     msgBtn: {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
         paddingVertical: 14, borderRadius: Radii.md,

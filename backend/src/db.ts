@@ -183,7 +183,15 @@ export async function ensureUserExists(user: {
                 MERGE Users AS target
                 USING (SELECT @email AS email) AS source ON target.email = source.email
                 WHEN MATCHED THEN
-                    UPDATE SET displayName = @displayName, role = @role, lastLoginAt = GETUTCDATE()
+                    UPDATE SET
+                        displayName = @displayName,
+                        role = CASE
+                            WHEN target.role = 'Admin' THEN 'Admin'
+                            WHEN target.role = 'Moderator' AND @role = 'Student' THEN 'Moderator'
+                            WHEN @role IN ('Admin', 'Moderator') THEN @role
+                            ELSE COALESCE(target.role, 'Student')
+                        END,
+                        lastLoginAt = GETUTCDATE()
                 WHEN NOT MATCHED THEN
                     INSERT (id, email, displayName, role, credits)
                     VALUES (@id, @email, @displayName, @role, 10)

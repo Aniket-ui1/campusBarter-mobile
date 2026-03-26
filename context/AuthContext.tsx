@@ -352,6 +352,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             console.error("[Auth] User sync failed:", e);
         }
 
+        // Pull authoritative profile (including role) after sync so UI
+        // reflects server state immediately (e.g., Admin Dashboard visibility).
+        try {
+            const me = await getMyProfile();
+            const refreshed = mergeApiProfileIntoUser(u, me);
+            setUser(refreshed);
+            await storage.setItem(AUTH_KEY, JSON.stringify(refreshed));
+        } catch (e) {
+            console.warn('[Auth] Could not refresh profile after sync:', e);
+        }
+
         // Register push token on fresh login (best effort — ignore failure)
         if (idToken) {
             void registerDevicePushToken();

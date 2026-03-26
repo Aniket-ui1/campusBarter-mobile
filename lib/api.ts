@@ -518,25 +518,55 @@ export async function getExchangeById(id: string): Promise<SkillExchange> {
 }
 
 export async function acceptExchange(id: string): Promise<void> {
-    await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/accept`, { method: 'POST' });
+    try {
+        await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/accept`, { method: 'POST' });
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404 && status !== 405) throw error;
+        await apiFetch(`/api/exchanges/${encodeURIComponent(id)}/accept`, { method: 'POST' });
+    }
 }
 
 export async function confirmExchangeApi(id: string): Promise<{ completed: boolean }> {
-    return apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/confirm`, { method: 'POST' });
+    try {
+        return await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/confirm`, { method: 'POST' });
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404 && status !== 405) throw error;
+        return apiFetch(`/api/exchanges/${encodeURIComponent(id)}/confirm`, { method: 'POST' });
+    }
 }
 
 export async function cancelExchange(id: string, reason?: string): Promise<void> {
-    await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/cancel`, {
-        method: 'POST',
-        body: JSON.stringify({ reason }),
-    });
+    try {
+        await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/cancel`, {
+            method: 'POST',
+            body: JSON.stringify({ reason }),
+        });
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404 && status !== 405) throw error;
+        await apiFetch(`/api/exchanges/${encodeURIComponent(id)}/cancel`, {
+            method: 'POST',
+            body: JSON.stringify({ reason }),
+        });
+    }
 }
 
 export async function raiseExchangeDispute(id: string, reason: string): Promise<void> {
-    await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/dispute`, {
-        method: 'POST',
-        body: JSON.stringify({ reason }),
-    });
+    try {
+        await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/dispute`, {
+            method: 'POST',
+            body: JSON.stringify({ reason }),
+        });
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404 && status !== 405) throw error;
+        await apiFetch(`/api/exchanges/${encodeURIComponent(id)}/dispute`, {
+            method: 'POST',
+            body: JSON.stringify({ reason }),
+        });
+    }
 }
 
 export async function getAdminDisputes(): Promise<ExchangeDispute[]> {
