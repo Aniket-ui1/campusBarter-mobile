@@ -1,5 +1,8 @@
 // app/exchanges.tsx — My Exchanges list (incoming + outgoing)
 
+import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { getMyExchanges, SkillExchange } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
@@ -8,9 +11,6 @@ import {
     ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import { getMyExchanges, SkillExchange } from '@/lib/api';
 
 const STATUS_COLOR: Record<string, string> = {
     REQUESTED: '#F59E0B',
@@ -75,8 +75,9 @@ export default function ExchangesScreen() {
 
     useFocusEffect(useCallback(() => { void load(); }, [load]));
 
-    const incoming  = exchanges.filter(e => e.providerId  === user?.id);
-    const outgoing  = exchanges.filter(e => e.requesterId === user?.id);
+    const visibleExchanges = exchanges.filter(e => e.status !== 'CANCELLED');
+    const incoming  = visibleExchanges.filter(e => e.providerId  === user?.id);
+    const outgoing  = visibleExchanges.filter(e => e.requesterId === user?.id);
     const displayed = tab === 'incoming' ? incoming : outgoing;
 
     return (

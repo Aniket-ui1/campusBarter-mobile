@@ -173,7 +173,15 @@ export default function ExchangeDetailScreen() {
             {
                 text: 'Cancel Exchange', style: 'destructive', onPress: async () => {
                     setActing(true);
-                    try { await cancelExchange(id); await load(); }
+                    try {
+                        await cancelExchange(id);
+                        await load();
+                        Alert.alert(
+                            'Request Cancelled',
+                            'Your request was cancelled successfully and credits were refunded to the requester. You can verify in Profile > My Exchanges.',
+                            [{ text: 'Open My Exchanges', onPress: () => router.replace('/exchanges' as any) }]
+                        );
+                    }
                     catch (err: any) { Alert.alert('Error', err?.message ?? 'Could not cancel'); }
                     finally { setActing(false); }
                 },
