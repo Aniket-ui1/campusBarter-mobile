@@ -26,6 +26,7 @@ export default function ProfileScreen() {
     const { unreadCount, listings } = useData();
     const router = useRouter();
     const myListings = listings.filter(l => l.userId === user?.id).length;
+    const normalizedRole = (user as any)?.role ? String((user as any).role).toLowerCase() : '';
 
     type MenuItem = { icon: string; label: string; onPress: () => void; badge?: string };
     const MENU_ITEMS: MenuItem[] = [
@@ -37,7 +38,7 @@ export default function ProfileScreen() {
         { icon: 'star-outline', label: 'Reviews', onPress: () => router.push({ pathname: '/reviews/[userId]', params: { userId: user?.id ?? 'u1' } }) },
         { icon: 'notifications-outline', label: 'Notifications', onPress: () => router.push('/notifications'), badge: unreadCount > 0 ? String(unreadCount) : undefined },
         { icon: 'settings-outline', label: 'Settings', onPress: () => router.push('/settings') },
-        ...((user as any)?.role === 'Admin'
+        ...(normalizedRole === 'admin'
             ? [{ icon: 'shield-checkmark-outline', label: 'Admin Dashboard', onPress: () => router.push('/admin' as any) }]
             : []),
     ];

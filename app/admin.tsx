@@ -36,7 +36,8 @@ export default function AdminDashboard() {
     const [auditLog, setAuditLog] = useState<AdminAuditLogEntry[]>([]);
     const [loading, setLoading] = useState(true);
 
-    const isAdmin = (user as { role?: string } | null)?.role === 'Admin';
+    const role = (user as { role?: string } | null)?.role;
+    const isAdmin = typeof role === 'string' && role.toLowerCase() === 'admin';
 
     const loadData = async () => {
         if (!isAdmin) {

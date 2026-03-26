@@ -11,7 +11,7 @@ import {
 } from "react";
 import { Platform } from "react-native";
 import azureConfig from "../config/azureConfig";
-import { clearApiToken, getUserById, registerPushToken, setApiToken, setDevUser, updateMyProfile, upsertUserProfile } from "../lib/api";
+import { clearApiToken, getMyProfile, registerPushToken, setApiToken, setDevUser, updateMyProfile, upsertUserProfile } from "../lib/api";
 import { connectSocket, disconnectSocket } from "../lib/socket";
 
 // Cross-platform storage: SecureStore on native, localStorage on web
@@ -193,6 +193,31 @@ function makeUser(
     };
 }
 
+function mergeApiProfileIntoUser(base: User, profile: any): User {
+    if (!profile) return base;
+    const displayName = profile.displayName ?? base.displayName ?? base.name;
+    return {
+        ...base,
+        id: profile.id ?? base.id,
+        name: displayName,
+        displayName,
+        email: profile.email ?? base.email,
+        bio: profile.bio ?? base.bio,
+        credits: typeof profile.credits === 'number' ? profile.credits : base.credits,
+        program: profile.program ?? base.program,
+        major: profile.major ?? base.major,
+        semester: profile.semester ?? base.semester,
+        rating: profile.rating ?? base.rating,
+        reviewCount: profile.reviewCount ?? base.reviewCount,
+        skills: profile.skills ?? base.skills,
+        weaknesses: profile.weaknesses ?? base.weaknesses,
+        interests: profile.interests ?? base.interests,
+        profileComplete: profile.profileComplete ?? base.profileComplete,
+        avatarUrl: profile.avatarUrl ?? base.avatarUrl,
+        role: profile.role ?? base.role,
+    };
+}
+
 // ── Email domain guard ────────────────────────────────────────────
 
 function isSaitEmail(email: string) {
@@ -244,7 +269,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         // clear stale local session so the app doesn't appear signed in
                         // while all posting/listing APIs fail with 401.
                         try {
-                            await getUserById(parsed.id);
+                            const me = await getMyProfile();
+                            const refreshed = mergeApiProfileIntoUser(parsed, me);
+                            setUser(refreshed);
+                            await storage.setItem(AUTH_KEY, JSON.stringify(refreshed));
                             // Session is valid — re-register push token in case it changed
                             // (can happen after app reinstall or OS update)
                             void registerDevicePushToken();
@@ -325,7 +353,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             // Restore existing profile from Azure API if it exists
             let existingProfile: any = null;
             try {
-                existingProfile = await getUserById(userId);
+                existingProfile = await getMyProfile();
             } catch (e) {
                 console.warn("Could not check existing profile:", e);
             }
@@ -545,7 +573,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 // Check if user already has a complete profile in Azure API
                 let existingProfile: any = null;
                 try {
-                    existingProfile = await getUserById(userId);
+                    existingProfile = await getMyProfile();
                 } catch (e) {
                     console.warn("Could not check existing profile:", e);
                 }

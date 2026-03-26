@@ -73,8 +73,22 @@ async function apiFetch<T>(
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
     if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: 'Unknown error' }));
-        throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
+        const rawText = await res.text().catch(() => '');
+        let parsed: any = null;
+        if (rawText) {
+            try {
+                parsed = JSON.parse(rawText);
+            } catch {
+                parsed = null;
+            }
+        }
+
+        const message =
+            parsed?.error ??
+            parsed?.message ??
+            (rawText ? rawText.slice(0, 180) : `${res.status} ${res.statusText || 'Request failed'}`);
+
+        throw new ApiError(res.status, message);
     }
 
     // 204 No Content — return empty object

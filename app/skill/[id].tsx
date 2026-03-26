@@ -3,11 +3,11 @@ import { Button } from '@/components/ui/Button';
 import { AppColors, CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
-import { createExchangeRequest, getCreditsBalance } from '@/lib/api';
+import { createExchangeRequest, getApiToken, getCreditsBalance } from '@/lib/api';
 import { chatApi } from '@/services/chatApi';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -17,6 +17,7 @@ export default function SkillDetailScreen() {
     const { user } = useAuth();
     const { getListingById, startChat } = useData();
     const listing = getListingById(id);
+    const [requesting, setRequesting] = useState(false);
 
     if (!listing) {
         return (
@@ -43,22 +44,32 @@ export default function SkillDetailScreen() {
     const catEmoji = CATEGORY_EMOJIS[(listing as any).category ?? ''] ?? '✨';
 
     const handleRequest = async () => {
-        if (!user) return;
-
-        // Credit pre-check (UX only — backend also enforces)
+        if (!user) {
+            Alert.alert('Sign in required', 'Please sign in to request this skill.');
+            return;
+        }
+        if (!getApiToken()) {
+            Alert.alert('Session expired', 'Please sign in again and retry.');
+            return;
+        }
+        if (requesting) return;
+        setRequesting(true);
         try {
-            const { balance } = await getCreditsBalance();
-            if (balance < listing.credits) {
-                Alert.alert(
-                    'Not Enough Credits',
-                    `You have ${balance} credit${balance !== 1 ? 's' : ''} available, but this skill costs ${listing.credits}. Earn more by teaching your own skills.`
-                );
-                return;
+            // Credit pre-check (UX only — backend also enforces)
+            try {
+                const { balance } = await getCreditsBalance();
+                if (balance < listing.credits) {
+                    Alert.alert(
+                        'Not Enough Credits',
+                        `You have ${balance} credit${balance !== 1 ? 's' : ''} available, but this skill costs ${listing.credits}. Earn more by teaching your own skills.`
+                    );
+                    return;
+                }
+            } catch {
+                // Skip pre-check errors — backend remains source of truth.
             }
-        } catch { /* skip — backend will enforce */ }
 
-        // Create exchange — notifies the provider server-side
-        try {
+            // Create exchange — notifies the provider server-side
             const { exchangeId } = await createExchangeRequest(listing.id);
             Alert.alert(
                 'Request Sent! 🎉',
@@ -80,6 +91,8 @@ export default function SkillDetailScreen() {
             } else {
                 Alert.alert('Error', 'Could not send request. Please try again.');
             }
+        } finally {
+            setRequesting(false);
         }
     };
 
@@ -187,9 +200,9 @@ export default function SkillDetailScreen() {
                 {/* CTA */}
                 {!isOwner && (
                     <Animated.View entering={FadeInDown.delay(350).duration(350)} style={styles.ctaSection}>
-                        <Pressable style={[styles.ctaBtn, { backgroundColor: catColor }]} onPress={handleRequest}>
+                        <Pressable style={[styles.ctaBtn, { backgroundColor: catColor }, requesting && { opacity: 0.7 }]} onPress={handleRequest} disabled={requesting}>
                             <Ionicons name="hand-left-outline" size={20} color="#FFFFFF" />
-                            <Text style={styles.ctaBtnText}>Request This Skill</Text>
+                            <Text style={styles.ctaBtnText}>{requesting ? 'Sending Request...' : 'Request This Skill'}</Text>
                         </Pressable>
                         <Pressable style={styles.msgBtn} onPress={handleMessage}>
                             <Ionicons name="chatbubble-outline" size={18} color={AppColors.primary} />
