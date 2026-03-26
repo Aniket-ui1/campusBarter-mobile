@@ -143,6 +143,15 @@ function decodeJwtPayload(token: string): Record<string, any> {
     return JSON.parse(jsonPayload);
 }
 
+function normalizeRole(value: unknown): User['role'] | undefined {
+    if (typeof value !== 'string') return undefined;
+    const v = value.trim().toLowerCase();
+    if (v === 'admin') return 'Admin';
+    if (v === 'moderator') return 'Moderator';
+    if (v === 'student') return 'Student';
+    return undefined;
+}
+
 // ── Azure API user profile helper ─────────────────────────────────
 
 /** Syncs user profile to Azure API (best-effort — may fail for mock login) */
@@ -252,6 +261,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     const savedToken = await storage.getItem(TOKEN_KEY);
                     if (savedToken) {
                         setApiToken(savedToken);
+
+                        // Recover role from token claims so admin visibility works
+                        // even if cached profile data is stale.
+                        if (!savedToken.startsWith('mock-')) {
+                            try {
+                                const claims = decodeJwtPayload(savedToken);
+                                parsed.role = parsed.role ?? normalizeRole(
+                                    claims['campusbarter_role'] ?? claims['role'] ?? claims['roles']?.[0]
+                                );
+                            } catch {
+                                // Ignore malformed token decode here; API validation will handle auth.
+                            }
+                        }
 
                         // Web refresh recovery: restore mock user headers too.
                         // Without this, a persisted mock token can fail API auth after reload.
@@ -566,6 +588,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 const userId = claims.oid ?? claims.sub ?? "azure-user-id";
                 const displayName = claims.name ?? "SAIT Student";
                 const userEmail = email.toLowerCase().trim();
+                const roleFromClaims = normalizeRole(claims['campusbarter_role'] ?? claims['role'] ?? claims['roles']?.[0]);
 
                 // Set the API token BEFORE any API calls
                 setApiToken(idToken);
@@ -590,6 +613,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     avatarUrl: existingProfile?.avatarUrl ?? "",
                     rating: existingProfile?.rating ?? 0,
                     reviewCount: existingProfile?.reviewCount ?? 0,
+                    role: normalizeRole(existingProfile?.role) ?? roleFromClaims,
                 });
 
                 await persistUser(u, idToken);

@@ -488,15 +488,33 @@ export interface AdminReportedListing {
 }
 
 export async function createExchangeRequest(listingId: string): Promise<{ exchangeId: string }> {
-    return apiFetch('/api/v1/exchanges', { method: 'POST', body: JSON.stringify({ listingId }) });
+    try {
+        return await apiFetch('/api/v1/exchanges', { method: 'POST', body: JSON.stringify({ listingId }) });
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+        return apiFetch('/api/exchanges', { method: 'POST', body: JSON.stringify({ listingId }) });
+    }
 }
 
 export async function getMyExchanges(): Promise<SkillExchange[]> {
-    return apiFetch('/api/v1/exchanges');
+    try {
+        return await apiFetch('/api/v1/exchanges');
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+        return apiFetch('/api/exchanges');
+    }
 }
 
 export async function getExchangeById(id: string): Promise<SkillExchange> {
-    return apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}`);
+    try {
+        return await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}`);
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+        return apiFetch(`/api/exchanges/${encodeURIComponent(id)}`);
+    }
 }
 
 export async function acceptExchange(id: string): Promise<void> {
@@ -556,11 +574,22 @@ export async function createUserReview(revieweeId: string, rating: number, comme
 }
 
 export async function submitListingReport(listingId: string, reason: string, details?: string): Promise<string> {
-    const res = await apiFetch<{ id: string; message: string }>('/api/v1/reports', {
-        method: 'POST',
-        body: JSON.stringify({ listingId, reason, details }),
-    });
-    return res.id;
+    try {
+        const res = await apiFetch<{ id: string; message: string }>('/api/v1/reports', {
+            method: 'POST',
+            body: JSON.stringify({ listingId, reason, details }),
+        });
+        return res.id;
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+
+        const res = await apiFetch<{ id: string; message: string }>('/api/reports', {
+            method: 'POST',
+            body: JSON.stringify({ listingId, reason, details }),
+        });
+        return res.id;
+    }
 }
 
 export async function transferCredits(
@@ -596,7 +625,13 @@ export interface ApiUserProfile {
 }
 
 export async function getMyProfile(): Promise<ApiUserProfile> {
-    return apiFetch<ApiUserProfile>('/api/v1/users/me');
+    try {
+        return await apiFetch<ApiUserProfile>('/api/v1/users/me');
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+        return apiFetch<ApiUserProfile>('/api/users/me');
+    }
 }
 
 export async function getUserById(userId: string): Promise<ApiUserProfile | null> {
