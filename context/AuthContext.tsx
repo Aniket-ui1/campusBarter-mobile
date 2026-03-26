@@ -2,7 +2,17 @@
 import * as AuthSession from "expo-auth-session";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
+import {
+    createContext,
+    ReactNode,
+    useContext,
+    useEffect,
+    useState,
+} from "react";
 import { Platform } from "react-native";
+import azureConfig from "../config/azureConfig";
+import { clearApiToken, getUserById, registerPushToken, setApiToken, setDevUser, updateMyProfile, upsertUserProfile } from "../lib/api";
+import { connectSocket, disconnectSocket } from "../lib/socket";
 
 // Cross-platform storage: SecureStore on native, localStorage on web
 const storage = {
@@ -30,16 +40,6 @@ const storage = {
         await SecureStore.deleteItemAsync(key);
     },
 };
-import {
-    createContext,
-    ReactNode,
-    useContext,
-    useEffect,
-    useState,
-} from "react";
-import azureConfig from "../config/azureConfig";
-import { setApiToken, clearApiToken, setDevUser, registerPushToken, upsertUserProfile, getUserById, updateMyProfile } from "../lib/api";
-import { connectSocket, disconnectSocket } from "../lib/socket";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -65,6 +65,7 @@ export interface User {
     /** false until the user completes the profile-setup screen */
     profileComplete?: boolean;
     avatarUrl?: string;
+    role?: 'Student' | 'Moderator' | 'Admin';
 }
 
 // ── SignUpData — used by register-step3.tsx ───────────────────────

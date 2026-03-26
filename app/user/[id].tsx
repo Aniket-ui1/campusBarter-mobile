@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
-import { getUserById } from '@/lib/api';
+import { ApiReview, getReviewsForUser, getUserById } from '@/lib/api';
 import { chatApi } from '@/services/chatApi';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -20,6 +20,7 @@ export default function UserProfileScreen() {
     const { listings } = useData();
     const [profile, setProfile] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [recentReviews, setRecentReviews] = useState<ApiReview[]>([]);
 
     useEffect(() => {
         if (!id) return;
@@ -27,6 +28,13 @@ export default function UserProfileScreen() {
             setProfile(p);
             setLoading(false);
         }).catch(() => setLoading(false));
+    }, [id]);
+
+    useEffect(() => {
+        if (!id) return;
+        getReviewsForUser(id)
+            .then((items) => setRecentReviews(items.slice(0, 3)))
+            .catch(() => setRecentReviews([]));
     }, [id]);
 
     const userListings = listings.filter((l) => l.userId === id && l.status === 'OPEN');
@@ -139,6 +147,38 @@ export default function UserProfileScreen() {
                     )}
                 </Animated.View>
 
+                <Animated.View entering={FadeInDown.delay(180).duration(400)} style={styles.reviewsCard}>
+                    <View style={styles.reviewsHeaderRow}>
+                        <Text style={styles.sectionTitle}>Recent Reviews</Text>
+                        <Pressable onPress={() => router.push({ pathname: '/reviews/[userId]', params: { userId: id } })}>
+                            <Text style={styles.seeAllText}>See all</Text>
+                        </Pressable>
+                    </View>
+
+                    {recentReviews.length === 0 ? (
+                        <Text style={styles.reviewEmptyText}>No written reviews yet.</Text>
+                    ) : (
+                        recentReviews.map((review) => (
+                            <View key={review.id} style={styles.reviewRow}>
+                                <View style={styles.reviewStars}>
+                                    {Array.from({ length: 5 }).map((_, idx) => (
+                                        <Ionicons
+                                            key={`${review.id}-${idx}`}
+                                            name={idx < review.rating ? 'star' : 'star-outline'}
+                                            size={12}
+                                            color="#F59E0B"
+                                        />
+                                    ))}
+                                </View>
+                                <Text style={styles.reviewMeta}>
+                                    {review.reviewerName} · {new Date(review.createdAt).toLocaleDateString()}
+                                </Text>
+                                <Text style={styles.reviewComment} numberOfLines={2}>{review.comment}</Text>
+                            </View>
+                        ))
+                    )}
+                </Animated.View>
+
                 {/* Message CTA */}
                 {!isMe && (
                     <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.ctaRow}>
@@ -208,6 +248,22 @@ const styles = StyleSheet.create({
     tagsSection: { width: '100%', marginTop: Spacing.sm },
     sectionLabel: { fontSize: 11, color: AppColors.textMuted, fontWeight: '600', letterSpacing: 1.5, marginBottom: Spacing.sm },
     tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    reviewsCard: {
+        backgroundColor: '#FFFFFF',
+        borderWidth: 1,
+        borderColor: AppColors.border,
+        borderRadius: Radii.lg,
+        padding: Spacing.lg,
+        marginBottom: Spacing.xl,
+        gap: Spacing.md,
+    },
+    reviewsHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    seeAllText: { color: AppColors.primary, fontSize: 13, fontWeight: '700' },
+    reviewEmptyText: { color: AppColors.textMuted, fontSize: 13 },
+    reviewRow: { gap: 4, paddingBottom: Spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: AppColors.border },
+    reviewStars: { flexDirection: 'row', gap: 2 },
+    reviewMeta: { fontSize: 12, color: AppColors.textMuted },
+    reviewComment: { fontSize: 13, color: AppColors.textSecondary, lineHeight: 19 },
     ctaRow: { marginBottom: Spacing.xl },
     sectionTitle: { fontSize: 18, fontWeight: '800', color: AppColors.text, marginBottom: Spacing.md },
 });

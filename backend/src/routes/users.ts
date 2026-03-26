@@ -2,7 +2,7 @@
 
 import { Request, Response, Router } from 'express';
 import { body, param } from 'express-validator';
-import { adminAnonymizeUser, getUserProfile, updateUserProfile, upsertUserProfile } from '../db';
+import { adminAnonymizeUser, getUserProfile, getUsersForAdmin, updateUserProfile, upsertUserProfile } from '../db';
 import { requireRole } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 
@@ -16,6 +16,16 @@ usersRouter.get('/me', async (req: Request, res: Response) => {
         res.json(profile);
     } catch {
         res.status(500).json({ error: 'Failed to fetch profile' });
+    }
+});
+
+// GET /api/users — Admin-only user list with roles
+usersRouter.get('/', requireRole('Admin'), async (req: Request, res: Response) => {
+    try {
+        const users = await getUsersForAdmin();
+        res.json(users);
+    } catch {
+        res.status(500).json({ error: 'Failed to fetch users' });
     }
 });
 

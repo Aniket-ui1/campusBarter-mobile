@@ -195,6 +195,13 @@ export default function SkillDetailScreen() {
                             <Ionicons name="chatbubble-outline" size={18} color={AppColors.primary} />
                             <Text style={styles.msgBtnText}>Send a Message</Text>
                         </Pressable>
+                        <Pressable
+                            style={styles.reportBtn}
+                            onPress={() => router.push({ pathname: '/report', params: { listingId: listing.id } })}
+                        >
+                            <Ionicons name="flag-outline" size={16} color={AppColors.error} />
+                            <Text style={styles.reportBtnText}>Report Listing</Text>
+                        </Pressable>
                     </Animated.View>
                 )}
 
@@ -289,6 +296,13 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFFFFF',
     },
     msgBtnText: { color: AppColors.primary, fontSize: 15, fontWeight: '700' },
+    reportBtn: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+        paddingVertical: 12, borderRadius: Radii.md,
+        borderWidth: 1, borderColor: AppColors.error + '40',
+        backgroundColor: AppColors.error + '08',
+    },
+    reportBtnText: { color: AppColors.error, fontSize: 14, fontWeight: '700' },
 
     // Owner
     ownerBanner: {

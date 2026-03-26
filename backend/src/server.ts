@@ -9,23 +9,24 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import http from 'http';
-import { auditLog, closePool, getAuditLogEntries, getOpenDisputes, resolveDispute } from './db';
-import { notifyDisputeResolved } from './notifyEvent';
+import { auditLog, closePool, getAuditLogEntries, getOpenDisputes, getReportedListingsForAdmin, resolveDispute } from './db';
 import { startExchangeExpiryJobs } from './jobs/exchangeExpiry';
 import { requireRole, verifyAzureAdToken } from './middleware/auth';
+import { notifyDisputeResolved } from './notifyEvent';
 import { initSocketServer } from './socket';
 import { setIO } from './socketInstance';
 
 // Route handlers
-import { exchangesRouter } from './routes/exchanges';
-import { chatsRouter } from './routes/chats';
 import { registerChatRoutes } from './routes/chat';
+import { chatsRouter } from './routes/chats';
 import { conversationsRouter } from './routes/conversations';
 import { creditsRouter } from './routes/credits';
+import { exchangesRouter } from './routes/exchanges';
 import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
 import { listingsRouter } from './routes/listings';
 import { notificationsRouter } from './routes/notifications';
+import { reportsRouter } from './routes/reports';
 import { reviewsRouter } from './routes/reviews';
 import { tokensRouter } from './routes/tokens';
 import { uploadRouter } from './routes/upload';
@@ -119,6 +120,7 @@ app.use('/api/v1/chats', chatsRouter);
 app.use('/api/v1/conversations', conversationsRouter);
 app.use('/api/v1/users', usersRouter);
 app.use('/api/v1/reviews', reviewsRouter);
+app.use('/api/v1/reports', reportsRouter);
 app.use('/api/v1/notifications', notificationsRouter);
 app.use('/api/v1/credits', creditsRouter);
 app.use('/api/v1/upload', uploadRouter);
@@ -155,6 +157,16 @@ app.post('/api/v1/admin/disputes/:id/resolve', verifyAzureAdToken, requireRole('
     }
 });
 
+// Admin-only reported listings (derived from open disputes)
+app.get('/api/v1/admin/reported-listings', verifyAzureAdToken, requireRole('Admin'), async (_req: express.Request, res: express.Response) => {
+    try {
+        const reportedListings = await getReportedListingsForAdmin();
+        res.json({ reportedListings });
+    } catch {
+        res.status(500).json({ error: 'Failed to fetch reported listings' });
+    }
+});
+
 // Admin-only audit log
 app.get('/api/v1/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
     try {
@@ -182,6 +194,7 @@ app.use('/api/chats', chatsRouter);
 app.use('/api/conversations', conversationsRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/reviews', reviewsRouter);
+app.use('/api/reports', reportsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/credits', creditsRouter);
 app.use('/api/upload', uploadRouter);

@@ -1,22 +1,36 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { submitListingReport } from '@/lib/api';
+import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 const REASONS = ['Inappropriate behavior', 'Spam or scam', 'Harassment', 'Fake listing', 'Other'];
 
 export default function ReportScreen() {
+    const { listingId } = useLocalSearchParams<{ listingId?: string }>();
     const router = useRouter();
     const [reason, setReason] = useState('');
     const [description, setDescription] = useState('');
+    const [submitting, setSubmitting] = useState(false);
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!reason) { Alert.alert('Please select a reason'); return; }
-        Alert.alert('Report Submitted', 'Thank you. We will review this report and take action.');
-        router.back();
+        if (!listingId) { Alert.alert('Missing listing', 'No listing selected for report.'); return; }
+
+        setSubmitting(true);
+        try {
+            await submitListingReport(listingId, reason, description.trim() || undefined);
+            Alert.alert('Report Submitted', 'Thank you. We will review this report and take action.');
+            router.back();
+        } catch (error) {
+            const message = (error as { message?: string })?.message ?? 'Could not submit report right now.';
+            Alert.alert('Unable to submit report', message);
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     return (
@@ -41,7 +55,14 @@ export default function ReportScreen() {
                 <Input label="Additional details (optional)" placeholder="Describe the issue..."
                     value={description} onChangeText={setDescription} multiline numberOfLines={3}
                     style={{ minHeight: 80, textAlignVertical: 'top' }} />
-                <Button title="Submit Report" onPress={handleSubmit} variant="danger" fullWidth size="lg" />
+                <Button
+                    title={submitting ? 'Submitting...' : 'Submit Report'}
+                    onPress={handleSubmit}
+                    variant="danger"
+                    fullWidth
+                    size="lg"
+                    disabled={submitting}
+                />
             </ScrollView>
         </View>
     );

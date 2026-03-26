@@ -364,6 +364,7 @@ export async function getMessagesPage(chatId: string, page = 1, limit = 30): Pro
 
 let hasInitiatorColumn: boolean | null = null;
 let chatUserStateEnsured = false;
+let listingReportsEnsured = false;
 
 function buildConversationId(userA: string, userB: string): string {
     const [leftUserId, rightUserId] = [userA, userB].sort((left, right) => left.localeCompare(right));
@@ -393,6 +394,36 @@ async function ensureChatUserStateTable(): Promise<void> {
     `);
 
     chatUserStateEnsured = true;
+}
+
+async function ensureListingReportsTable(): Promise<void> {
+    if (listingReportsEnsured) return;
+
+    const db = await getPool();
+    await db.request().query(`
+        IF NOT EXISTS (
+            SELECT * FROM sys.objects
+            WHERE object_id = OBJECT_ID(N'[dbo].[ListingReports]') AND type in (N'U')
+        )
+        BEGIN
+            CREATE TABLE ListingReports (
+                id          NVARCHAR(128)   NOT NULL PRIMARY KEY,
+                listingId   NVARCHAR(128)   NOT NULL REFERENCES Listings(id) ON DELETE CASCADE,
+                reporterId  NVARCHAR(128)   NOT NULL REFERENCES Users(id),
+                reason      NVARCHAR(120)   NOT NULL,
+                details     NVARCHAR(1000)  NULL,
+                status      NVARCHAR(20)    NOT NULL DEFAULT 'OPEN'
+                                            CHECK (status IN ('OPEN', 'RESOLVED', 'DISMISSED')),
+                createdAt   DATETIME2       NOT NULL DEFAULT GETUTCDATE(),
+                resolvedAt  DATETIME2       NULL
+            );
+
+            CREATE INDEX IX_ListingReports_ListingId ON ListingReports(listingId, status, createdAt DESC);
+            CREATE INDEX IX_ListingReports_ReporterId ON ListingReports(reporterId, createdAt DESC);
+        END
+    `);
+
+    listingReportsEnsured = true;
 }
 
 async function chatsTableHasInitiatorId(): Promise<boolean> {
@@ -590,6 +621,16 @@ export async function getUserProfile(userId: string): Promise<Record<string, unk
         .input('id', sql.NVarChar(128), userId)
         .query(`SELECT * FROM Users WHERE id = @id`);
     return result.recordset[0] ?? null;
+}
+
+export async function getUsersForAdmin(): Promise<Record<string, unknown>[]> {
+    const db = await getPool();
+    const result = await db.request().query(`
+        SELECT id, displayName, email, role, credits, rating, reviewCount, createdAt
+        FROM Users
+        ORDER BY createdAt DESC
+    `);
+    return result.recordset;
 }
 
 export async function updateUserProfile(
@@ -1005,16 +1046,52 @@ export async function createReview(
     if (rating < 1 || rating > 5) throw new Error('Rating must be between 1 and 5');
 
     const db = await getPool();
+    const latestCompletedExchange = await db.request()
+        .input('reviewerId', sql.NVarChar(128), reviewerId)
+        .input('revieweeId', sql.NVarChar(128), revieweeId)
+        .query(`
+            SELECT TOP 1 listingId
+            FROM SkillExchanges
+            WHERE status = 'COMPLETED'
+              AND (
+                    (requesterId = @reviewerId AND providerId = @revieweeId)
+                    OR
+                    (requesterId = @revieweeId AND providerId = @reviewerId)
+                  )
+            ORDER BY completedAt DESC, createdAt DESC
+        `);
+
+    const latestListingId = latestCompletedExchange.recordset?.[0]?.listingId as string | undefined;
+
+    if (latestListingId) {
+        const duplicate = await db.request()
+            .input('reviewerId', sql.NVarChar(128), reviewerId)
+            .input('revieweeId', sql.NVarChar(128), revieweeId)
+            .input('listingId', sql.NVarChar(128), latestListingId)
+            .query(`
+                SELECT TOP 1 id
+                FROM Reviews
+                WHERE reviewerId = @reviewerId
+                  AND revieweeId = @revieweeId
+                  AND listingId = @listingId
+            `);
+
+        if (duplicate.recordset.length > 0) {
+            throw new Error('Review already submitted for your latest completed exchange with this user');
+        }
+    }
+
     const reviewId = crypto.randomUUID();
     await db.request()
         .input('id', sql.NVarChar(128), reviewId)
         .input('reviewerId', sql.NVarChar(128), reviewerId)
         .input('revieweeId', sql.NVarChar(128), revieweeId)
+        .input('listingId', sql.NVarChar(128), latestListingId ?? null)
         .input('rating', sql.Int, rating)
         .input('comment', sql.NVarChar(1000), comment.trim())
         .query(`
-            INSERT INTO Reviews (id, reviewerId, revieweeId, rating, comment)
-            VALUES (@id, @reviewerId, @revieweeId, @rating, @comment)
+            INSERT INTO Reviews (id, reviewerId, revieweeId, listingId, rating, comment)
+            VALUES (@id, @reviewerId, @revieweeId, @listingId, @rating, @comment)
         `);
     await auditLog(reviewerId, 'CREATE_REVIEW', `Review:${reviewId}`);
     return reviewId;
@@ -1022,7 +1099,23 @@ export async function createReview(
 
 export async function hasCompletedExchangeBetweenUsers(userA: string, userB: string): Promise<boolean> {
     const db = await getPool();
-    const result = await db.request()
+    const v2Result = await db.request()
+        .input('userA', sql.NVarChar(128), userA)
+        .input('userB', sql.NVarChar(128), userB)
+        .query(`
+            SELECT TOP 1 1 AS hasExchange
+            FROM SkillExchanges
+            WHERE status = 'COMPLETED'
+              AND (
+                    (requesterId = @userA AND providerId = @userB)
+                    OR
+                    (requesterId = @userB AND providerId = @userA)
+                  )
+        `);
+
+    if (v2Result.recordset.length > 0) return true;
+
+    const legacyResult = await db.request()
         .input('userA', sql.NVarChar(128), userA)
         .input('userB', sql.NVarChar(128), userB)
         .query(`
@@ -1036,7 +1129,113 @@ export async function hasCompletedExchangeBetweenUsers(userA: string, userB: str
                   )
         `);
 
-    return result.recordset.length > 0;
+    return legacyResult.recordset.length > 0;
+}
+
+export interface ListingReportRow {
+    id: string;
+    listingId: string;
+    reporterId: string;
+    reason: string;
+    details: string | null;
+    status: 'OPEN' | 'RESOLVED' | 'DISMISSED';
+    createdAt: string;
+    resolvedAt: string | null;
+}
+
+export interface AdminReportedListingRow {
+    listingId: string;
+    listingTitle: string;
+    reportCount: number;
+    latestReportedAt: string;
+    latestReason: string;
+    latestRaisedByName: string;
+    requesterName: string;
+    providerName: string;
+    credits: number;
+}
+
+export async function createListingReport(listingId: string, reporterId: string, reason: string, details?: string): Promise<string> {
+    await ensureListingReportsTable();
+    const db = await getPool();
+
+    const duplicate = await db.request()
+        .input('listingId', sql.NVarChar(128), listingId)
+        .input('reporterId', sql.NVarChar(128), reporterId)
+        .query(`
+            SELECT TOP 1 id
+            FROM ListingReports
+            WHERE listingId = @listingId
+              AND reporterId = @reporterId
+              AND status = 'OPEN'
+        `);
+
+    if (duplicate.recordset.length > 0) {
+        throw new Error('You already have an open report for this listing');
+    }
+
+    const reportId = crypto.randomUUID();
+    await db.request()
+        .input('id', sql.NVarChar(128), reportId)
+        .input('listingId', sql.NVarChar(128), listingId)
+        .input('reporterId', sql.NVarChar(128), reporterId)
+        .input('reason', sql.NVarChar(120), reason.trim())
+        .input('details', sql.NVarChar(1000), details?.trim() || null)
+        .query(`
+            INSERT INTO ListingReports (id, listingId, reporterId, reason, details)
+            VALUES (@id, @listingId, @reporterId, @reason, @details)
+        `);
+
+    await auditLog(reporterId, 'CREATE_LISTING_REPORT', `Listing:${listingId}`);
+    return reportId;
+}
+
+export async function getReportedListingsForAdmin(): Promise<AdminReportedListingRow[]> {
+    await ensureListingReportsTable();
+    const db = await getPool();
+    const result = await db.request().query(`
+        ;WITH report_ranked AS (
+            SELECT
+                lr.listingId,
+                lr.reason,
+                lr.createdAt,
+                u.displayName AS reporterName,
+                ROW_NUMBER() OVER (PARTITION BY lr.listingId ORDER BY lr.createdAt DESC, lr.id DESC) AS rn
+            FROM ListingReports lr
+            JOIN Users u ON u.id = lr.reporterId
+            WHERE lr.status = 'OPEN'
+        ),
+        latest_exchange AS (
+            SELECT
+                se.listingId,
+                ur.displayName AS requesterName,
+                up.displayName AS providerName,
+                se.credits,
+                ROW_NUMBER() OVER (PARTITION BY se.listingId ORDER BY se.createdAt DESC, se.id DESC) AS rn
+            FROM SkillExchanges se
+            LEFT JOIN Users ur ON ur.id = se.requesterId
+            LEFT JOIN Users up ON up.id = se.providerId
+        )
+        SELECT
+            l.id AS listingId,
+            l.title AS listingTitle,
+            COUNT(1) AS reportCount,
+            MAX(lr.createdAt) AS latestReportedAt,
+            MAX(CASE WHEN rr.rn = 1 THEN rr.reason END) AS latestReason,
+            MAX(CASE WHEN rr.rn = 1 THEN rr.reporterName END) AS latestRaisedByName,
+            MAX(CASE WHEN le.rn = 1 THEN le.requesterName END) AS requesterName,
+            MAX(CASE WHEN le.rn = 1 THEN le.providerName END) AS providerName,
+            MAX(CASE WHEN le.rn = 1 THEN le.credits END) AS credits
+        FROM ListingReports lr
+        JOIN Listings l ON l.id = lr.listingId
+        LEFT JOIN report_ranked rr ON rr.listingId = lr.listingId
+        LEFT JOIN latest_exchange le ON le.listingId = l.id
+        WHERE lr.status = 'OPEN'
+        GROUP BY l.id, l.title
+        ORDER BY latestReportedAt DESC
+    `);
+
+    return result.recordset as AdminReportedListingRow[];
 }
 
 export async function getReviews(userId: string): Promise<Record<string, unknown>[]> {
@@ -1562,6 +1761,7 @@ export interface SkillExchangeRow {
 export interface ExchangeDisputeRow {
     id: string;
     exchangeId: string;
+    listingId: string;
     listingTitle: string;
     requesterId: string;
     requesterName: string;
@@ -1803,7 +2003,7 @@ export async function raiseDispute(exchangeId: string, userId: string, reason: s
 export async function getOpenDisputes(): Promise<ExchangeDisputeRow[]> {
     const db = await getPool();
     const result = await db.request().query(`
-        SELECT d.id, d.exchangeId, l.title AS listingTitle,
+        SELECT d.id, d.exchangeId, se.listingId, l.title AS listingTitle,
                se.requesterId, ur.displayName AS requesterName,
                se.providerId,  up.displayName AS providerName,
                se.credits, d.raisedBy, ub.displayName AS raisedByName,

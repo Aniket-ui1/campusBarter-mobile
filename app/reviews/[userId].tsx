@@ -3,28 +3,19 @@
 // Link from profile → /reviews/[userId]
 // After exchange confirmed → prompt both users to leave a review.
 
+import { EmptyState } from '@/components/ui/EmptyState';
+import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { ApiReview, createUserReview, getReviewsForUser } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator, Alert, Modal, Platform, Pressable,
     ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import { getApiToken, getApiBase } from '@/lib/api';
-import { EmptyState } from '@/components/ui/EmptyState';
 
-
-interface Review {
-    id: string;
-    reviewerId: string;
-    reviewerName: string;
-    rating: number;       // 1–5
-    comment: string;
-    createdAt: string;
-}
 
 function StarRow({ rating, size = 16, interactive = false, onSelect }: {
     rating: number; size?: number; interactive?: boolean; onSelect?: (r: number) => void;
@@ -45,66 +36,58 @@ function StarRow({ rating, size = 16, interactive = false, onSelect }: {
 }
 
 export default function ReviewsScreen() {
-    const { userId } = useLocalSearchParams<{ userId: string }>();
+    const { userId, openComposer } = useLocalSearchParams<{ userId: string; openComposer?: string }>();
     const router = useRouter();
     const { user } = useAuth();
 
-    const [reviews, setReviews] = useState<Review[]>([]);
+    const [reviews, setReviews] = useState<ApiReview[]>([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [newRating, setNewRating] = useState(5);
     const [newComment, setNewComment] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    const canReview = !!user && user.id !== userId;
 
     const avgRating = reviews.length
         ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
         : 0;
 
-    const loadReviews = async () => {
+    const loadReviews = useCallback(async () => {
         try {
-            const token = getApiToken();
-            const res = await fetch(`${getApiBase()}/api/reviews/${userId}`, {
-                headers: token ? { Authorization: `Bearer ${token}` } : {},
-            });
-            if (!res.ok) return;
-            const data = await res.json();
+            const data = await getReviewsForUser(userId);
             setReviews(data);
         } catch (e) {
             console.warn('[Reviews] Load error:', e);
         } finally {
             setLoading(false);
         }
-    };
+    }, [userId]);
 
-    useEffect(() => { void loadReviews(); }, [userId]);
+    useEffect(() => { void loadReviews(); }, [loadReviews]);
+
+    useEffect(() => {
+        if (openComposer === '1' && canReview) {
+            setShowModal(true);
+        }
+    }, [canReview, openComposer]);
 
     const handleSubmit = async () => {
         if (!newComment.trim()) { Alert.alert('Please write a review comment'); return; }
         setSubmitting(true);
         try {
-            const token = getApiToken();
-            const res = await fetch(`${getApiBase()}/api/reviews`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                },
-                body: JSON.stringify({ subjectId: userId, rating: newRating, comment: newComment.trim() }),
-            });
-            if (!res.ok) throw new Error('Failed');
+            await createUserReview(userId, newRating, newComment.trim());
             Alert.alert('✅ Review submitted!');
             setShowModal(false);
             setNewComment('');
             setNewRating(5);
             await loadReviews();
-        } catch {
-            Alert.alert('Error', 'Could not submit review. Please try again.');
+        } catch (error) {
+            const message = (error as { message?: string })?.message ?? 'Could not submit review. Please try again.';
+            Alert.alert('Error', message);
         } finally {
             setSubmitting(false);
         }
     };
-
-    const canReview = user && user.id !== userId;
 
     return (
         <View style={styles.container}>

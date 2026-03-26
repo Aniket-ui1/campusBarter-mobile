@@ -1,231 +1,186 @@
-// app/admin.tsx — Admin Dashboard (Task 9)
-// Only visible when user.role === 'Admin' or 'Moderator'
-// Lists reported listings, allows deletion, shows audit log, user list
-
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import {
+    AdminAuditLogEntry,
+    AdminReportedListing,
+    ApiUserProfile,
+    deleteListing,
+    getAdminAuditLog,
+    getAdminReportedListings,
+    getAllUsers,
+} from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-    ActivityIndicator, Alert, Platform, Pressable,
-    ScrollView, StyleSheet, Text, View,
+    ActivityIndicator,
+    Alert,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import { getApiToken, getApiBase, getAdminDisputes, resolveAdminDispute, ExchangeDispute } from '@/lib/api';
 
-type Tab = 'listings' | 'users' | 'audit' | 'disputes';
-
-async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const token = getApiToken();
-    const res = await fetch(`${getApiBase()}${path}`, {
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(options.headers as Record<string, string>),
-        },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-}
+type Tab = 'reports' | 'users' | 'audit';
 
 export default function AdminDashboard() {
     const router = useRouter();
     const { user } = useAuth();
-    const [tab, setTab] = useState<Tab>('listings');
-    const [listings, setListings]   = useState<any[]>([]);
-    const [users, setUsers]         = useState<any[]>([]);
-    const [auditLog, setAuditLog]   = useState<any[]>([]);
-    const [disputes, setDisputes]   = useState<ExchangeDispute[]>([]);
-    const [resolving, setResolving] = useState<string | null>(null);
-    const [loading, setLoading]     = useState(true);
+
+    const [tab, setTab] = useState<Tab>('reports');
+    const [reportedListings, setReportedListings] = useState<AdminReportedListing[]>([]);
+    const [users, setUsers] = useState<ApiUserProfile[]>([]);
+    const [auditLog, setAuditLog] = useState<AdminAuditLogEntry[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    const isAdmin = (user as { role?: string } | null)?.role === 'Admin';
 
     const loadData = async () => {
+        if (!isAdmin) {
+            setLoading(false);
+            return;
+        }
+
         setLoading(true);
         try {
-            const [l, u, a, d] = await Promise.allSettled([
-                adminFetch<any[]>('/api/listings'),
-                adminFetch<any[]>('/api/users'),
-                adminFetch<any[]>('/api/audit'),
-                getAdminDisputes(),
+            const [reportsRes, usersRes, auditRes] = await Promise.allSettled([
+                getAdminReportedListings(),
+                getAllUsers(),
+                getAdminAuditLog(200),
             ]);
-            if (l.status === 'fulfilled') setListings(l.value);
-            if (u.status === 'fulfilled') setUsers(u.value);
-            if (a.status === 'fulfilled') setAuditLog(a.value);
-            if (d.status === 'fulfilled') setDisputes(d.value);
-        } catch (e) {
-            console.warn('[Admin] Load error:', e);
+
+            if (reportsRes.status === 'fulfilled') {
+                setReportedListings(reportsRes.value);
+            }
+            if (usersRes.status === 'fulfilled') {
+                setUsers(usersRes.value);
+            }
+            if (auditRes.status === 'fulfilled') {
+                setAuditLog(auditRes.value);
+            }
+        } catch (error) {
+            console.warn('[Admin] Failed to load admin data', error);
         } finally {
             setLoading(false);
         }
     };
 
-    // ⚠️ ALL hooks must be declared before any early return (Rules of Hooks)
-    useEffect(() => { void loadData(); }, []);
+    useEffect(() => {
+        void loadData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAdmin]);
 
-    // Guard: only render for logged-in users (role check can be added here)
-    if (!user) return null;
-
-    const deleteListing = async (id: string) => {
-        Alert.alert('Delete Listing', 'This will permanently remove the listing.', [
+    const handleDeleteListing = (listingId: string) => {
+        Alert.alert('Delete Listing', 'This permanently removes the listing. Continue?', [
             { text: 'Cancel', style: 'cancel' },
             {
-                text: 'Delete', style: 'destructive', onPress: async () => {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: async () => {
                     try {
-                        await adminFetch(`/api/listings/${id}`, { method: 'DELETE' });
-                        setListings(ls => ls.filter(l => l.id !== id));
-                        Alert.alert('✅ Listing deleted');
+                        await deleteListing(listingId);
+                        setReportedListings((prev) => prev.filter((item) => item.listingId !== listingId));
+                        Alert.alert('Listing deleted');
                     } catch {
-                        Alert.alert('Error', 'Could not delete listing');
+                        Alert.alert('Error', 'Could not delete listing.');
                     }
-                }
+                },
             },
         ]);
     };
 
-    const handleResolve = (d: ExchangeDispute, outcome: 'COMPLETED' | 'CANCELLED') => {
-        const confirmResolve = async (resolution: string) => {
-            setResolving(d.id);
-            try {
-                await resolveAdminDispute(d.id, outcome, resolution);
-                setDisputes(prev => prev.filter(x => x.id !== d.id));
-                Alert.alert('Resolved', `Dispute resolved as ${outcome}.`);
-            } catch { Alert.alert('Error', 'Failed to resolve dispute.'); }
-            finally { setResolving(null); }
-        };
-        if (Alert.prompt) {
-            Alert.prompt(
-                outcome === 'COMPLETED' ? 'Complete Exchange' : 'Cancel Exchange',
-                'Enter resolution notes:',
-                [
-                    { text: 'Back', style: 'cancel' },
-                    { text: 'Confirm', onPress: (txt?: string) => { if (txt?.trim()) void confirmResolve(txt.trim()); else Alert.alert('Required', 'Resolution notes are required.'); } },
-                ],
-                'plain-text'
-            );
-        } else {
-            Alert.alert(
-                outcome === 'COMPLETED' ? 'Complete Exchange' : 'Cancel Exchange',
-                'Resolve this dispute?',
-                [
-                    { text: 'Back', style: 'cancel' },
-                    { text: 'Confirm', onPress: () => void confirmResolve(`Resolved as ${outcome} via mobile admin`) },
-                ]
-            );
-        }
-    };
+    const tabs = useMemo(() => ([
+        { key: 'reports' as const, label: 'Reports', icon: 'flag-outline', count: reportedListings.length },
+        { key: 'users' as const, label: 'Users', icon: 'people-outline', count: users.length },
+        { key: 'audit' as const, label: 'Audit', icon: 'document-text-outline', count: auditLog.length },
+    ]), [auditLog.length, reportedListings.length, users.length]);
 
-    const openDisputes = disputes.filter(d => d.status === 'OPEN');
+    if (!user) return null;
 
-    const TABS: { key: Tab; label: string; icon: string; count: number }[] = [
-        { key: 'disputes', label: 'Disputes', icon: 'flag-outline', count: openDisputes.length },
-        { key: 'listings', label: 'Listings', icon: 'list-outline', count: listings.length },
-        { key: 'users', label: 'Users', icon: 'people-outline', count: users.length },
-        { key: 'audit', label: 'Audit Log', icon: 'document-text-outline', count: auditLog.length },
-    ];
+    if (!isAdmin) {
+        return (
+            <View style={styles.container}>
+                <View style={styles.statusSpacer} />
+                <View style={styles.header}>
+                    <Pressable style={styles.backBtn} onPress={() => router.back()}>
+                        <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+                    </Pressable>
+                    <Text style={styles.headerTitle}>Admin Dashboard</Text>
+                    <View style={{ width: 36 }} />
+                </View>
+
+                <View style={styles.center}>
+                    <Ionicons name="lock-closed-outline" size={36} color={AppColors.textMuted} />
+                    <Text style={styles.emptyText}>Admin access required.</Text>
+                </View>
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
             <View style={styles.statusSpacer} />
 
-            {/* Header */}
             <View style={styles.header}>
                 <Pressable style={styles.backBtn} onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
                 </Pressable>
-                <View>
-                    <Text style={styles.headerTitle}>Admin Dashboard</Text>
-                    <Text style={styles.headerSub}>CampusBarter Control Panel</Text>
-                </View>
+                <Text style={styles.headerTitle}>Admin Dashboard</Text>
                 <Pressable style={styles.refreshBtn} onPress={loadData}>
                     <Ionicons name="refresh-outline" size={20} color="#FFFFFF" />
                 </Pressable>
             </View>
 
-            {/* Tab bar */}
             <View style={styles.tabBar}>
-                {TABS.map(t => (
+                {tabs.map((item) => (
                     <Pressable
-                        key={t.key}
-                        style={[styles.tabBtn, tab === t.key && styles.tabBtnActive]}
-                        onPress={() => setTab(t.key)}
+                        key={item.key}
+                        style={[styles.tabBtn, tab === item.key && styles.tabBtnActive]}
+                        onPress={() => setTab(item.key)}
                     >
-                        <Ionicons name={t.icon as any} size={16} color={tab === t.key ? '#FFFFFF' : AppColors.textMuted} />
-                        <Text style={[styles.tabLabel, tab === t.key && styles.tabLabelActive]}>{t.label}</Text>
-                        {t.count > 0 && (
+                        <Ionicons
+                            name={item.icon as never}
+                            size={16}
+                            color={tab === item.key ? '#FFFFFF' : AppColors.textMuted}
+                        />
+                        <Text style={[styles.tabText, tab === item.key && styles.tabTextActive]}>{item.label}</Text>
+                        {item.count > 0 ? (
                             <View style={styles.tabBadge}>
-                                <Text style={styles.tabBadgeText}>{t.count}</Text>
+                                <Text style={styles.tabBadgeText}>{item.count}</Text>
                             </View>
-                        )}
+                        ) : null}
                     </Pressable>
                 ))}
             </View>
 
             {loading ? (
-                <View style={styles.center}><ActivityIndicator size="large" color={AppColors.primary} /></View>
+                <View style={styles.center}>
+                    <ActivityIndicator size="large" color={AppColors.primary} />
+                </View>
             ) : (
                 <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-
-                    {/* Disputes tab */}
-                    {tab === 'disputes' && (
-                        openDisputes.length === 0 ? (
-                            <View style={styles.empty}>
-                                <Text style={styles.emptyEmoji}>✅</Text>
-                                <Text style={styles.emptyText}>No open disputes</Text>
+                    {tab === 'reports' && (
+                        reportedListings.length === 0 ? (
+                            <View style={styles.emptyBlock}>
+                                <Text style={styles.emptyText}>No reported listings right now.</Text>
                             </View>
-                        ) : openDisputes.map((d, i) => (
-                            <Animated.View key={d.id} entering={FadeInDown.delay(i * 40).duration(300)}>
-                                <View style={styles.disputeCard}>
-                                    <View style={styles.disputeHeader}>
-                                        <View style={styles.disputeFlag}>
-                                            <Ionicons name="flag" size={14} color="#EF4444" />
-                                        </View>
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={styles.cardTitle} numberOfLines={1}>{d.listingTitle}</Text>
-                                            <Text style={styles.cardMeta}>Raised by {d.raisedByName} · {new Date(d.createdAt).toLocaleDateString()}</Text>
-                                        </View>
-                                        <Text style={styles.disputeCredits}>{d.credits} cr</Text>
-                                    </View>
-                                    <Text style={styles.disputeReason} numberOfLines={3}>{d.reason}</Text>
-                                    <View style={styles.disputeParties}>
-                                        <Text style={styles.disputeParty}>Requester: {d.requesterName}</Text>
-                                        <Text style={styles.disputeParty}>Provider: {d.providerName}</Text>
-                                    </View>
-                                    {resolving === d.id ? (
-                                        <ActivityIndicator size="small" color={AppColors.primary} style={{ marginTop: 8 }} />
-                                    ) : (
-                                        <View style={styles.disputeActions}>
-                                            <Pressable style={[styles.resolveBtn, { backgroundColor: AppColors.success }]} onPress={() => handleResolve(d, 'COMPLETED')}>
-                                                <Ionicons name="checkmark-circle-outline" size={16} color="#FFF" />
-                                                <Text style={styles.resolveBtnText}>Complete</Text>
-                                            </Pressable>
-                                            <Pressable style={[styles.resolveBtn, { backgroundColor: AppColors.error }]} onPress={() => handleResolve(d, 'CANCELLED')}>
-                                                <Ionicons name="close-circle-outline" size={16} color="#FFF" />
-                                                <Text style={styles.resolveBtnText}>Cancel</Text>
-                                            </Pressable>
-                                        </View>
-                                    )}
-                                </View>
-                            </Animated.View>
-                        ))
-                    )}
-
-                    {/* Listings tab */}
-                    {tab === 'listings' && (
-                        listings.length === 0 ? (
-                            <View style={styles.empty}>
-                                <Text style={styles.emptyEmoji}>📋</Text>
-                                <Text style={styles.emptyText}>No listings</Text>
-                            </View>
-                        ) : listings.map((l, i) => (
-                            <Animated.View key={l.id} entering={FadeInDown.delay(i * 40).duration(300)}>
+                        ) : reportedListings.map((item, idx) => (
+                            <Animated.View key={item.listingId} entering={FadeInDown.delay(idx * 40).duration(250)}>
                                 <View style={styles.card}>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={styles.cardTitle} numberOfLines={1}>{l.title}</Text>
-                                        <Text style={styles.cardMeta}>By {l.userName} · {l.type} · {l.status}</Text>
+                                    <View style={{ flex: 1, gap: 3 }}>
+                                        <Text style={styles.cardTitle} numberOfLines={1}>{item.listingTitle}</Text>
+                                        <Text style={styles.cardMeta}>
+                                            Reports: {item.reportCount} · {new Date(item.latestReportedAt).toLocaleDateString()}
+                                        </Text>
+                                        <Text style={styles.cardMeta} numberOfLines={2}>Reason: {item.latestReason}</Text>
+                                        <Text style={styles.cardMeta} numberOfLines={1}>
+                                            Parties: {item.requesterName} / {item.providerName}
+                                        </Text>
                                     </View>
-                                    <Pressable style={styles.deleteBtn} onPress={() => deleteListing(l.id)}>
+                                    <Pressable style={styles.deleteBtn} onPress={() => handleDeleteListing(item.listingId)}>
                                         <Ionicons name="trash-outline" size={18} color={AppColors.error} />
                                     </Pressable>
                                 </View>
@@ -233,23 +188,21 @@ export default function AdminDashboard() {
                         ))
                     )}
 
-                    {/* Users tab */}
                     {tab === 'users' && (
                         users.length === 0 ? (
-                            <View style={styles.empty}>
-                                <Text style={styles.emptyEmoji}>👥</Text>
-                                <Text style={styles.emptyText}>No users found</Text>
+                            <View style={styles.emptyBlock}>
+                                <Text style={styles.emptyText}>No users found.</Text>
                             </View>
-                        ) : users.map((u, i) => (
-                            <Animated.View key={u.id} entering={FadeInDown.delay(i * 40).duration(300)}>
+                        ) : users.map((u, idx) => (
+                            <Animated.View key={u.id} entering={FadeInDown.delay(idx * 35).duration(220)}>
                                 <View style={styles.card}>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.cardTitle}>{u.displayName ?? u.id}</Text>
-                                        <Text style={styles.cardMeta}>{u.email} · {u.role ?? 'Student'}</Text>
+                                        <Text style={styles.cardTitle}>{u.displayName || u.id}</Text>
+                                        <Text style={styles.cardMeta}>{u.email}</Text>
                                     </View>
-                                    <View style={[styles.rolePill, { backgroundColor: u.role === 'Admin' ? AppColors.error + '20' : AppColors.primary + '15' }]}>
+                                    <View style={[styles.rolePill, { backgroundColor: (u.role === 'Admin' ? AppColors.error : AppColors.primary) + '15' }]}> 
                                         <Text style={[styles.roleText, { color: u.role === 'Admin' ? AppColors.error : AppColors.primary }]}>
-                                            {u.role ?? 'Student'}
+                                            {u.role || 'Student'}
                                         </Text>
                                     </View>
                                 </View>
@@ -257,20 +210,20 @@ export default function AdminDashboard() {
                         ))
                     )}
 
-                    {/* Audit log tab */}
                     {tab === 'audit' && (
                         auditLog.length === 0 ? (
-                            <View style={styles.empty}>
-                                <Text style={styles.emptyEmoji}>📑</Text>
-                                <Text style={styles.emptyText}>No audit entries yet</Text>
+                            <View style={styles.emptyBlock}>
+                                <Text style={styles.emptyText}>No audit entries available.</Text>
                             </View>
-                        ) : auditLog.map((a, i) => (
-                            <Animated.View key={a.id ?? i} entering={FadeInDown.delay(i * 40).duration(300)}>
+                        ) : auditLog.map((entry, idx) => (
+                            <Animated.View key={`${entry.createdAt}-${idx}`} entering={FadeInDown.delay(idx * 25).duration(200)}>
                                 <View style={styles.auditRow}>
                                     <View style={styles.auditDot} />
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.auditAction}>{a.action}</Text>
-                                        <Text style={styles.auditMeta}>{a.actorId} · {new Date(a.createdAt).toLocaleString()}</Text>
+                                        <Text style={styles.cardTitle}>{entry.action}</Text>
+                                        <Text style={styles.cardMeta}>
+                                            {(entry.actorId || 'system')} · {new Date(entry.createdAt).toLocaleString()}
+                                        </Text>
                                     </View>
                                 </View>
                             </Animated.View>
@@ -285,70 +238,83 @@ export default function AdminDashboard() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: AppColors.background },
     statusSpacer: { height: Platform.OS === 'ios' ? 54 : 36, backgroundColor: AppColors.primaryDark },
-    center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: Spacing.xl },
 
     header: {
         backgroundColor: AppColors.primaryDark,
-        flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-        paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: Spacing.xl,
+        paddingVertical: Spacing.lg,
     },
     backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-    refreshBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginLeft: 'auto' },
+    refreshBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
     headerTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
-    headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.6)' },
 
     tabBar: {
-        flexDirection: 'row', gap: 8,
-        paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md,
-        backgroundColor: '#FFFFFF', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: AppColors.border,
+        flexDirection: 'row',
+        gap: 8,
+        paddingHorizontal: Spacing.xl,
+        paddingVertical: Spacing.md,
+        backgroundColor: '#FFFFFF',
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: AppColors.border,
     },
     tabBtn: {
-        flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-        paddingVertical: 8, borderRadius: Radii.sm, backgroundColor: AppColors.surface,
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+        paddingVertical: 8,
+        borderRadius: Radii.sm,
+        backgroundColor: AppColors.surface,
     },
     tabBtnActive: { backgroundColor: AppColors.primary },
-    tabLabel: { fontSize: 12, fontWeight: '600', color: AppColors.textMuted },
-    tabLabelActive: { color: '#FFFFFF' },
+    tabText: { fontSize: 12, fontWeight: '600', color: AppColors.textMuted },
+    tabTextActive: { color: '#FFFFFF' },
     tabBadge: { backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 },
-    tabBadgeText: { fontSize: 10, fontWeight: '700', color: '#FFFFFF' },
+    tabBadgeText: { fontSize: 10, color: '#FFFFFF', fontWeight: '700' },
 
     scroll: { padding: Spacing.xl, gap: 8 },
-
     card: {
-        flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
-        backgroundColor: '#FFFFFF', borderRadius: Radii.md,
-        padding: Spacing.lg, borderWidth: 1, borderColor: AppColors.border,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.md,
+        backgroundColor: '#FFFFFF',
+        borderRadius: Radii.md,
+        padding: Spacing.lg,
+        borderWidth: 1,
+        borderColor: AppColors.border,
     },
-    cardTitle: { fontSize: 14, fontWeight: '700', color: AppColors.text },
-    cardMeta: { fontSize: 12, color: AppColors.textMuted, marginTop: 2 },
-    deleteBtn: { width: 36, height: 36, borderRadius: 8, backgroundColor: AppColors.error + '10', alignItems: 'center', justifyContent: 'center' },
+    cardTitle: { fontSize: 14, color: AppColors.text, fontWeight: '700' },
+    cardMeta: { fontSize: 12, color: AppColors.textMuted },
+
+    deleteBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: AppColors.error + '10',
+    },
+
     rolePill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radii.full },
     roleText: { fontSize: 11, fontWeight: '700' },
 
     auditRow: {
-        flexDirection: 'row', gap: 12, alignItems: 'flex-start',
-        backgroundColor: '#FFFFFF', borderRadius: Radii.md,
-        padding: Spacing.lg, borderWidth: 1, borderColor: AppColors.border,
+        flexDirection: 'row',
+        gap: 12,
+        alignItems: 'flex-start',
+        backgroundColor: '#FFFFFF',
+        borderRadius: Radii.md,
+        padding: Spacing.lg,
+        borderWidth: 1,
+        borderColor: AppColors.border,
     },
     auditDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: AppColors.primary, marginTop: 5 },
-    auditAction: { fontSize: 14, fontWeight: '600', color: AppColors.text },
-    auditMeta: { fontSize: 12, color: AppColors.textMuted, marginTop: 2 },
 
-    empty: { alignItems: 'center', paddingVertical: 60, gap: 8 },
-    emptyEmoji: { fontSize: 40 },
-    emptyText: { fontSize: 16, fontWeight: '600', color: AppColors.textSecondary },
-
-    disputeCard: {
-        backgroundColor: '#FFF', borderRadius: Radii.md,
-        padding: Spacing.lg, borderWidth: 1, borderColor: AppColors.border, gap: 10,
-    },
-    disputeHeader:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    disputeFlag:    { width: 28, height: 28, borderRadius: 14, backgroundColor: '#EF444415', alignItems: 'center', justifyContent: 'center' },
-    disputeCredits: { fontSize: 13, fontWeight: '700', color: AppColors.text },
-    disputeReason:  { fontSize: 13, color: AppColors.textSecondary, lineHeight: 19 },
-    disputeParties: { flexDirection: 'row', gap: Spacing.lg },
-    disputeParty:   { fontSize: 12, color: AppColors.textMuted },
-    disputeActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
-    resolveBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: Radii.sm },
-    resolveBtnText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
+    emptyBlock: { alignItems: 'center', paddingVertical: 60 },
+    emptyText: { fontSize: 15, fontWeight: '600', color: AppColors.textSecondary, textAlign: 'center' },
 });

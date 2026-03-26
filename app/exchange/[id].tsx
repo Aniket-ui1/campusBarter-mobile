@@ -1,5 +1,11 @@
 // app/exchange/[id].tsx — Exchange detail: status, confirm, cancel, dispute
 
+import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import {
+    acceptExchange, cancelExchange, confirmExchangeApi,
+    getExchangeById, raiseExchangeDispute, SkillExchange,
+} from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
@@ -8,12 +14,6 @@ import {
     ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import {
-    acceptExchange, cancelExchange, confirmExchangeApi,
-    getExchangeById, raiseExchangeDispute, SkillExchange,
-} from '@/lib/api';
 
 const STATUS_COLOR: Record<string, string> = {
     REQUESTED: '#F59E0B',
@@ -125,6 +125,15 @@ export default function ExchangeDetailScreen() {
     const isRequester = exchange.requesterId === user?.id;
     const isProvider  = exchange.providerId  === user?.id;
     const statusColor = STATUS_COLOR[exchange.status] ?? AppColors.textMuted;
+    const otherUserId = isRequester ? exchange.providerId : exchange.requesterId;
+
+    const openReviewComposer = () => {
+        if (!otherUserId) return;
+        router.push({
+            pathname: '/reviews/[userId]',
+            params: { userId: otherUserId, openComposer: '1' },
+        });
+    };
 
     const handleAccept = async () => {
         setActing(true);
@@ -142,7 +151,14 @@ export default function ExchangeDetailScreen() {
             const { completed } = await confirmExchangeApi(id);
             await load();
             if (completed) {
-                Alert.alert('🎉 Exchange Complete!', `${exchange.credits} credit${exchange.credits !== 1 ? 's' : ''} have been transferred.`);
+                Alert.alert(
+                    'Exchange Complete!',
+                    `${exchange.credits} credit${exchange.credits !== 1 ? 's' : ''} have been transferred. Leave a review for your exchange partner?`,
+                    [
+                        { text: 'Later', style: 'cancel' },
+                        { text: 'Leave Review', onPress: openReviewComposer },
+                    ]
+                );
             } else {
                 Alert.alert('Confirmed!', 'Waiting for the other party to confirm.');
             }
@@ -321,13 +337,20 @@ export default function ExchangeDetailScreen() {
 
                         {/* COMPLETED */}
                         {exchange.status === 'COMPLETED' && (
-                            <Animated.View entering={FadeInDown.delay(240).duration(300)}
-                                style={[styles.banner, { backgroundColor: AppColors.success + '15', borderColor: AppColors.success }]}>
-                                <Ionicons name="checkmark-circle" size={20} color={AppColors.success} />
-                                <Text style={[styles.bannerText, { color: AppColors.success, fontWeight: '700' }]}>
-                                    {exchange.credits} credit{exchange.credits !== 1 ? 's' : ''} transferred
-                                    {exchange.autoCompleted ? ' (auto-completed)' : ''}
-                                </Text>
+                            <Animated.View entering={FadeInDown.delay(240).duration(300)} style={styles.actionsCol}>
+                                <View style={[styles.banner, { backgroundColor: AppColors.success + '15', borderColor: AppColors.success }]}>
+                                    <Ionicons name="checkmark-circle" size={20} color={AppColors.success} />
+                                    <Text style={[styles.bannerText, { color: AppColors.success, fontWeight: '700' }]}>
+                                        {exchange.credits} credit{exchange.credits !== 1 ? 's' : ''} transferred
+                                        {exchange.autoCompleted ? ' (auto-completed)' : ''}
+                                    </Text>
+                                </View>
+                                {(isRequester || isProvider) && (
+                                    <Pressable style={[styles.btn, { backgroundColor: AppColors.primary }]} onPress={openReviewComposer}>
+                                        <Ionicons name="star-outline" size={18} color="#FFF" />
+                                        <Text style={styles.btnText}>Leave a Review</Text>
+                                    </Pressable>
+                                )}
                             </Animated.View>
                         )}
 

@@ -39,6 +39,10 @@ reviewsRouter.post('/', validate(createReviewRules), async (req: Request, res: R
         res.status(201).json({ id, message: 'Review submitted' });
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to create review';
+        if (message.includes('Review already submitted')) {
+            res.status(409).json({ error: message });
+            return;
+        }
         res.status(500).json({ error: message });
     }
 });

@@ -1,13 +1,12 @@
+import { Avatar } from '@/components/ui/Avatar';
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import { useData } from '@/context/DataContext';
-import { Avatar } from '@/components/ui/Avatar';
-import { StarRating } from '@/components/ui/StarRating';
 
 function ChipList({ items, color }: { items: string[]; color: string }) {
     if (!items || items.length === 0) return null;
@@ -38,7 +37,7 @@ export default function ProfileScreen() {
         { icon: 'star-outline', label: 'Reviews', onPress: () => router.push({ pathname: '/reviews/[userId]', params: { userId: user?.id ?? 'u1' } }) },
         { icon: 'notifications-outline', label: 'Notifications', onPress: () => router.push('/notifications'), badge: unreadCount > 0 ? String(unreadCount) : undefined },
         { icon: 'settings-outline', label: 'Settings', onPress: () => router.push('/settings') },
-        ...((user as any)?.role === 'Admin' || (user as any)?.role === 'Moderator'
+        ...((user as any)?.role === 'Admin'
             ? [{ icon: 'shield-checkmark-outline', label: 'Admin Dashboard', onPress: () => router.push('/admin' as any) }]
             : []),
     ];

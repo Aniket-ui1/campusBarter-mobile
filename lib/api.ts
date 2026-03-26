@@ -443,6 +443,36 @@ export interface ExchangeDispute {
     resolvedAt: string | null;
 }
 
+export interface ApiReview {
+    id: string;
+    reviewerName: string;
+    rating: number;
+    comment: string;
+    createdAt: string;
+}
+
+export interface AdminAuditLogEntry {
+    id?: string;
+    actorId: string | null;
+    action: string;
+    target?: string | null;
+    ipAddress?: string | null;
+    statusCode?: number | null;
+    createdAt: string;
+}
+
+export interface AdminReportedListing {
+    listingId: string;
+    listingTitle: string;
+    reportCount: number;
+    latestReportedAt: string;
+    latestReason: string;
+    latestRaisedByName: string;
+    requesterName: string;
+    providerName: string;
+    credits: number;
+}
+
 export async function createExchangeRequest(listingId: string): Promise<{ exchangeId: string }> {
     return apiFetch('/api/v1/exchanges', { method: 'POST', body: JSON.stringify({ listingId }) });
 }
@@ -487,6 +517,36 @@ export async function resolveAdminDispute(id: string, outcome: 'COMPLETED' | 'CA
         method: 'POST',
         body: JSON.stringify({ outcome, resolution }),
     });
+}
+
+export async function getAdminAuditLog(limit = 200): Promise<AdminAuditLogEntry[]> {
+    const res = await apiFetch<{ count: number; logs: AdminAuditLogEntry[] }>(`/api/v1/admin/audit-log?limit=${Math.max(1, Math.min(1000, limit))}`);
+    return res.logs;
+}
+
+export async function getAdminReportedListings(): Promise<AdminReportedListing[]> {
+    const res = await apiFetch<{ reportedListings: AdminReportedListing[] }>('/api/v1/admin/reported-listings');
+    return res.reportedListings;
+}
+
+export async function getReviewsForUser(userId: string): Promise<ApiReview[]> {
+    return apiFetch<ApiReview[]>(`/api/v1/reviews/user/${encodeURIComponent(userId)}`);
+}
+
+export async function createUserReview(revieweeId: string, rating: number, comment: string): Promise<string> {
+    const res = await apiFetch<{ id: string; message: string }>('/api/v1/reviews', {
+        method: 'POST',
+        body: JSON.stringify({ revieweeId, rating, comment }),
+    });
+    return res.id;
+}
+
+export async function submitListingReport(listingId: string, reason: string, details?: string): Promise<string> {
+    const res = await apiFetch<{ id: string; message: string }>('/api/v1/reports', {
+        method: 'POST',
+        body: JSON.stringify({ listingId, reason, details }),
+    });
+    return res.id;
 }
 
 export async function transferCredits(
