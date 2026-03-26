@@ -77,7 +77,7 @@ export async function notifyEvent(payload: NotifPayload): Promise<void> {
             const io = getIO();
             io.to(`user:${recipientId}`).emit('notification', {
                 notificationId,
-                type, title, body, relatedId,
+                type, title, body, relatedId, actionUrl,
                 createdAt: new Date().toISOString(),
             });
         } catch (err) {

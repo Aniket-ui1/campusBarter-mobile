@@ -24,13 +24,19 @@ export default function NotificationsScreen() {
         const notifId = notif.notificationId ?? notif.id;
         const isUnread = !notif.isRead && !notif.read;
 
+        // Mark read — fire and forget, don't let errors block navigation
         if (isUnread && notifId) {
-            await markRead(notifId);
+            markRead(notifId).catch(() => {});
         }
 
         // Navigate using actionUrl if available, otherwise fallback to type-based navigation
         if (notif.actionUrl) {
             router.push(notif.actionUrl as any);
+        } else if (notif.type === 'exchange') {
+            const exchangeId = notif.relatedEntityId ?? notif.relatedId;
+            if (exchangeId) {
+                router.push({ pathname: '/exchange/[id]' as any, params: { id: exchangeId } });
+            }
         } else if (notif.type === 'message') {
             const chatId = notif.relatedEntityId ?? notif.relatedId;
             if (chatId) {

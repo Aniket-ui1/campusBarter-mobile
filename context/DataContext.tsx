@@ -282,7 +282,7 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                     message: notif.body,
                     relatedEntityId: notif.relatedId ?? null,
                     relatedEntityType: null,
-                    actionUrl: null,
+                    actionUrl: (notif as any).actionUrl ?? null,
                     isRead: false,
                     createdAt: notif.createdAt,
                     // Legacy fields
