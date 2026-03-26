@@ -22,6 +22,7 @@ import {
     createListing as apiCreateListing,
     deleteChat as apiDeleteChat,
     deleteListing as apiDeleteListing,
+    deleteNotificationById as apiDeleteNotification,
     ApiListing,
     markAllNotificationsRead as apiMarkAllRead,
     markNotificationRead as apiMarkRead,
@@ -94,7 +95,15 @@ interface DataContextType {
     notifications: AppNotification[];
     unreadCount: number;
     addNotification: () => Promise<void>; // server-side only — kept for compat
+    pushLocalNotification: (input: {
+        type: string;
+        title: string;
+        message: string;
+        relatedId?: string;
+        actionUrl?: string;
+    }) => string;
     markRead: (notifId: string) => Promise<void>;
+    deleteNotification: (notifId: string) => Promise<void>;
     markAllRead: () => Promise<void>;
     refreshNotifications: () => Promise<void>;
 }
@@ -116,6 +125,8 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const [listings, setListings] = useState<Listing[]>([]);
     const [chats, setChats] = useState<Chat[]>([]);
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
+    const locallyDeletedNotificationIds = useRef<Set<string>>(new Set());
+    const injectedNotifications = useRef<Record<string, AppNotification>>({});
 
     // Ref map: chatId → message array (for socket updates)
     const chatMessages = useRef<Record<string, ApiMessage[]>>({});
@@ -196,7 +207,20 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         if (!user) { setNotifications([]); return; }
         try {
             const data = await getNotifications();
-            setNotifications(data);
+            const serverNotifications = data.filter((n) => {
+                const id = n.notificationId ?? n.id;
+                return !id || !locallyDeletedNotificationIds.current.has(id);
+            });
+            const serverIds = new Set(serverNotifications.map((n) => n.notificationId ?? n.id).filter(Boolean));
+            const localOnly = Object.values(injectedNotifications.current)
+                .filter((n) => {
+                    const id = n.notificationId ?? n.id;
+                    if (!id) return false;
+                    if (locallyDeletedNotificationIds.current.has(id)) return false;
+                    return !serverIds.has(id);
+                });
+
+            setNotifications([...localOnly, ...serverNotifications]);
         } catch (e) {
             console.warn("[Data] Could not load notifications:", e);
         }
@@ -270,13 +294,15 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     useEffect(() => {
         const cleanup = onNewNotification((notif) => {
             const incomingId = (notif as any).notificationId ?? `socket-${Date.now()}`;
+            const normalizedType = String(notif.type ?? '').toLowerCase();
             setNotifications(prev => {
                 // Skip if already present (prevents duplicate on fast socket + HTTP race)
                 if (prev.some(n => n.notificationId === incomingId)) return prev;
+                if (locallyDeletedNotificationIds.current.has(incomingId)) return prev;
                 return [{
                     notificationId: incomingId,
                     userId: user?.id ?? '',
-                    type: notif.type,
+                    type: normalizedType,
                     title: notif.title,
                     message: notif.body,
                     relatedEntityId: notif.relatedId ?? null,
@@ -297,11 +323,13 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Bell badge: only bell-worthy types (request, review, match)
     // Chat messages and accepted events are push-only and never stored to bell
-    const BELL_TYPES = ['request', 'review', 'match'];
+    const BELL_TYPES = ['request', 'review', 'match', 'exchange'];
     const unreadCount = useMemo(
-        () => notifications.filter(n =>
-            BELL_TYPES.includes(n.type) && !n.isRead && !n.read
-        ).length,
+        () => notifications.filter(n => {
+            const type = String(n.type ?? '').toLowerCase();
+            const isRead = Boolean(n.isRead ?? n.read ?? false);
+            return BELL_TYPES.includes(type) && !isRead;
+        }).length,
         [notifications]
     );
 
@@ -469,11 +497,59 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
         console.warn("[Data] addNotification is server-side only in Azure mode");
     };
 
+    const pushLocalNotification = ({
+        type,
+        title,
+        message,
+        relatedId,
+        actionUrl,
+    }: {
+        type: string;
+        title: string;
+        message: string;
+        relatedId?: string;
+        actionUrl?: string;
+    }): string => {
+        const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const now = new Date().toISOString();
+        const n: AppNotification = {
+            notificationId: localId,
+            userId: user?.id ?? '',
+            type: String(type ?? '').toLowerCase(),
+            title,
+            message,
+            relatedEntityId: relatedId ?? null,
+            relatedEntityType: null,
+            actionUrl: actionUrl ?? null,
+            isRead: false,
+            createdAt: now,
+            id: localId,
+            body: message,
+            read: false,
+            relatedId,
+        };
+
+        injectedNotifications.current[localId] = n;
+        setNotifications((prev) => [n, ...prev.filter((x) => (x.notificationId ?? x.id) !== localId)]);
+        return localId;
+    };
+
     const markRead = async (notifId: string) => {
         await apiMarkRead(notifId);
         setNotifications(ns => ns.map(n =>
             (n.notificationId === notifId || n.id === notifId) ? { ...n, read: true, isRead: true } : n
         ));
+    };
+
+    const deleteNotification = async (notifId: string) => {
+        locallyDeletedNotificationIds.current.add(notifId);
+        delete injectedNotifications.current[notifId];
+        setNotifications(ns => ns.filter(n => (n.notificationId !== notifId && n.id !== notifId)));
+        try {
+            await apiDeleteNotification(notifId);
+        } catch (e) {
+            console.warn('[Data] Could not delete notification on server:', e);
+        }
     };
 
     const markAllRead = async () => {
@@ -502,7 +578,9 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 notifications,
                 unreadCount,
                 addNotification,
+                pushLocalNotification,
                 markRead,
+                deleteNotification,
                 markAllRead,
                 refreshNotifications,
             }}

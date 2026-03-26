@@ -45,7 +45,7 @@ export interface FSChat {
 
 export interface FSNotification {
     id: string;
-    type: 'request' | 'accepted' | 'message' | 'review' | 'match';
+    type: 'request' | 'accepted' | 'message' | 'review' | 'match' | 'exchange';
     title: string;
     body: string;
     read: boolean;
@@ -1283,7 +1283,7 @@ export async function markNotificationRead(notificationId: string, userId: strin
     await db.request()
         .input('id', sql.NVarChar(128), notificationId)
         .input('userId', sql.NVarChar(128), userId)
-        .query(`UPDATE Notifications SET isRead = 1 WHERE notificationId = @id AND userId = @userId`);
+        .query(`UPDATE Notifications SET isRead = 1 WHERE id = @id AND userId = @userId`);
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
@@ -1291,6 +1291,14 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
     await db.request()
         .input('userId', sql.NVarChar(128), userId)
         .query(`UPDATE Notifications SET isRead = 1 WHERE userId = @userId`);
+}
+
+export async function deleteNotification(notificationId: string, userId: string): Promise<void> {
+    const db = await getPool();
+    await db.request()
+        .input('id', sql.NVarChar(128), notificationId)
+        .input('userId', sql.NVarChar(128), userId)
+        .query(`DELETE FROM Notifications WHERE notificationId = @id AND userId = @userId`);
 }
 
 export async function createNotification(
@@ -1818,7 +1826,7 @@ export async function createSkillExchange(
     try {
         const esc = await new sql.Request(txn)
             .input('requesterId', sql.NVarChar(128), requesterId)
-            .input('credits', sql.Int, credits)
+            .input('credits', sql.Decimal(10, 2), credits)
             .query(`
                 UPDATE Users
                 SET credits  = credits  - @credits,
@@ -1833,7 +1841,7 @@ export async function createSkillExchange(
             .input('listingId',   sql.NVarChar(128), listingId)
             .input('requesterId', sql.NVarChar(128), requesterId)
             .input('providerId',  sql.NVarChar(128), providerId)
-            .input('credits',     sql.Int, credits)
+            .input('credits',     sql.Decimal(10, 2), credits)
             .query(`
                 INSERT INTO SkillExchanges (id, listingId, requesterId, providerId, credits, status)
                 VALUES (@id, @listingId, @requesterId, @providerId, @credits, 'REQUESTED')
@@ -1841,6 +1849,70 @@ export async function createSkillExchange(
 
         await txn.commit();
         return id;
+    } catch (err) {
+        await txn.rollback();
+        throw err;
+    }
+}
+
+export async function updateRequestedSkillExchangeCredits(
+    id: string,
+    requesterId: string,
+    newCredits: number
+): Promise<number> {
+    const db = await getPool();
+    const txn = new sql.Transaction(db);
+    await txn.begin();
+    try {
+        const row = await new sql.Request(txn)
+            .input('id', sql.NVarChar(128), id)
+            .input('requesterId', sql.NVarChar(128), requesterId)
+            .query(`
+                SELECT credits, status
+                FROM SkillExchanges
+                WHERE id = @id AND requesterId = @requesterId
+            `);
+
+        const ex = row.recordset[0] as { credits: number; status: string } | undefined;
+        if (!ex) throw new Error('Exchange not found');
+        if (ex.status !== 'REQUESTED') throw new Error('Only REQUESTED exchanges can change credits');
+
+        const oldCredits = Number(ex.credits);
+        const delta = Number((newCredits - oldCredits).toFixed(2));
+
+        if (delta > 0) {
+            const debit = await new sql.Request(txn)
+                .input('requesterId', sql.NVarChar(128), requesterId)
+                .input('delta', sql.Decimal(10, 2), delta)
+                .query(`
+                    UPDATE Users
+                    SET credits = credits - @delta,
+                        reservedCredits = ISNULL(reservedCredits, 0) + @delta,
+                        updatedAt = GETUTCDATE()
+                    WHERE id = @requesterId AND credits >= @delta
+                `);
+            if ((debit.rowsAffected?.[0] ?? 0) === 0) throw new Error('Insufficient credits');
+        } else if (delta < 0) {
+            const refund = Math.abs(delta);
+            await new sql.Request(txn)
+                .input('requesterId', sql.NVarChar(128), requesterId)
+                .input('refund', sql.Decimal(10, 2), refund)
+                .query(`
+                    UPDATE Users
+                    SET credits = credits + @refund,
+                        reservedCredits = ISNULL(reservedCredits, 0) - @refund,
+                        updatedAt = GETUTCDATE()
+                    WHERE id = @requesterId
+                `);
+        }
+
+        await new sql.Request(txn)
+            .input('id', sql.NVarChar(128), id)
+            .input('newCredits', sql.Decimal(10, 2), newCredits)
+            .query(`UPDATE SkillExchanges SET credits = @newCredits, updatedAt = GETUTCDATE() WHERE id = @id`);
+
+        await txn.commit();
+        return newCredits;
     } catch (err) {
         await txn.rollback();
         throw err;
@@ -1912,11 +1984,11 @@ export async function confirmSkillExchange(
         const bothConfirmed = isRequester ? !!ex.providerConfirmed : !!ex.requesterConfirmed;
         if (bothConfirmed) {
             await new sql.Request(txn)
-                .input('credits',     sql.Int,          ex.credits)
+                .input('credits',     sql.Decimal(10, 2), ex.credits)
                 .input('requesterId', sql.NVarChar(128), ex.requesterId)
                 .query(`UPDATE Users SET reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @requesterId`);
             await new sql.Request(txn)
-                .input('credits',    sql.Int,          ex.credits)
+                .input('credits',    sql.Decimal(10, 2), ex.credits)
                 .input('providerId', sql.NVarChar(128), ex.providerId)
                 .query(`UPDATE Users SET credits = credits + @credits, updatedAt = GETUTCDATE() WHERE id = @providerId`);
             const txId = crypto.randomUUID();
@@ -1924,7 +1996,7 @@ export async function confirmSkillExchange(
                 .input('id',   sql.NVarChar(128), txId)
                 .input('from', sql.NVarChar(128), ex.requesterId)
                 .input('to',   sql.NVarChar(128), ex.providerId)
-                .input('amt',  sql.Int,           ex.credits)
+                .input('amt',  sql.Decimal(10, 2), ex.credits)
                 .query(`INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason) VALUES (@id, @from, @to, @amt, 'Skill exchange completed')`);
             await new sql.Request(txn)
                 .input('id',  sql.NVarChar(128), id)
@@ -1962,7 +2034,7 @@ export async function cancelSkillExchange(
         if (!ex) throw new Error('Exchange not found or cannot be cancelled');
 
         await new sql.Request(txn)
-            .input('credits',     sql.Int,          ex.credits)
+            .input('credits',     sql.Decimal(10, 2), ex.credits)
             .input('requesterId', sql.NVarChar(128), ex.requesterId)
             .query(`UPDATE Users SET credits = credits + @credits, reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @requesterId`);
         await new sql.Request(txn)
@@ -2050,18 +2122,18 @@ export async function resolveDispute(
         if (!d) throw new Error('Dispute not found or already resolved');
 
         if (outcome === 'COMPLETED') {
-            await new sql.Request(txn).input('credits', sql.Int, d.credits).input('req', sql.NVarChar(128), d.requesterId)
+            await new sql.Request(txn).input('credits', sql.Decimal(10, 2), d.credits).input('req', sql.NVarChar(128), d.requesterId)
                 .query(`UPDATE Users SET reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @req`);
-            await new sql.Request(txn).input('credits', sql.Int, d.credits).input('pro', sql.NVarChar(128), d.providerId)
+            await new sql.Request(txn).input('credits', sql.Decimal(10, 2), d.credits).input('pro', sql.NVarChar(128), d.providerId)
                 .query(`UPDATE Users SET credits = credits + @credits, updatedAt = GETUTCDATE() WHERE id = @pro`);
             await new sql.Request(txn)
                 .input('id', sql.NVarChar(128), crypto.randomUUID())
-                .input('from', sql.NVarChar(128), d.requesterId).input('to', sql.NVarChar(128), d.providerId).input('amt', sql.Int, d.credits)
+                .input('from', sql.NVarChar(128), d.requesterId).input('to', sql.NVarChar(128), d.providerId).input('amt', sql.Decimal(10, 2), d.credits)
                 .query(`INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason) VALUES (@id, @from, @to, @amt, 'Dispute resolved - exchange completed')`);
             await new sql.Request(txn).input('eid', sql.NVarChar(128), d.exchangeId)
                 .query(`UPDATE SkillExchanges SET status = 'COMPLETED', completedAt = GETUTCDATE(), updatedAt = GETUTCDATE() WHERE id = @eid`);
         } else {
-            await new sql.Request(txn).input('credits', sql.Int, d.credits).input('req', sql.NVarChar(128), d.requesterId)
+            await new sql.Request(txn).input('credits', sql.Decimal(10, 2), d.credits).input('req', sql.NVarChar(128), d.requesterId)
                 .query(`UPDATE Users SET credits = credits + @credits, reservedCredits = ISNULL(reservedCredits,0) - @credits, updatedAt = GETUTCDATE() WHERE id = @req`);
             await new sql.Request(txn).input('eid', sql.NVarChar(128), d.exchangeId).input('adminId', sql.NVarChar(128), adminId)
                 .query(`UPDATE SkillExchanges SET status = 'CANCELLED', cancelledBy = @adminId, cancelReason = 'Dispute resolved - cancelled by admin', updatedAt = GETUTCDATE() WHERE id = @eid`);
@@ -2094,13 +2166,13 @@ export async function autoCompleteStaleExchanges(): Promise<Array<{ requesterId:
         const txn = new sql.Transaction(db);
         await txn.begin();
         try {
-            await new sql.Request(txn).input('c', sql.Int, ex.credits).input('req', sql.NVarChar(128), ex.requesterId)
+            await new sql.Request(txn).input('c', sql.Decimal(10, 2), ex.credits).input('req', sql.NVarChar(128), ex.requesterId)
                 .query(`UPDATE Users SET reservedCredits = ISNULL(reservedCredits,0) - @c, updatedAt = GETUTCDATE() WHERE id = @req`);
-            await new sql.Request(txn).input('c', sql.Int, ex.credits).input('pro', sql.NVarChar(128), ex.providerId)
+            await new sql.Request(txn).input('c', sql.Decimal(10, 2), ex.credits).input('pro', sql.NVarChar(128), ex.providerId)
                 .query(`UPDATE Users SET credits = credits + @c, updatedAt = GETUTCDATE() WHERE id = @pro`);
             await new sql.Request(txn)
                 .input('id', sql.NVarChar(128), crypto.randomUUID())
-                .input('from', sql.NVarChar(128), ex.requesterId).input('to', sql.NVarChar(128), ex.providerId).input('c', sql.Int, ex.credits)
+                .input('from', sql.NVarChar(128), ex.requesterId).input('to', sql.NVarChar(128), ex.providerId).input('c', sql.Decimal(10, 2), ex.credits)
                 .query(`INSERT INTO TimeCredits (id, fromUserId, toUserId, amount, reason) VALUES (@id, @from, @to, @c, 'Auto-completed: provider confirmed, requester silent 48h')`);
             await new sql.Request(txn).input('id', sql.NVarChar(128), ex.id)
                 .query(`UPDATE SkillExchanges SET status='COMPLETED', completedAt=GETUTCDATE(), autoCompleted=1, requesterConfirmed=1, updatedAt=GETUTCDATE() WHERE id=@id`);
@@ -2123,7 +2195,7 @@ export async function autoCancelAbandonedExchanges(): Promise<Array<{ requesterI
         const txn = new sql.Transaction(db);
         await txn.begin();
         try {
-            await new sql.Request(txn).input('c', sql.Int, ex.credits).input('req', sql.NVarChar(128), ex.requesterId)
+            await new sql.Request(txn).input('c', sql.Decimal(10, 2), ex.credits).input('req', sql.NVarChar(128), ex.requesterId)
                 .query(`UPDATE Users SET credits = credits + @c, reservedCredits = ISNULL(reservedCredits,0) - @c, updatedAt = GETUTCDATE() WHERE id = @req`);
             await new sql.Request(txn).input('id', sql.NVarChar(128), ex.id)
                 .query(`UPDATE SkillExchanges SET status='CANCELLED', cancelReason='Auto-cancelled: no activity for 7 days', updatedAt=GETUTCDATE() WHERE id=@id`);

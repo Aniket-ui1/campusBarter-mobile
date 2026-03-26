@@ -1,11 +1,11 @@
+import { EmptyState } from '@/components/ui/EmptyState';
+import { AppColors, Radii, Spacing } from '@/constants/theme';
+import { useData } from '@/context/DataContext';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import React from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { useData } from '@/context/DataContext';
-import { EmptyState } from '@/components/ui/EmptyState';
 
 const ICON_MAP: Record<string, { name: string; color: string }> = {
     request: { name: 'hand-left-outline', color: AppColors.primary },
@@ -13,11 +13,18 @@ const ICON_MAP: Record<string, { name: string; color: string }> = {
     message: { name: 'chatbubble-outline', color: AppColors.secondary },
     review: { name: 'star-outline', color: '#FACC15' },
     match: { name: 'people-outline', color: '#6B8F71' },
+    exchange: { name: 'swap-horizontal-outline', color: '#EF4444' },
 };
 
 export default function NotificationsScreen() {
     const router = useRouter();
-    const { notifications, markRead, markAllRead, unreadCount } = useData();
+    const { notifications, markRead, markAllRead, deleteNotification, refreshNotifications, unreadCount } = useData();
+
+    useFocusEffect(
+        React.useCallback(() => {
+            void refreshNotifications();
+        }, [refreshNotifications])
+    );
 
     const handlePress = async (notif: typeof notifications[0]) => {
         const notifId = notif.notificationId ?? notif.id;
@@ -69,7 +76,8 @@ export default function NotificationsScreen() {
                     />
                 ) : (
                     notifications.map((n, i) => {
-                        const icon = ICON_MAP[n.type] ?? ICON_MAP.request;
+                        const typeKey = String(n.type ?? '').toLowerCase();
+                        const icon = ICON_MAP[typeKey] ?? ICON_MAP.request;
                         const notifId = n.notificationId ?? n.id;
                         const message = n.message ?? n.body;
                         const isUnread = !n.isRead && !n.read;
@@ -88,6 +96,16 @@ export default function NotificationsScreen() {
                                         <Text style={styles.body}>{message}</Text>
                                         <Text style={styles.time}>{new Date(n.createdAt).toLocaleString()}</Text>
                                     </View>
+                                    {!!notifId && (
+                                        <Pressable
+                                            style={styles.deleteBtn}
+                                            onPress={() => deleteNotification(notifId)}
+                                            accessibilityRole="button"
+                                            accessibilityLabel="Delete notification"
+                                        >
+                                            <Ionicons name="close" size={14} color={AppColors.textMuted} />
+                                        </Pressable>
+                                    )}
                                     {isUnread && <View style={styles.unreadDot} />}
                                 </Pressable>
                             </Animated.View>
@@ -127,5 +145,11 @@ const styles = StyleSheet.create({
     title: { fontSize: 14, fontWeight: '700', color: AppColors.text, marginBottom: 2 },
     body: { fontSize: 13, color: AppColors.textSecondary, lineHeight: 18 },
     time: { fontSize: 11, color: AppColors.textMuted, marginTop: 4 },
+    deleteBtn: {
+        width: 24, height: 24, borderRadius: 12,
+        alignItems: 'center', justifyContent: 'center',
+        backgroundColor: AppColors.surface,
+        borderWidth: 1, borderColor: AppColors.border,
+    },
     unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: AppColors.primary },
 });

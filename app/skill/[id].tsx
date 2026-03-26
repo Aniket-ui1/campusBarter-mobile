@@ -3,11 +3,12 @@ import { Button } from '@/components/ui/Button';
 import { AppColors, CATEGORY_COLORS, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
-import { createExchangeRequest, getApiToken, getCreditsBalance, getMyExchanges } from '@/lib/api';
+import { createExchangeRequest, getApiToken, getCreditsBalance, getExchangeById, getMyExchanges, updateExchangeRequestCredits } from '@/lib/api';
 import { chatApi } from '@/services/chatApi';
 import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -15,12 +16,70 @@ export default function SkillDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
     const { user } = useAuth();
-    const { getListingById, startChat } = useData();
+    const { getListingById, startChat, pushLocalNotification, refreshNotifications } = useData();
     const listing = getListingById(id);
     const [requesting, setRequesting] = useState(false);
     const [requestSent, setRequestSent] = useState(false);
+    const [requestedCredits, setRequestedCredits] = useState(1);
+    const requestedCreditsRef = useRef(1);
+    const [availableCredits, setAvailableCredits] = useState<number | null>(null);
+    const listingId = listing?.id;
+    const listingCreditsRaw = Number(listing?.credits ?? 1);
 
     const isOwner = listing?.userId === user?.id;
+
+    const formatDuration = (credits: number): string => {
+        if (credits === 0.5) return '30 minutes';
+        return `${credits} hour${credits !== 1 ? 's' : ''}`;
+    };
+
+    const formatCredits = (credits: number): string => `${credits % 1 === 0 ? credits.toFixed(0) : credits.toFixed(1)} credit${credits !== 1 ? 's' : ''}`;
+
+    const roundToHalf = (value: number) => Math.round(value * 2) / 2;
+    const walletMaxCredits = availableCredits == null ? 8 : Math.max(0.5, Math.min(8, Math.floor((availableCredits + 1e-9) * 2) / 2));
+    const maxRequestCredits = Math.max(0.5, walletMaxCredits);
+
+    const updateRequestedCredits = (rawValue: unknown) => {
+        const numericValue = typeof rawValue === 'number'
+            ? rawValue
+            : Number((rawValue as any)?.nativeEvent?.value ?? rawValue);
+        if (!Number.isFinite(numericValue)) return;
+
+        const rounded = Math.max(0.5, Math.min(maxRequestCredits, roundToHalf(numericValue)));
+        requestedCreditsRef.current = rounded;
+        setRequestedCredits(rounded);
+    };
+
+    useEffect(() => {
+        if (!listingId) return;
+        if (Number.isFinite(listingCreditsRaw)) {
+            const clamped = Math.max(0.5, Math.min(8, roundToHalf(listingCreditsRaw)));
+            requestedCreditsRef.current = clamped;
+            setRequestedCredits(clamped);
+        }
+    }, [listingId, listingCreditsRaw]);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const { balance } = await getCreditsBalance();
+                if (!cancelled) setAvailableCredits(balance);
+            } catch {
+                if (!cancelled) setAvailableCredits(null);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [user?.id]);
+
+    useEffect(() => {
+        setRequestedCredits((current) => {
+            const next = Math.max(0.5, Math.min(maxRequestCredits, roundToHalf(current)));
+            requestedCreditsRef.current = next;
+            return next;
+        });
+    }, [maxRequestCredits]);
 
     useEffect(() => {
         let cancelled = false;
@@ -81,26 +140,86 @@ export default function SkillDetailScreen() {
         if (requesting) return;
         setRequesting(true);
         try {
-            // Credit pre-check (UX only — backend also enforces)
+            // Refresh wallet balance before proceeding
+            let currentBalance = availableCredits;
             try {
                 const { balance } = await getCreditsBalance();
-                if (balance < listing.credits) {
-                    Alert.alert(
-                        'Not Enough Credits',
-                        `You have ${balance} credit${balance !== 1 ? 's' : ''} available, but this skill costs ${listing.credits}. Earn more by teaching your own skills.`
-                    );
-                    return;
-                }
+                currentBalance = balance;
+                setAvailableCredits(balance);
             } catch {
-                // Skip pre-check errors — backend remains source of truth.
+                // Use cached balance if fetch fails
+            }
+
+            const selectedCredits = Number.isFinite(requestedCreditsRef.current)
+                ? requestedCreditsRef.current
+                : requestedCredits;
+            
+            // Validate selection is in valid range
+            if (!Number.isFinite(selectedCredits) || selectedCredits < 0.5) {
+                Alert.alert('Invalid Selection', 'Please select a valid request duration (minimum 30 minutes).');
+                return;
+            }
+
+            // Check if user has enough credits
+            if (currentBalance != null && currentBalance < selectedCredits) {
+                const maxAffordable = Math.max(0.5, Math.min(8, roundToHalf(currentBalance)));
+                Alert.alert(
+                    'Not Enough Credits',
+                    `You have ${formatCredits(currentBalance)} available, but this request needs ${formatCredits(selectedCredits)} (${formatDuration(selectedCredits)}).\n\nYou can request up to ${formatDuration(maxAffordable)} with your current balance. Earn more by teaching your own skills.`
+                );
+                return;
             }
 
             // Create exchange — notifies the provider server-side
-            const { exchangeId } = await createExchangeRequest(listing.id);
+            const { exchangeId, credits: appliedCredits } = await createExchangeRequest(listing.id, selectedCredits);
+
+            // Reconcile requested credits explicitly to avoid environments that default to listing/base credits.
+            let finalCredits = typeof appliedCredits === 'number' ? appliedCredits : selectedCredits;
+            try {
+                const reconciled = await updateExchangeRequestCredits(exchangeId, selectedCredits);
+                if (typeof reconciled?.credits === 'number') finalCredits = reconciled.credits;
+            } catch {
+                // Continue with verification step below.
+            }
+
+            // Verify persisted exchange credits; enforce correctness or refund immediately.
+            try {
+                const latest = await getExchangeById(exchangeId);
+                const persistedCredits = Number(latest.credits);
+                if (Number.isFinite(persistedCredits)) {
+                    finalCredits = persistedCredits;
+                }
+            } catch {
+                // If we cannot read back, keep best-known value and continue.
+            }
+
+            if (Math.abs(finalCredits - selectedCredits) > 0.001) {
+                try {
+                    const reconciled = await updateExchangeRequestCredits(exchangeId, selectedCredits);
+                    if (typeof reconciled?.credits === 'number') {
+                        finalCredits = reconciled.credits;
+                    }
+                } catch {
+                    // no-op, keep created request and show diagnostics below
+                }
+            }
+
+            const diagnostics = `Selected: ${formatCredits(selectedCredits)} | Stored: ${formatCredits(finalCredits)}`;
+
+            // Also add a requester-side bell notification for immediate in-app feedback.
+            pushLocalNotification({
+                type: 'request',
+                title: '🙋 Request sent',
+                message: `You requested ${listing.title} from ${listing.userName} • ${formatCredits(finalCredits)} (${formatDuration(finalCredits)}).`,
+                relatedId: exchangeId,
+                actionUrl: `/exchange/${exchangeId}`,
+            });
+
+            await refreshNotifications();
             setRequestSent(true);
             Alert.alert(
                 'Request Sent! 🎉',
-                `${listing.userName} has been notified that you want to learn "${listing.title}". To track this request, go to Profile -> My Exchanges.`,
+                `${listing.userName} has been notified that you want to learn "${listing.title}" for ${formatDuration(finalCredits)} (${formatCredits(finalCredits)}).\n\n${diagnostics}\n\nTo track this request, go to Profile -> My Exchanges.`,
                 [
                     { text: 'View Exchange', onPress: () => router.push({ pathname: '/exchange/[id]' as any, params: { id: exchangeId } }) },
                     { text: 'OK', style: 'cancel' as const },
@@ -228,9 +347,33 @@ export default function SkillDetailScreen() {
                 {/* CTA */}
                 {!isOwnerListing && (
                     <Animated.View entering={FadeInDown.delay(350).duration(350)} style={styles.ctaSection}>
+                        <View style={styles.durationCard}>
+                            <View style={styles.durationHeaderRow}>
+                                <Text style={styles.durationTitle}>How Long Do You Need?</Text>
+                                <Text style={styles.durationValue}>{formatDuration(requestedCredits)}</Text>
+                            </View>
+                            <Text style={styles.durationSub}>1 credit = 1 hour</Text>
+                            <Slider
+                                minimumValue={0.5}
+                                maximumValue={maxRequestCredits}
+                                step={0.5}
+                                value={requestedCredits}
+                                onValueChange={updateRequestedCredits}
+                                onSlidingComplete={updateRequestedCredits}
+                                minimumTrackTintColor={catColor}
+                                maximumTrackTintColor={AppColors.border}
+                                thumbTintColor={catColor}
+                            />
+                            <View style={styles.durationScaleRow}>
+                                <Text style={styles.durationScaleText}>30 min</Text>
+                                <Text style={styles.durationScaleText}>{formatDuration(maxRequestCredits)}</Text>
+                            </View>
+                            <Text style={styles.durationCredits}>{formatCredits(requestedCredits)}</Text>
+                        </View>
+
                         <Pressable style={[styles.ctaBtn, { backgroundColor: catColor }, (requesting || requestSent) && { opacity: 0.7 }]} onPress={handleRequest} disabled={requesting || requestSent}>
                             <Ionicons name="hand-left-outline" size={20} color="#FFFFFF" />
-                            <Text style={styles.ctaBtnText}>{requesting ? 'Sending Request...' : requestSent ? 'Request Sent' : 'Request This Skill'}</Text>
+                            <Text style={styles.ctaBtnText}>{requesting ? 'Sending Request...' : requestSent ? 'Request Sent' : `Request This Skill (${formatCredits(requestedCredits)})`}</Text>
                         </Pressable>
                         {requestSent && <Text style={styles.requestStatus}>Request has been sent. Go to Profile {'>'} My Exchanges to track it.</Text>}
                         <Pressable style={styles.msgBtn} onPress={handleMessage}>
@@ -325,6 +468,19 @@ const styles = StyleSheet.create({
 
     // CTA
     ctaSection: { gap: Spacing.md, marginTop: Spacing.sm },
+    durationCard: {
+        backgroundColor: '#FFFFFF', borderRadius: Radii.md,
+        borderWidth: 1, borderColor: AppColors.border,
+        padding: Spacing.md,
+        gap: 6,
+    },
+    durationHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    durationTitle: { fontSize: 14, fontWeight: '700', color: AppColors.text },
+    durationValue: { fontSize: 14, fontWeight: '800', color: AppColors.primary },
+    durationSub: { fontSize: 12, color: AppColors.textMuted },
+    durationScaleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    durationScaleText: { fontSize: 11, color: AppColors.textMuted },
+    durationCredits: { fontSize: 13, fontWeight: '700', color: AppColors.textSecondary, textAlign: 'center' },
     ctaBtn: {
         flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
         paddingVertical: 16, borderRadius: Radii.md,

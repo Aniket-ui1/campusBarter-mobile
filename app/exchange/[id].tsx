@@ -2,6 +2,7 @@
 
 import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
+import { useData } from '@/context/DataContext';
 import {
     acceptExchange, cancelExchange, confirmExchangeApi,
     getExchangeById, raiseExchangeDispute, SkillExchange,
@@ -78,6 +79,7 @@ export default function ExchangeDetailScreen() {
     const { id }   = useLocalSearchParams<{ id: string }>();
     const router   = useRouter();
     const { user } = useAuth();
+    const { pushLocalNotification, refreshNotifications } = useData();
     const [exchange, setExchange]         = useState<SkillExchange | null>(null);
     const [loading, setLoading]           = useState(true);
     const [acting, setActing]             = useState(false);
@@ -172,21 +174,39 @@ export default function ExchangeDetailScreen() {
             { text: 'Keep', style: 'cancel' },
             {
                 text: 'Cancel Exchange', style: 'destructive', onPress: async () => {
-                    setActing(true);
-                    try {
-                        await cancelExchange(id);
-                        await load();
-                        Alert.alert(
-                            'Request Cancelled',
-                            'Your request was cancelled successfully and credits were refunded to the requester. You can verify in Profile > My Exchanges.',
-                            [{ text: 'Open My Exchanges', onPress: () => router.replace('/exchanges' as any) }]
-                        );
-                    }
-                    catch (err: any) { Alert.alert('Error', err?.message ?? 'Could not cancel'); }
-                    finally { setActing(false); }
+                    await executeCancel();
                 },
             },
         ]);
+    };
+
+    const executeCancel = async () => {
+        setActing(true);
+        try {
+            await cancelExchange(id);
+
+            if (isRequester) {
+                pushLocalNotification({
+                    type: 'request',
+                    title: '❌ Request cancelled',
+                    message: `Your request for "${exchange.listingTitle}" was cancelled and your credit has been refunded.`,
+                    relatedId: id,
+                    actionUrl: `/exchange/${id}`,
+                });
+            }
+
+            await refreshNotifications();
+            await load();
+            Alert.alert(
+                'Request Cancelled',
+                'Cancellation successful. The exchange was removed from My Exchanges and credits were refunded to the requester.',
+                [{ text: 'Open My Exchanges', onPress: () => router.replace('/exchanges' as any) }]
+            );
+        } catch (err: any) {
+            Alert.alert('Error', err?.message ?? 'Could not cancel');
+        } finally {
+            setActing(false);
+        }
     };
 
     const handleDispute = async () => {
@@ -310,7 +330,7 @@ export default function ExchangeDetailScreen() {
                         {/* Requester + REQUESTED: Cancel only */}
                         {isRequester && exchange.status === 'REQUESTED' && (
                             <Animated.View entering={FadeInDown.delay(240).duration(300)} style={styles.actionsCol}>
-                                <Pressable style={[styles.btnOutline, { borderColor: AppColors.error }]} onPress={handleCancel}>
+                                <Pressable style={[styles.btnOutline, { borderColor: AppColors.error }]} onPress={executeCancel}>
                                     <Text style={[styles.btnOutlineText, { color: AppColors.error }]}>Cancel Request</Text>
                                 </Pressable>
                             </Animated.View>

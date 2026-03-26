@@ -2,27 +2,38 @@
 // Skill Exchange lifecycle: request → accept → confirm → complete
 // Auth is applied globally via verifyAzureAdToken in server.ts
 
-import { Router, Request, Response } from 'express';
+import { Request, Response, Router } from 'express';
 import { body, param } from 'express-validator';
-import { validate } from '../middleware/validate';
 import {
     acceptSkillExchange, cancelSkillExchange, confirmSkillExchange,
     createSkillExchange, getListingById, getSkillExchangeById,
-    getSkillExchanges, raiseDispute,
+    getSkillExchanges, raiseDispute, updateRequestedSkillExchangeCredits,
 } from '../db';
+import { validate } from '../middleware/validate';
 import {
+    notifyDisputeRaised,
     notifyExchangeAccepted, notifyExchangeCancelled, notifyExchangeCompleted,
-    notifyExchangeConfirmed, notifyExchangeRequested, notifyDisputeRaised,
+    notifyExchangeConfirmed, notifyExchangeRequested,
+    notifyRequestCancelled,
 } from '../notifyEvent';
 
 export const exchangesRouter = Router();
 
 // POST /api/v1/exchanges — Create exchange request, escrow credits
 exchangesRouter.post('/',
-    validate([body('listingId').trim().notEmpty().withMessage('listingId is required')]),
+    validate([
+        body('listingId').trim().notEmpty().withMessage('listingId is required'),
+        body('credits')
+            .exists().withMessage('credits is required')
+            .bail()
+            .isFloat({ min: 0.5, max: 8 })
+            .withMessage('credits must be between 0.5 and 8')
+            .custom((value) => Math.round(Number(value) * 2) === Number(value) * 2)
+            .withMessage('credits must increment by 0.5'),
+    ]),
     async (req: Request, res: Response) => {
         try {
-            const { listingId } = req.body;
+            const { listingId, credits } = req.body;
             const requesterId = req.user!.id;
 
             const listing = await getListingById(listingId) as any;
@@ -30,9 +41,20 @@ exchangesRouter.post('/',
             if (listing.status !== 'OPEN') { res.status(400).json({ error: 'Listing is not open' }); return; }
             if (listing.userId === requesterId) { res.status(400).json({ error: 'Cannot request your own listing' }); return; }
 
-            const exchangeId = await createSkillExchange(listingId, requesterId, listing.userId as string, listing.credits as number);
+            if (credits === null || credits === '' || !Number.isFinite(Number(credits))) {
+                res.status(400).json({ error: 'Invalid credits value' });
+                return;
+            }
+
+            const requestedCredits = Number(credits);
+            if (!Number.isFinite(requestedCredits) || requestedCredits < 0.5 || requestedCredits > 8) {
+                res.status(400).json({ error: 'Requested credits must be between 0.5 and 8' });
+                return;
+            }
+
+            const exchangeId = await createSkillExchange(listingId, requesterId, listing.userId as string, requestedCredits);
             notifyExchangeRequested(listing.userId as string, req.user!.displayName ?? 'Someone', listing.title as string, exchangeId);
-            res.status(201).json({ exchangeId });
+            res.status(201).json({ exchangeId, credits: requestedCredits });
         } catch (err: any) {
             const msg = err?.message ?? '';
             if (msg === 'Insufficient credits') { res.status(402).json({ error: 'Insufficient credits' }); return; }
@@ -64,6 +86,32 @@ exchangesRouter.get('/:id',
             res.json(exchange);
         } catch {
             res.status(500).json({ error: 'Could not fetch exchange' });
+        }
+    }
+);
+
+// POST /api/v1/exchanges/:id/credits — requester adjusts requested credits while still REQUESTED
+exchangesRouter.post('/:id/credits',
+    validate([
+        param('id').trim().notEmpty(),
+        body('credits')
+            .exists().withMessage('credits is required')
+            .bail()
+            .isFloat({ min: 0.5, max: 8 }).withMessage('credits must be between 0.5 and 8')
+            .bail()
+            .custom((value) => Math.round(Number(value) * 2) === Number(value) * 2)
+            .withMessage('credits must increment by 0.5'),
+    ]),
+    async (req: Request, res: Response) => {
+        try {
+            const credits = Number(req.body.credits);
+            const applied = await updateRequestedSkillExchangeCredits(req.params.id, req.user!.id, credits);
+            res.json({ message: 'Exchange credits updated', credits: applied });
+        } catch (err: any) {
+            const msg = err?.message ?? 'Could not update exchange credits';
+            if (msg === 'Insufficient credits') { res.status(402).json({ error: msg }); return; }
+            if (msg.includes('not found') || msg.includes('REQUESTED')) { res.status(400).json({ error: msg }); return; }
+            res.status(500).json({ error: msg });
         }
     }
 );
@@ -114,7 +162,15 @@ exchangesRouter.post('/:id/cancel',
             const result = await cancelSkillExchange(req.params.id, req.user!.id, reason);
             if (ex) {
                 const otherId = req.user!.id === result.requesterId ? ex.providerId : ex.requesterId;
-                notifyExchangeCancelled(otherId, ex.listingTitle, req.params.id);
+                if (otherId !== result.requesterId) {
+                    notifyExchangeCancelled(otherId, ex.listingTitle, req.params.id);
+                }
+                notifyRequestCancelled(
+                    result.requesterId,
+                    ex.listingTitle,
+                    req.params.id,
+                    `Your request for "${ex.listingTitle}" was cancelled and your credit has been refunded.`
+                );
             }
             res.json({ message: 'Exchange cancelled' });
         } catch (err: any) {

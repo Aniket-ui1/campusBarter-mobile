@@ -350,41 +350,43 @@ export async function deleteChat(chatId: string, userId: string): Promise<void> 
 export async function getNotifications(): Promise<ApiNotification[]> {
     try {
         // Try new endpoint first
-        const data = await apiFetch<any[]>('/api/notifications');
-        return data.map(n => ({
+        const raw = await apiFetch<any>('/api/notifications');
+        const data = Array.isArray(raw) ? raw : (Array.isArray(raw?.notifications) ? raw.notifications : []);
+        return data.map((n: any) => ({
             notificationId: n.notificationId ?? n.id,
             userId: n.userId,
-            type: n.type,
+            type: String(n.type ?? '').toLowerCase(),
             title: n.title,
             message: n.message ?? n.body,
             relatedEntityId: n.relatedEntityId ?? n.relatedId ?? null,
             relatedEntityType: n.relatedEntityType ?? null,
             actionUrl: n.actionUrl ?? null,
-            isRead: n.isRead ?? n.read ?? false,
+            isRead: Boolean(n.isRead ?? n.read ?? false),
             createdAt: n.createdAt,
             // Legacy fields for backwards compatibility
             id: n.notificationId ?? n.id,
             body: n.message ?? n.body,
-            read: n.isRead ?? n.read ?? false,
+            read: Boolean(n.isRead ?? n.read ?? false),
             relatedId: n.relatedEntityId ?? n.relatedId,
         }));
     } catch {
         // Fallback to legacy endpoint
-        const data = await apiFetch<any[]>('/api/v1/notifications');
-        return data.map(n => ({
-            notificationId: n.id,
+        const raw = await apiFetch<any>('/api/v1/notifications');
+        const data = Array.isArray(raw) ? raw : (Array.isArray(raw?.notifications) ? raw.notifications : []);
+        return data.map((n: any) => ({
+            notificationId: n.notificationId ?? n.id,
             userId: n.userId ?? '',
-            type: n.type,
+            type: String(n.type ?? '').toLowerCase(),
             title: n.title,
-            message: n.body,
+            message: n.message ?? n.body,
             relatedEntityId: n.relatedId ?? null,
             relatedEntityType: null,
             actionUrl: null,
-            isRead: n.read ?? false,
+            isRead: Boolean(n.isRead ?? n.read ?? false),
             createdAt: n.createdAt,
-            id: n.id,
-            body: n.body,
-            read: n.read,
+            id: n.notificationId ?? n.id,
+            body: n.message ?? n.body,
+            read: Boolean(n.isRead ?? n.read ?? false),
             relatedId: n.relatedId,
         }));
     }
@@ -403,6 +405,26 @@ export async function markAllNotificationsRead(): Promise<void> {
         await apiFetch('/api/notifications/read-all', { method: 'PUT' });
     } catch {
         await apiFetch('/api/v1/notifications/read-all', { method: 'PUT' });
+    }
+}
+
+export async function deleteNotificationById(notifId: string): Promise<void> {
+    try {
+        // Prefer v1 endpoint first since production contracts are v1-first.
+        await apiFetch(`/api/v1/notifications/${notifId}`, { method: 'DELETE' });
+        return;
+    } catch (firstErr) {
+        const status = (firstErr as { status?: number }).status;
+        if (status && status !== 404 && status !== 405) throw firstErr;
+    }
+
+    try {
+        await apiFetch(`/api/notifications/${notifId}`, { method: 'DELETE' });
+    } catch (secondErr) {
+        const status = (secondErr as { status?: number }).status;
+        // Some deployed environments may not support DELETE yet; avoid hard-crashing UI.
+        if (status === 404 || status === 405) return;
+        throw secondErr;
     }
 }
 
@@ -487,13 +509,33 @@ export interface AdminReportedListing {
     credits: number;
 }
 
-export async function createExchangeRequest(listingId: string): Promise<{ exchangeId: string }> {
+export async function createExchangeRequest(listingId: string, credits: number): Promise<{ exchangeId: string; credits?: number }> {
+    if (!Number.isFinite(credits)) {
+        throw new Error('Invalid credits value');
+    }
+    const payload: Record<string, unknown> = { listingId, credits };
     try {
-        return await apiFetch('/api/v1/exchanges', { method: 'POST', body: JSON.stringify({ listingId }) });
+        return await apiFetch('/api/v1/exchanges', { method: 'POST', body: JSON.stringify(payload) });
     } catch (error) {
         const status = (error as { status?: number }).status;
         if (status !== 404) throw error;
-        return apiFetch('/api/exchanges', { method: 'POST', body: JSON.stringify({ listingId }) });
+        return apiFetch('/api/exchanges', { method: 'POST', body: JSON.stringify(payload) });
+    }
+}
+
+export async function updateExchangeRequestCredits(id: string, credits: number): Promise<{ credits: number }> {
+    try {
+        return await apiFetch(`/api/v1/exchanges/${encodeURIComponent(id)}/credits`, {
+            method: 'POST',
+            body: JSON.stringify({ credits }),
+        });
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404 && status !== 405) throw error;
+        return apiFetch(`/api/exchanges/${encodeURIComponent(id)}/credits`, {
+            method: 'POST',
+            body: JSON.stringify({ credits }),
+        });
     }
 }
 

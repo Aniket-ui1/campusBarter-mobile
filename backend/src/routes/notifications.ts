@@ -4,7 +4,7 @@
 // PUT /api/notifications/read-all  — mark all as read
 
 import { Request, Response, Router } from 'express';
-import { getNotifications, markAllNotificationsRead, markNotificationRead } from '../db';
+import { deleteNotification, getNotifications, markAllNotificationsRead, markNotificationRead } from '../db';
 
 export const notificationsRouter = Router();
 
@@ -41,5 +41,20 @@ notificationsRouter.put('/:id/read', async (req: Request, res: Response) => {
         res.json({ message: 'Notification marked as read' });
     } catch {
         res.status(500).json({ error: 'Failed to mark notification read' });
+    }
+});
+
+// DELETE /api/notifications/:id — delete one notification
+notificationsRouter.delete('/:id', async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        if (!id?.trim()) {
+            res.status(400).json({ error: 'Notification ID is required' });
+            return;
+        }
+        await deleteNotification(id, req.user!.id);
+        res.json({ message: 'Notification deleted' });
+    } catch {
+        res.status(500).json({ error: 'Failed to delete notification' });
     }
 });

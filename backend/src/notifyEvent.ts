@@ -9,8 +9,8 @@
 
 import { createNotification } from './db';
 import { sendPushToUser } from './push';
-import { getIO } from './socketInstance';
 import { isUserOnline } from './socket';
+import { getIO } from './socketInstance';
 
 type NotifType = 'request' | 'accepted' | 'message' | 'review' | 'match' | 'exchange';
 
@@ -66,6 +66,18 @@ export async function notifyEvent(payload: NotifPayload): Promise<void> {
             console.log('[Notify] ✅ DB insert successful, ID:', notificationId);
         } catch (err) {
             console.error('[Notify] ❌ DB insert failed:', err);
+
+            // Backward-compatible fallback for environments where the Notifications
+            // type constraint does not yet include 'exchange'. Persist as 'request'
+            // so bell count/list still works until migration is applied.
+            if (type === 'exchange') {
+                try {
+                    notificationId = await createNotification(recipientId, 'request', title, body, relatedId, entityType, actionUrl);
+                    console.log('[Notify] ⚠️ Fallback DB insert as type=request, ID:', notificationId);
+                } catch (fallbackErr) {
+                    console.error('[Notify] ❌ Fallback DB insert failed:', fallbackErr);
+                }
+            }
         }
 
         try {
@@ -192,8 +204,24 @@ export function notifyExchangeCompleted(recipientId: string, listingTitle: strin
     void notifyEvent({ recipientId, type: 'exchange', title: '🎉 Exchange completed!', body: `"${listingTitle}" — ${credits} credit${credits !== 1 ? 's' : ''} transferred`, relatedId: exchangeId });
 }
 
-export function notifyExchangeCancelled(recipientId: string, listingTitle: string, exchangeId: string) {
-    void notifyEvent({ recipientId, type: 'exchange', title: '❌ Exchange cancelled', body: `The exchange for "${listingTitle}" was cancelled`, relatedId: exchangeId });
+export function notifyExchangeCancelled(recipientId: string, listingTitle: string, exchangeId: string, body?: string) {
+    void notifyEvent({
+        recipientId,
+        type: 'exchange',
+        title: '❌ Exchange cancelled',
+        body: body ?? `The exchange for "${listingTitle}" was cancelled`,
+        relatedId: exchangeId,
+    });
+}
+
+export function notifyRequestCancelled(recipientId: string, listingTitle: string, exchangeId: string, body?: string) {
+    void notifyEvent({
+        recipientId,
+        type: 'request',
+        title: '❌ Request cancelled',
+        body: body ?? `Your request for "${listingTitle}" was cancelled`,
+        relatedId: exchangeId,
+    });
 }
 
 export function notifyDisputeRaised(recipientId: string, raisedByName: string, listingTitle: string, exchangeId: string) {

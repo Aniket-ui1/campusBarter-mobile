@@ -6,17 +6,17 @@ import { CATEGORIES } from '@/constants/categories';
 import { AppColors, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { useData } from '@/context/DataContext';
-import { getRecommendedUsers, MatchedUser } from '@/lib/matching';
 import { getCreditsBalance } from '@/lib/api';
+import { getRecommendedUsers, MatchedUser } from '@/lib/matching';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { unreadCount, listings } = useData();
+  const { unreadCount, listings, refreshNotifications } = useData();
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
   const [matches, setMatches] = useState<MatchedUser[]>([]);
@@ -47,6 +47,14 @@ export default function HomeScreen() {
     getCreditsBalance().then(({ balance }) => setCredits(balance)).catch(() => {});
   }, [user?.id]);
 
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!user?.id) return;
+      void getCreditsBalance().then(({ balance }) => setCredits(balance)).catch(() => {});
+      void refreshNotifications();
+    }, [user?.id, refreshNotifications])
+  );
+
   const onRefresh = async () => {
     setRefreshing(true);
     const tasks: Promise<any>[] = [];
@@ -55,6 +63,7 @@ export default function HomeScreen() {
         getRecommendedUsers(user.id, user.skills ?? [], user.weaknesses ?? [], user.interests ?? [])
           .then(setMatches).catch(() => {}),
         getCreditsBalance().then(({ balance }) => setCredits(balance)).catch(() => {}),
+        refreshNotifications(),
       );
     }
     await Promise.all(tasks);
