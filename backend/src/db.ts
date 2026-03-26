@@ -1061,8 +1061,8 @@ export async function getNotifications(userId: string): Promise<Record<string, u
     const result = await db.request()
         .input('userId', sql.NVarChar(128), userId)
         .query(`
-            SELECT notificationId, userId, type, title, message,
-                   relatedEntityId, relatedEntityType, actionUrl,
+            SELECT id AS notificationId, userId, type, title, body AS message,
+                   relatedId AS relatedEntityId, actionUrl,
                    isRead, createdAt
             FROM   Notifications
             WHERE  userId = @userId
@@ -1076,7 +1076,7 @@ export async function markNotificationRead(notificationId: string, userId: strin
     await db.request()
         .input('id', sql.NVarChar(128), notificationId)
         .input('userId', sql.NVarChar(128), userId)
-        .query(`UPDATE Notifications SET isRead = 1 WHERE notificationId = @id AND userId = @userId`);
+        .query(`UPDATE Notifications SET isRead = 1 WHERE id = @id AND userId = @userId`);
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
@@ -1092,7 +1092,7 @@ export async function createNotification(
     title: string,
     message: string,
     relatedEntityId?: string,
-    relatedEntityType?: string,
+    _relatedEntityType?: string,
     actionUrl?: string
 ): Promise<string> {
     const db = await getPool();
@@ -1101,15 +1101,14 @@ export async function createNotification(
         .input('type', sql.NVarChar(50), type)
         .input('title', sql.NVarChar(200), title)
         .input('message', sql.NVarChar(500), message)
-        .input('relatedEntityId', sql.NVarChar(128), relatedEntityId ?? null)
-        .input('relatedEntityType', sql.NVarChar(50), relatedEntityType ?? null)
+        .input('relatedId', sql.NVarChar(128), relatedEntityId ?? null)
         .input('actionUrl', sql.NVarChar(500), actionUrl ?? null)
         .query(`
-            INSERT INTO Notifications (userId, type, title, message, relatedEntityId, relatedEntityType, actionUrl)
-            OUTPUT INSERTED.notificationId
-            VALUES (@userId, @type, @title, @message, @relatedEntityId, @relatedEntityType, @actionUrl)
+            INSERT INTO Notifications (userId, type, title, body, relatedId, actionUrl)
+            OUTPUT INSERTED.id
+            VALUES (@userId, @type, @title, @message, @relatedId, @actionUrl)
         `);
-    return result.recordset[0].notificationId;
+    return result.recordset[0].id;
 }
 
 // ── Time Credits ──────────────────────────────────────────────
