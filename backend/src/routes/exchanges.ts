@@ -31,7 +31,7 @@ exchangesRouter.post('/',
             if (listing.userId === requesterId) { res.status(400).json({ error: 'Cannot request your own listing' }); return; }
 
             const exchangeId = await createSkillExchange(listingId, requesterId, listing.userId as string, listing.credits as number);
-            notifyExchangeRequested(listing.userId as string, req.user!.displayName ?? 'Someone', listing.title as string, exchangeId);
+            notifyExchangeRequested(listing.userId as string, req.user!.displayName ?? 'Someone', listing.title as string, exchangeId, requesterId);
             res.status(201).json({ exchangeId });
         } catch (err: any) {
             const msg = err?.message ?? '';
