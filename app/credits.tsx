@@ -208,3 +208,5 @@ const styles = StyleSheet.create({
     txDate: { fontSize: 12, color: AppColors.textMuted, marginTop: 2 },
     txAmount: { fontSize: 16, fontWeight: '800' },
 });
+
+

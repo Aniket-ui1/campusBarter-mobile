@@ -51,3 +51,5 @@ const styles = StyleSheet.create({
     subhead: { fontWeight: '800', color: AppColors.text },
     body: { fontSize: 14, color: AppColors.textSecondary, lineHeight: 24 },
 });
+
+

@@ -129,3 +129,4 @@ const styles = StyleSheet.create({
     time: { fontSize: 11, color: AppColors.textMuted, marginTop: 4 },
     unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: AppColors.primary },
 });
+

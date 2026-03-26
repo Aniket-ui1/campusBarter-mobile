@@ -221,3 +221,5 @@ const styles = StyleSheet.create({
     semText: { color: AppColors.textSecondary, fontSize: 14, fontWeight: '600' },
     semTextActive: { color: '#FFFFFF' },
 });
+
+

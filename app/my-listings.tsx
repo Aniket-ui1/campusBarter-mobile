@@ -161,3 +161,5 @@ const styles = StyleSheet.create({
     deleteBtn: { borderColor: AppColors.error + '30', backgroundColor: AppColors.error + '10' },
     deleteText: { color: AppColors.error },
 });
+
+

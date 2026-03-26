@@ -182,3 +182,5 @@ const styles = StyleSheet.create({
     linkText: { fontSize: 13, color: AppColors.textMuted, fontWeight: '500' },
     linkDot: { color: AppColors.textMuted, fontSize: 13 },
 });
+
+

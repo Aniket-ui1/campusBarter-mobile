@@ -49,3 +49,5 @@ const styles = StyleSheet.create({
     headerTitle: { fontSize: 17, fontWeight: '700', color: AppColors.text },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xl, gap: Spacing.lg },
 });
+
+

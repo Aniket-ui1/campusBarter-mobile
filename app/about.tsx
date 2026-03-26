@@ -67,3 +67,5 @@ const styles = StyleSheet.create({
     infoText: { fontSize: 14, color: AppColors.textSecondary },
     madeWith: { fontSize: 13, color: AppColors.textMuted, textAlign: 'center' },
 });
+
+
