@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
-import { submitListingReport } from '@/lib/api';
+import { getApiToken, submitListingReport } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -10,15 +10,29 @@ import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from '
 const REASONS = ['Inappropriate behavior', 'Spam or scam', 'Harassment', 'Fake listing', 'Other'];
 
 export default function ReportScreen() {
-    const { listingId } = useLocalSearchParams<{ listingId?: string }>();
+    const { listingId: listingIdParam } = useLocalSearchParams<{ listingId?: string | string[] }>();
     const router = useRouter();
+    const listingId = Array.isArray(listingIdParam) ? listingIdParam[0] : listingIdParam;
     const [reason, setReason] = useState('');
     const [description, setDescription] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    const [errorText, setErrorText] = useState('');
 
     const handleSubmit = async () => {
-        if (!reason) { Alert.alert('Please select a reason'); return; }
-        if (!listingId) { Alert.alert('Missing listing', 'No listing selected for report.'); return; }
+        setErrorText('');
+        if (!reason) {
+            setErrorText('Please select a reason before submitting.');
+            return;
+        }
+        if (!listingId) {
+            setErrorText('Missing listing. Please reopen this screen from the listing page.');
+            return;
+        }
+
+        if (!getApiToken()) {
+            setErrorText('Your session is not active. Please sign in again and retry.');
+            return;
+        }
 
         setSubmitting(true);
         try {
@@ -26,8 +40,14 @@ export default function ReportScreen() {
             Alert.alert('Report Submitted', 'Thank you. We will review this report and take action.');
             router.back();
         } catch (error) {
-            const message = (error as { message?: string })?.message ?? 'Could not submit report right now.';
-            Alert.alert('Unable to submit report', message);
+            const err = error as { status?: number; message?: string };
+            if (err?.status === 401) {
+                setErrorText('Session expired or invalid token. Please sign in again.');
+            } else if (err?.status === 409) {
+                setErrorText(err?.message ?? 'You already have an open report for this listing.');
+            } else {
+                setErrorText(err?.message ?? 'Could not submit report right now. Check your connection and try again.');
+            }
         } finally {
             setSubmitting(false);
         }
@@ -55,6 +75,7 @@ export default function ReportScreen() {
                 <Input label="Additional details (optional)" placeholder="Describe the issue..."
                     value={description} onChangeText={setDescription} multiline numberOfLines={3}
                     style={{ minHeight: 80, textAlignVertical: 'top' }} />
+                {!!errorText && <Text style={styles.errorText}>{errorText}</Text>}
                 <Button
                     title={submitting ? 'Submitting...' : 'Submit Report'}
                     onPress={handleSubmit}
@@ -84,4 +105,5 @@ const styles = StyleSheet.create({
     optionActive: { borderColor: AppColors.primary, backgroundColor: 'rgba(107,143,113,0.12)' },
     optionText: { fontSize: 14, color: AppColors.textSecondary },
     optionTextActive: { color: AppColors.text, fontWeight: '600' },
+    errorText: { color: AppColors.error, fontSize: 13, fontWeight: '600' },
 });
