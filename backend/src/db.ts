@@ -1058,17 +1058,32 @@ export async function getReviews(userId: string): Promise<Record<string, unknown
 
 export async function getNotifications(userId: string): Promise<Record<string, unknown>[]> {
     const db = await getPool();
-    const result = await db.request()
-        .input('userId', sql.NVarChar(128), userId)
-        .query(`
-            SELECT id AS notificationId, userId, type, title, body AS message,
-                   relatedId AS relatedEntityId, actionUrl,
-                   isRead, createdAt
-            FROM   Notifications
-            WHERE  userId = @userId
-            ORDER  BY createdAt DESC
-        `);
-    return result.recordset;
+    // Try with actionUrl column first (requires migration); fall back without it
+    try {
+        const result = await db.request()
+            .input('userId', sql.NVarChar(128), userId)
+            .query(`
+                SELECT id AS notificationId, userId, type, title, body AS message,
+                       relatedId AS relatedEntityId, actionUrl,
+                       isRead, createdAt
+                FROM   Notifications
+                WHERE  userId = @userId
+                ORDER  BY createdAt DESC
+            `);
+        return result.recordset;
+    } catch {
+        const result = await db.request()
+            .input('userId', sql.NVarChar(128), userId)
+            .query(`
+                SELECT id AS notificationId, userId, type, title, body AS message,
+                       relatedId AS relatedEntityId, NULL AS actionUrl,
+                       isRead, createdAt
+                FROM   Notifications
+                WHERE  userId = @userId
+                ORDER  BY createdAt DESC
+            `);
+        return result.recordset;
+    }
 }
 
 export async function markNotificationRead(notificationId: string, userId: string): Promise<void> {
@@ -1096,19 +1111,35 @@ export async function createNotification(
     actionUrl?: string
 ): Promise<string> {
     const db = await getPool();
-    const result = await db.request()
-        .input('userId', sql.NVarChar(128), userId)
-        .input('type', sql.NVarChar(50), type)
-        .input('title', sql.NVarChar(200), title)
-        .input('message', sql.NVarChar(500), message)
-        .input('relatedId', sql.NVarChar(128), relatedEntityId ?? null)
-        .input('actionUrl', sql.NVarChar(500), actionUrl ?? null)
-        .query(`
-            INSERT INTO Notifications (userId, type, title, body, relatedId, actionUrl)
-            OUTPUT INSERTED.id
-            VALUES (@userId, @type, @title, @message, @relatedId, @actionUrl)
-        `);
-    return result.recordset[0].id;
+    // Try with actionUrl column first; fall back to without it if migration not yet run
+    try {
+        const result = await db.request()
+            .input('userId', sql.NVarChar(128), userId)
+            .input('type', sql.NVarChar(50), type)
+            .input('title', sql.NVarChar(200), title)
+            .input('message', sql.NVarChar(500), message)
+            .input('relatedId', sql.NVarChar(128), relatedEntityId ?? null)
+            .input('actionUrl', sql.NVarChar(500), actionUrl ?? null)
+            .query(`
+                INSERT INTO Notifications (userId, type, title, body, relatedId, actionUrl)
+                OUTPUT INSERTED.id
+                VALUES (@userId, @type, @title, @message, @relatedId, @actionUrl)
+            `);
+        return result.recordset[0].id;
+    } catch {
+        const result = await db.request()
+            .input('userId', sql.NVarChar(128), userId)
+            .input('type', sql.NVarChar(50), type)
+            .input('title', sql.NVarChar(200), title)
+            .input('message', sql.NVarChar(500), message)
+            .input('relatedId', sql.NVarChar(128), relatedEntityId ?? null)
+            .query(`
+                INSERT INTO Notifications (userId, type, title, body, relatedId)
+                OUTPUT INSERTED.id
+                VALUES (@userId, @type, @title, @message, @relatedId)
+            `);
+        return result.recordset[0].id;
+    }
 }
 
 // ── Time Credits ──────────────────────────────────────────────
