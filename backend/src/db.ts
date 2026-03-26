@@ -1906,8 +1906,13 @@ export async function autoCancelAbandonedExchanges(): Promise<Array<{ requesterI
     const db = await getPool();
     const abandoned = await db.request().query(`
         SELECT id, requesterId, credits FROM SkillExchanges
-        WHERE status = 'ACCEPTED' AND acceptedAt < DATEADD(DAY, -7, GETUTCDATE())
-          AND requesterConfirmed = 0 AND providerConfirmed = 0
+        WHERE (
+            status = 'REQUESTED' AND createdAt < DATEADD(HOUR, -24, GETUTCDATE())
+        )
+        OR (
+            status = 'ACCEPTED' AND acceptedAt < DATEADD(DAY, -7, GETUTCDATE())
+            AND requesterConfirmed = 0 AND providerConfirmed = 0
+        )
     `);
     const cancelled: Array<{ requesterId: string; credits: number }> = [];
     for (const ex of abandoned.recordset) {
@@ -1917,7 +1922,7 @@ export async function autoCancelAbandonedExchanges(): Promise<Array<{ requesterI
             await new sql.Request(txn).input('c', sql.Int, ex.credits).input('req', sql.NVarChar(128), ex.requesterId)
                 .query(`UPDATE Users SET credits = credits + @c, reservedCredits = ISNULL(reservedCredits,0) - @c WHERE id = @req`);
             await new sql.Request(txn).input('id', sql.NVarChar(128), ex.id)
-                .query(`UPDATE SkillExchanges SET status='CANCELLED', cancelReason='Auto-cancelled: no activity for 7 days', updatedAt=GETUTCDATE() WHERE id=@id`);
+                .query(`UPDATE SkillExchanges SET status='CANCELLED', cancelReason='Auto-cancelled: request expired', updatedAt=GETUTCDATE() WHERE id=@id`);
             await txn.commit();
             cancelled.push({ requesterId: ex.requesterId, credits: ex.credits });
         } catch { await txn.rollback(); }

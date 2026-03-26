@@ -56,11 +56,11 @@ export async function startExchangeExpiryJobs(): Promise<void> {
     // Auto-complete: runs every hour
     setInterval(() => { void runAutoComplete(); }, HOUR_MS);
 
-    // Auto-cancel: runs once per day
-    setInterval(() => { void runAutoCancel(); }, DAY_MS);
+    // Auto-cancel: runs every hour (catches REQUESTED >24h + ACCEPTED idle >7d)
+    setInterval(() => { void runAutoCancel(); }, HOUR_MS);
 
     // Monthly credits: runs once per day (grants 3 credits if user hasn't received any in 30 days)
     setInterval(() => { void runMonthlyCredits(); }, DAY_MS);
 
-    console.log('[ExchangeExpiry] Jobs started (auto-complete: 1h, auto-cancel/monthly: 24h)');
+    console.log('[ExchangeExpiry] Jobs started (auto-complete: 1h, auto-cancel: 1h, monthly: 24h)');
 }

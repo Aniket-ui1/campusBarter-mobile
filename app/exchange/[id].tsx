@@ -151,18 +151,11 @@ export default function ExchangeDetailScreen() {
         } finally { setActing(false); }
     };
 
-    const handleCancel = () => {
-        Alert.alert('Cancel Exchange', 'Are you sure? Credits will be returned to the requester.', [
-            { text: 'Keep', style: 'cancel' },
-            {
-                text: 'Cancel Exchange', style: 'destructive', onPress: async () => {
-                    setActing(true);
-                    try { await cancelExchange(id); await load(); }
-                    catch (err: any) { Alert.alert('Error', err?.message ?? 'Could not cancel'); }
-                    finally { setActing(false); }
-                },
-            },
-        ]);
+    const handleCancel = async () => {
+        setActing(true);
+        try { await cancelExchange(id); await load(); }
+        catch (err: any) { Alert.alert('Error', err?.message ?? 'Could not cancel'); }
+        finally { setActing(false); }
     };
 
     const handleDispute = async () => {
