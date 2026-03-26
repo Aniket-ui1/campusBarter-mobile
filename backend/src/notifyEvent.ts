@@ -182,13 +182,14 @@ export function notifyReview(
 // ── Skill Exchange Notifications ─────────────────────────────
 
 export function notifyExchangeRequested(providerId: string, requesterName: string, listingTitle: string, exchangeId: string, requesterId: string) {
+    const chatUrl = `/chat/start/${requesterId}?name=${encodeURIComponent(requesterName)}&exchangeId=${exchangeId}`;
     void notifyEvent({
         recipientId: providerId,
         type: 'exchange',
         title: '📥 New skill request',
         body: `${requesterName} wants to learn "${listingTitle}"`,
         relatedId: exchangeId,
-        actionUrlOverride: `/exchange/${exchangeId}`,
+        actionUrlOverride: chatUrl,
         data: { exchangeId, requesterId },
     });
 }
