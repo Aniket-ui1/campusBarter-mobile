@@ -138,6 +138,47 @@ export interface ApiNotification {
     relatedId?: string;
 }
 
+export interface ApiReport {
+    reportId: number;
+    reporterUserId: string;
+    reporterName?: string;
+    targetType: 'LISTING' | 'USER' | 'CHAT' | 'MESSAGE' | 'REVIEW' | 'OTHER';
+    targetId: string;
+    reason: string;
+    details?: string;
+    status: 'OPEN' | 'IN_REVIEW' | 'RESOLVED' | 'DISMISSED';
+    assignedToUserId?: string | null;
+    assignedToName?: string | null;
+    reviewedByUserId?: string | null;
+    reviewedByName?: string | null;
+    resolutionAction?: string | null;
+    resolutionNote?: string | null;
+    createdAt: string;
+    updatedAt: string;
+    resolvedAt?: string | null;
+}
+
+export interface AdminUserSummary {
+    id: string;
+    displayName: string;
+    email: string;
+    role: 'Student' | 'Moderator' | 'Admin';
+    credits?: number;
+    profileComplete?: boolean;
+    createdAt?: string;
+    lastLoginAt?: string | null;
+}
+
+export interface AdminAuditLogEntry {
+    id: number;
+    userId: string | null;
+    action: string;
+    resource?: string;
+    ipAddress?: string;
+    statusCode?: number;
+    timestamp: string;
+}
+
 // ── Listings ──────────────────────────────────────────────────
 
 export async function getListings(): Promise<ApiListing[]> {
@@ -389,6 +430,94 @@ export async function markAllNotificationsRead(): Promise<void> {
         await apiFetch('/api/notifications/read-all', { method: 'PUT' });
     } catch {
         await apiFetch('/api/v1/notifications/read-all', { method: 'PUT' });
+    }
+}
+
+// ── Reports / Admin ──────────────────────────────────────────
+
+export async function submitReport(data: {
+    targetType: 'LISTING' | 'USER' | 'CHAT' | 'MESSAGE' | 'REVIEW' | 'OTHER';
+    targetId: string;
+    reason: string;
+    details?: string;
+}): Promise<number> {
+    try {
+        const res = await apiFetch<{ reportId: number }>('/api/v1/reports', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+        return res.reportId;
+    } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404) throw error;
+        const res = await apiFetch<{ reportId: number }>('/api/reports', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+        return res.reportId;
+    }
+}
+
+export async function getAdminReports(status?: ApiReport['status']): Promise<ApiReport[]> {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+    try {
+        const res = await apiFetch<{ reports: ApiReport[] }>(`/api/v1/admin/reports${qs}`);
+        return res.reports;
+    } catch (error) {
+        const st = (error as { status?: number }).status;
+        if (st !== 404) throw error;
+        const res = await apiFetch<{ reports: ApiReport[] }>(`/api/admin/reports${qs}`);
+        return res.reports;
+    }
+}
+
+export async function updateAdminReport(
+    reportId: number,
+    payload: {
+        status: ApiReport['status'];
+        resolutionAction?: string;
+        resolutionNote?: string;
+        assignToSelf?: boolean;
+    }
+): Promise<void> {
+    try {
+        await apiFetch(`/api/v1/admin/reports/${reportId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(payload),
+        });
+    } catch (error) {
+        const st = (error as { status?: number }).status;
+        if (st !== 404) throw error;
+        await apiFetch(`/api/admin/reports/${reportId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(payload),
+        });
+    }
+}
+
+export async function getAdminAuditLog(limit = 200): Promise<AdminAuditLogEntry[]> {
+    const safe = Math.max(1, Math.min(1000, limit));
+    try {
+        const res = await apiFetch<{ logs: AdminAuditLogEntry[] }>(`/api/v1/admin/audit-log?limit=${safe}`);
+        return res.logs;
+    } catch (error) {
+        const st = (error as { status?: number }).status;
+        if (st !== 404) throw error;
+        const res = await apiFetch<{ logs: AdminAuditLogEntry[] }>(`/api/admin/audit-log?limit=${safe}`);
+        return res.logs;
+    }
+}
+
+export async function getAdminUsers(limit = 200): Promise<AdminUserSummary[]> {
+    const safe = Math.max(1, Math.min(500, limit));
+    try {
+        const res = await apiFetch<{ users: AdminUserSummary[] }>(`/api/v1/admin/users?limit=${safe}`);
+        return res.users;
+    } catch (error) {
+        const st = (error as { status?: number }).status;
+        if (st !== 404) throw error;
+        const res = await apiFetch<AdminUserSummary[]>(`/api/v1/users`);
+        return res;
     }
 }
 

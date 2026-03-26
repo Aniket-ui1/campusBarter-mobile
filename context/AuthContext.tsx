@@ -38,7 +38,7 @@ import {
     useState,
 } from "react";
 import azureConfig from "../config/azureConfig";
-import { setApiToken, clearApiToken, setDevUser, registerPushToken, upsertUserProfile, getUserById, updateMyProfile } from "../lib/api";
+import { setApiToken, clearApiToken, setDevUser, registerPushToken, upsertUserProfile, getUserById, getMyProfile, updateMyProfile } from "../lib/api";
 import { connectSocket, disconnectSocket } from "../lib/socket";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -65,6 +65,7 @@ export interface User {
     /** false until the user completes the profile-setup screen */
     profileComplete?: boolean;
     avatarUrl?: string;
+    role?: 'Student' | 'Moderator' | 'Admin';
 }
 
 // ── SignUpData — used by register-step3.tsx ───────────────────────
@@ -162,6 +163,7 @@ async function syncUserToApi(user: User) {
         interests: user.interests ?? [],
         profileComplete: user.profileComplete ?? false,
         avatarUrl: user.avatarUrl ?? "",
+        role: user.role,
     });
 }
 
@@ -188,6 +190,7 @@ function makeUser(
         weaknesses: [],
         interests: [],
         profileComplete: false,
+        role: 'Student',
         ...partial,
     };
 }
@@ -243,7 +246,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         // clear stale local session so the app doesn't appear signed in
                         // while all posting/listing APIs fail with 401.
                         try {
-                            await getUserById(parsed.id);
+                            const myProfile = await getMyProfile();
+                            const refreshed = {
+                                ...parsed,
+                                displayName: myProfile.displayName ?? parsed.displayName,
+                                name: myProfile.displayName ?? parsed.name,
+                                bio: myProfile.bio ?? parsed.bio,
+                                program: myProfile.program ?? parsed.program,
+                                major: myProfile.major ?? parsed.major,
+                                semester: myProfile.semester ?? parsed.semester,
+                                avatarUrl: myProfile.avatarUrl ?? parsed.avatarUrl,
+                                profileComplete: myProfile.profileComplete ?? parsed.profileComplete,
+                                rating: myProfile.rating ?? parsed.rating,
+                                reviewCount: myProfile.reviewCount ?? parsed.reviewCount,
+                                role: myProfile.role ?? parsed.role ?? 'Student',
+                            };
+                            setUser(refreshed);
+                            await storage.setItem(AUTH_KEY, JSON.stringify(refreshed));
                             // Session is valid — re-register push token in case it changed
                             // (can happen after app reinstall or OS update)
                             void registerDevicePushToken();
@@ -324,7 +343,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             // Restore existing profile from Azure API if it exists
             let existingProfile: any = null;
             try {
+                existingProfile = await getMyProfile();
+            } catch {
                 existingProfile = await getUserById(userId);
+            }
+            try {
+                if (!existingProfile) {
+                    existingProfile = await getUserById(userId);
+                }
             } catch (e) {
                 console.warn("Could not check existing profile:", e);
             }
@@ -345,6 +371,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     avatarUrl: existingProfile?.avatarUrl ?? "",
                     rating: existingProfile?.rating ?? 0,
                     reviewCount: existingProfile?.reviewCount ?? 0,
+                    role: existingProfile?.role ?? 'Student',
                 }
             );
             await persistUser(u, mockToken);
@@ -530,6 +557,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
                 const claims = decodeJwtPayload(idToken);
                 const email: string = claims.preferred_username ?? claims.email ?? "";
+                const tokenRole = claims.campusbarter_role as 'Student' | 'Moderator' | 'Admin' | undefined;
 
                 // CIAM controls who can authenticate — trust any user who passes OAuth
                 // No additional email domain check needed here
@@ -544,7 +572,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 // Check if user already has a complete profile in Azure API
                 let existingProfile: any = null;
                 try {
+                    existingProfile = await getMyProfile();
+                } catch {
                     existingProfile = await getUserById(userId);
+                }
+                try {
+                    if (!existingProfile) {
+                        existingProfile = await getUserById(userId);
+                    }
                 } catch (e) {
                     console.warn("Could not check existing profile:", e);
                 }
@@ -561,6 +596,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     avatarUrl: existingProfile?.avatarUrl ?? "",
                     rating: existingProfile?.rating ?? 0,
                     reviewCount: existingProfile?.reviewCount ?? 0,
+                    role: existingProfile?.role ?? tokenRole ?? 'Student',
                 });
 
                 await persistUser(u, idToken);

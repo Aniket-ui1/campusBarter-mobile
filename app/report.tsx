@@ -1,22 +1,51 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { submitReport } from '@/lib/api';
 
 const REASONS = ['Inappropriate behavior', 'Spam or scam', 'Harassment', 'Fake listing', 'Other'];
 
 export default function ReportScreen() {
     const router = useRouter();
+    const params = useLocalSearchParams<{ targetType?: string; targetId?: string }>();
     const [reason, setReason] = useState('');
     const [description, setDescription] = useState('');
+    const [submitting, setSubmitting] = useState(false);
 
-    const handleSubmit = () => {
+    const resolveTargetType = (): 'LISTING' | 'USER' | 'CHAT' | 'MESSAGE' | 'REVIEW' | 'OTHER' => {
+        const raw = String(params.targetType ?? 'OTHER').toUpperCase();
+        if (['LISTING', 'USER', 'CHAT', 'MESSAGE', 'REVIEW', 'OTHER'].includes(raw)) {
+            return raw as any;
+        }
+        return 'OTHER';
+    };
+
+    const handleSubmit = async () => {
         if (!reason) { Alert.alert('Please select a reason'); return; }
-        Alert.alert('Report Submitted', 'Thank you. We will review this report and take action.');
-        router.back();
+
+        const rawTargetId = String(params.targetId ?? '').trim();
+        const targetId = rawTargetId || `MANUAL-${Date.now()}`;
+
+        try {
+            setSubmitting(true);
+            await submitReport({
+                targetType: resolveTargetType(),
+                targetId,
+                reason,
+                details: description,
+            });
+
+            Alert.alert('Report Submitted', 'Thank you. We will review this report and take action.');
+            router.back();
+        } catch {
+            Alert.alert('Could not submit', 'Please try again in a moment.');
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     return (
@@ -41,7 +70,7 @@ export default function ReportScreen() {
                 <Input label="Additional details (optional)" placeholder="Describe the issue..."
                     value={description} onChangeText={setDescription} multiline numberOfLines={3}
                     style={{ minHeight: 80, textAlignVertical: 'top' }} />
-                <Button title="Submit Report" onPress={handleSubmit} variant="danger" fullWidth size="lg" />
+                <Button title={submitting ? 'Submitting...' : 'Submit Report'} onPress={handleSubmit} variant="danger" fullWidth size="lg" disabled={submitting} />
             </ScrollView>
         </View>
     );

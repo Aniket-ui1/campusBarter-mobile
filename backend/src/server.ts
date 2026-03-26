@@ -10,6 +10,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import http from 'http';
 import { auditLog, closePool, getAuditLogEntries, getOpenDisputes, resolveDispute } from './db';
+import { getAdminUsers } from './dbAdminReports';
 import { notifyDisputeResolved } from './notifyEvent';
 import { startExchangeExpiryJobs } from './jobs/exchangeExpiry';
 import { requireRole, verifyAzureAdToken } from './middleware/auth';
@@ -26,6 +27,7 @@ import { healthRouter } from './routes/health';
 import { insightsRouter } from './routes/insights';
 import { listingsRouter } from './routes/listings';
 import { notificationsRouter } from './routes/notifications';
+import { adminReportsRouter, reportsRouter } from './routes/reports';
 import { reviewsRouter } from './routes/reviews';
 import { tokensRouter } from './routes/tokens';
 import { uploadRouter } from './routes/upload';
@@ -125,6 +127,8 @@ app.use('/api/v1/upload', uploadRouter);
 app.use('/api/v1/tokens', tokensRouter);
 app.use('/api/v1/insights', insightsRouter);
 app.use('/api/v1/exchanges', exchangesRouter);
+app.use('/api/v1/reports', reportsRouter);
+app.use('/api/v1/admin/reports', adminReportsRouter);
 
 // Admin — disputes
 app.get('/api/v1/admin/disputes', verifyAzureAdToken, requireRole('Moderator'), async (_req: express.Request, res: express.Response) => {
@@ -166,6 +170,16 @@ app.get('/api/v1/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), asy
     }
 });
 
+app.get('/api/v1/admin/users', verifyAzureAdToken, requireRole('Moderator', 'Admin'), async (req: express.Request, res: express.Response) => {
+    try {
+        const limit = Math.max(1, Math.min(500, Number(req.query.limit) || 200));
+        const users = await getAdminUsers(limit);
+        res.json({ count: users.length, users });
+    } catch {
+        res.status(500).json({ error: 'Failed to fetch admin users list' });
+    }
+});
+
 // ── Backward-Compatible Deprecated /api/* Routes ─────────────
 // Old /api/* paths still work but return deprecation headers.
 // Will be removed in a future release.
@@ -187,6 +201,8 @@ app.use('/api/credits', creditsRouter);
 app.use('/api/upload', uploadRouter);
 app.use('/api/tokens', tokensRouter);
 app.use('/api/insights', insightsRouter);
+app.use('/api/reports', reportsRouter);
+app.use('/api/admin/reports', adminReportsRouter);
 
 app.get('/api/admin/audit-log', verifyAzureAdToken, requireRole('Admin'), async (req: express.Request, res: express.Response) => {
     try {

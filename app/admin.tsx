@@ -12,9 +12,20 @@ import {
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
-import { getApiToken, getApiBase, getAdminDisputes, resolveAdminDispute, ExchangeDispute } from '@/lib/api';
+import {
+    ApiReport,
+    getAdminAuditLog,
+    getAdminDisputes,
+    getAdminReports,
+    getAdminUsers,
+    getApiToken,
+    getApiBase,
+    resolveAdminDispute,
+    updateAdminReport,
+    ExchangeDispute,
+} from '@/lib/api';
 
-type Tab = 'listings' | 'users' | 'audit' | 'disputes';
+type Tab = 'reports' | 'disputes' | 'listings' | 'users' | 'audit';
 
 async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
     const token = getApiToken();
@@ -33,27 +44,31 @@ async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T
 export default function AdminDashboard() {
     const router = useRouter();
     const { user } = useAuth();
-    const [tab, setTab] = useState<Tab>('listings');
+    const [tab, setTab] = useState<Tab>('reports');
     const [listings, setListings]   = useState<any[]>([]);
     const [users, setUsers]         = useState<any[]>([]);
     const [auditLog, setAuditLog]   = useState<any[]>([]);
+    const [reports, setReports]     = useState<ApiReport[]>([]);
     const [disputes, setDisputes]   = useState<ExchangeDispute[]>([]);
     const [resolving, setResolving] = useState<string | null>(null);
+    const [reportUpdatingId, setReportUpdatingId] = useState<number | null>(null);
     const [loading, setLoading]     = useState(true);
 
     const loadData = async () => {
         setLoading(true);
         try {
-            const [l, u, a, d] = await Promise.allSettled([
+            const [l, u, a, d, r] = await Promise.allSettled([
                 adminFetch<any[]>('/api/listings'),
-                adminFetch<any[]>('/api/users'),
-                adminFetch<any[]>('/api/audit'),
+                getAdminUsers(),
+                getAdminAuditLog(),
                 getAdminDisputes(),
+                getAdminReports(),
             ]);
             if (l.status === 'fulfilled') setListings(l.value);
             if (u.status === 'fulfilled') setUsers(u.value);
             if (a.status === 'fulfilled') setAuditLog(a.value);
             if (d.status === 'fulfilled') setDisputes(d.value);
+            if (r.status === 'fulfilled') setReports(r.value);
         } catch (e) {
             console.warn('[Admin] Load error:', e);
         } finally {
@@ -118,7 +133,36 @@ export default function AdminDashboard() {
 
     const openDisputes = disputes.filter(d => d.status === 'OPEN');
 
+    const handleUpdateReport = async (report: ApiReport, nextStatus: ApiReport['status'], resolutionAction?: string) => {
+        setReportUpdatingId(report.reportId);
+        try {
+            await updateAdminReport(report.reportId, {
+                status: nextStatus,
+                assignToSelf: nextStatus === 'IN_REVIEW',
+                resolutionAction,
+                resolutionNote: nextStatus === 'IN_REVIEW' ? undefined : `Updated via admin dashboard (${nextStatus})`,
+            });
+
+            setReports(prev => prev.map(r => {
+                if (r.reportId !== report.reportId) return r;
+                return {
+                    ...r,
+                    status: nextStatus,
+                    resolutionAction: resolutionAction ?? r.resolutionAction,
+                    resolvedAt: nextStatus === 'RESOLVED' || nextStatus === 'DISMISSED' ? new Date().toISOString() : null,
+                };
+            }));
+        } catch {
+            Alert.alert('Error', 'Failed to update report');
+        } finally {
+            setReportUpdatingId(null);
+        }
+    };
+
+    const openReports = reports.filter(r => r.status === 'OPEN' || r.status === 'IN_REVIEW');
+
     const TABS: { key: Tab; label: string; icon: string; count: number }[] = [
+        { key: 'reports', label: 'Reports', icon: 'alert-circle-outline', count: openReports.length },
         { key: 'disputes', label: 'Disputes', icon: 'flag-outline', count: openDisputes.length },
         { key: 'listings', label: 'Listings', icon: 'list-outline', count: listings.length },
         { key: 'users', label: 'Users', icon: 'people-outline', count: users.length },
@@ -166,6 +210,56 @@ export default function AdminDashboard() {
                 <View style={styles.center}><ActivityIndicator size="large" color={AppColors.primary} /></View>
             ) : (
                 <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
+                    {/* Reports tab */}
+                    {tab === 'reports' && (
+                        openReports.length === 0 ? (
+                            <View style={styles.empty}>
+                                <Text style={styles.emptyEmoji}>🧹</Text>
+                                <Text style={styles.emptyText}>No open reports</Text>
+                            </View>
+                        ) : openReports.map((r, i) => (
+                            <Animated.View key={r.reportId} entering={FadeInDown.delay(i * 40).duration(300)}>
+                                <View style={styles.disputeCard}>
+                                    <View style={styles.disputeHeader}>
+                                        <View style={styles.disputeFlag}>
+                                            <Ionicons name="alert-circle" size={14} color="#EF4444" />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={styles.cardTitle} numberOfLines={1}>{r.reason}</Text>
+                                            <Text style={styles.cardMeta}>
+                                                {r.targetType} · {r.targetId} · {new Date(r.createdAt).toLocaleDateString()}
+                                            </Text>
+                                        </View>
+                                        <View style={[styles.rolePill, { backgroundColor: r.status === 'OPEN' ? '#F59E0B20' : '#3B82F620' }]}>
+                                            <Text style={[styles.roleText, { color: r.status === 'OPEN' ? '#B45309' : '#1D4ED8' }]}>{r.status}</Text>
+                                        </View>
+                                    </View>
+                                    {!!r.details && <Text style={styles.disputeReason}>{r.details}</Text>}
+                                    {reportUpdatingId === r.reportId ? (
+                                        <ActivityIndicator size="small" color={AppColors.primary} style={{ marginTop: 8 }} />
+                                    ) : (
+                                        <View style={styles.disputeActions}>
+                                            {r.status === 'OPEN' && (
+                                                <Pressable style={[styles.resolveBtn, { backgroundColor: '#2563EB' }]} onPress={() => void handleUpdateReport(r, 'IN_REVIEW')}>
+                                                    <Ionicons name="eye-outline" size={16} color="#FFF" />
+                                                    <Text style={styles.resolveBtnText}>Review</Text>
+                                                </Pressable>
+                                            )}
+                                            <Pressable style={[styles.resolveBtn, { backgroundColor: AppColors.success }]} onPress={() => void handleUpdateReport(r, 'RESOLVED', 'OTHER')}>
+                                                <Ionicons name="checkmark-circle-outline" size={16} color="#FFF" />
+                                                <Text style={styles.resolveBtnText}>Resolve</Text>
+                                            </Pressable>
+                                            <Pressable style={[styles.resolveBtn, { backgroundColor: AppColors.error }]} onPress={() => void handleUpdateReport(r, 'DISMISSED', 'DISMISSED')}>
+                                                <Ionicons name="close-circle-outline" size={16} color="#FFF" />
+                                                <Text style={styles.resolveBtnText}>Dismiss</Text>
+                                            </Pressable>
+                                        </View>
+                                    )}
+                                </View>
+                            </Animated.View>
+                        ))
+                    )}
 
                     {/* Disputes tab */}
                     {tab === 'disputes' && (
@@ -270,7 +364,7 @@ export default function AdminDashboard() {
                                     <View style={styles.auditDot} />
                                     <View style={{ flex: 1 }}>
                                         <Text style={styles.auditAction}>{a.action}</Text>
-                                        <Text style={styles.auditMeta}>{a.actorId} · {new Date(a.createdAt).toLocaleString()}</Text>
+                                        <Text style={styles.auditMeta}>{a.userId ?? 'system'} · {new Date(a.timestamp).toLocaleString()}</Text>
                                     </View>
                                 </View>
                             </Animated.View>
