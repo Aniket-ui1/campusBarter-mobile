@@ -53,10 +53,12 @@ export default function TabLayout() {
           ),
         }} />
         <Tabs.Screen name="post" options={{
-          title: 'Post',
+          title: '',
           tabBarIcon: ({ color, focused }) => (
-            <View style={[styles.postWrap, focused && styles.postWrapActive]}>
-              <Ionicons name="add" size={26} color={focused ? '#FFFFFF' : color} />
+            <View style={styles.postContainer}>
+              <View style={[styles.postButton, focused && styles.postButtonActive]}>
+                <Ionicons name="add" size={24} color={focused ? '#FFFFFF' : AppColors.textMuted} />
+              </View>
             </View>
           ),
         }} />
@@ -90,14 +92,21 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 4,
   },
-  postWrap: {
-    width: 44, height: 44, borderRadius: 14,
-    backgroundColor: AppColors.surface,
-    borderWidth: 1, borderColor: AppColors.border,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 4,
+  postContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  postWrapActive: {
+  postButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  postButtonActive: {
     backgroundColor: AppColors.primary,
     borderColor: AppColors.primary,
   },
