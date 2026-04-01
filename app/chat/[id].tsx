@@ -3,6 +3,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { AppColors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { type FSMessage, useData } from '@/context/DataContext';
+import { emitConversationMessage, emitMarkRead, onMessageSendError, onMessageSent } from '@/lib/socket';
 import { chatApi, type ChatMessage } from '@/services/chatApi';
 import {
     createTypingEmitter,
@@ -15,7 +16,6 @@ import {
     onReceiveMessage,
     onUserTyping,
 } from '@/services/socketService';
-import { emitConversationMessage, emitMarkRead, onMessageSent, onMessageSendError } from '@/lib/socket';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -758,6 +758,10 @@ export default function ChatScreen() {
                     }
                 },
             }] : []),
+            {
+                text: 'Report',
+                onPress: () => {},
+            },
             {
                 text: 'Cancel',
                 style: 'cancel' as const,
