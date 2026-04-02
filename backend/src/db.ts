@@ -373,6 +373,7 @@ export async function getMessagesPage(chatId: string, page = 1, limit = 30): Pro
 let hasInitiatorColumn: boolean | null = null;
 let chatUserStateEnsured = false;
 let listingReportsEnsured = false;
+let fractionalCreditsSchemaEnsured = false;
 
 function buildConversationId(userA: string, userB: string): string {
     const [leftUserId, rightUserId] = [userA, userB].sort((left, right) => left.localeCompare(right));
@@ -446,6 +447,75 @@ async function chatsTableHasInitiatorId(): Promise<boolean> {
 
     hasInitiatorColumn = result.recordset.length > 0;
     return hasInitiatorColumn;
+}
+
+async function ensureFractionalCreditsSchema(): Promise<void> {
+    if (fractionalCreditsSchemaEnsured) return;
+
+    const db = await getPool();
+    try {
+        const cols = await db.request().query(`
+            SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, NUMERIC_SCALE
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE (TABLE_NAME = 'Users' AND COLUMN_NAME IN ('credits', 'reservedCredits'))
+               OR (TABLE_NAME = 'SkillExchanges' AND COLUMN_NAME = 'credits')
+               OR (TABLE_NAME = 'TimeCredits' AND COLUMN_NAME = 'amount')
+        `);
+
+        const needsDecimal = (tableName: string, columnName: string) => {
+            const row = cols.recordset.find((r: any) => r.TABLE_NAME === tableName && r.COLUMN_NAME === columnName);
+            if (!row) return false;
+            const dataType = String(row.DATA_TYPE ?? '').toLowerCase();
+            const scale = Number(row.NUMERIC_SCALE ?? 0);
+            return !(dataType === 'decimal' && scale >= 2);
+        };
+
+        const needUsersCredits = needsDecimal('Users', 'credits');
+        const needUsersReserved = needsDecimal('Users', 'reservedCredits');
+        const needExchangeCredits = needsDecimal('SkillExchanges', 'credits');
+        const needTimeAmount = needsDecimal('TimeCredits', 'amount');
+
+        if (!needUsersCredits && !needUsersReserved && !needExchangeCredits && !needTimeAmount) {
+            fractionalCreditsSchemaEnsured = true;
+            console.log('[DB] ✅ Fractional credits schema already migrated');
+            return;
+        }
+
+        console.log('[DB] 🔄 Attempting fractional credits schema migration:', {
+            needUsersCredits, needUsersReserved, needExchangeCredits, needTimeAmount
+        });
+
+        const tx = new sql.Transaction(db);
+        await tx.begin();
+        try {
+            if (needUsersCredits) {
+                await new sql.Request(tx).query(`ALTER TABLE dbo.Users ALTER COLUMN credits DECIMAL(10,2) NOT NULL`);
+                console.log('[DB] ✅ Migrated Users.credits to DECIMAL(10,2)');
+            }
+            if (needUsersReserved) {
+                await new sql.Request(tx).query(`ALTER TABLE dbo.Users ALTER COLUMN reservedCredits DECIMAL(10,2) NULL`);
+                console.log('[DB] ✅ Migrated Users.reservedCredits to DECIMAL(10,2)');
+            }
+            if (needExchangeCredits) {
+                await new sql.Request(tx).query(`ALTER TABLE dbo.SkillExchanges ALTER COLUMN credits DECIMAL(10,2) NOT NULL`);
+                console.log('[DB] ✅ Migrated SkillExchanges.credits to DECIMAL(10,2)');
+            }
+            if (needTimeAmount) {
+                await new sql.Request(tx).query(`ALTER TABLE dbo.TimeCredits ALTER COLUMN amount DECIMAL(10,2) NOT NULL`);
+                console.log('[DB] ✅ Migrated TimeCredits.amount to DECIMAL(10,2)');
+            }
+            await tx.commit();
+            fractionalCreditsSchemaEnsured = true;
+            console.log('[DB] ✅ Fractional credits schema migration completed successfully');
+        } catch (err: any) {
+            await tx.rollback();
+            console.error('[DB] ❌ Fractional credits migration failed:', err?.message);
+            throw new Error(`Fractional credits migration failed: ${err?.message ?? 'unknown error'}`);
+        }
+    } catch (err: any) {
+        console.error('[DB] ❌ Schema check failed:', err?.message);
+        throw err;
+    }
 }
 
 export async function canAccessChat(chatId: string, userId: string): Promise<boolean> {
@@ -1283,7 +1353,15 @@ export async function markNotificationRead(notificationId: string, userId: strin
     await db.request()
         .input('id', sql.NVarChar(128), notificationId)
         .input('userId', sql.NVarChar(128), userId)
-        .query(`UPDATE Notifications SET isRead = 1 WHERE id = @id AND userId = @userId`);
+        .query(`
+            IF EXISTS (
+                SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = 'Notifications' AND COLUMN_NAME = 'notificationId'
+            )
+                UPDATE Notifications SET isRead = 1 WHERE notificationId = @id AND userId = @userId;
+            ELSE
+                UPDATE Notifications SET isRead = 1 WHERE id = @id AND userId = @userId;
+        `);
 }
 
 export async function markAllNotificationsRead(userId: string): Promise<void> {
@@ -1298,7 +1376,15 @@ export async function deleteNotification(notificationId: string, userId: string)
     await db.request()
         .input('id', sql.NVarChar(128), notificationId)
         .input('userId', sql.NVarChar(128), userId)
-        .query(`DELETE FROM Notifications WHERE notificationId = @id AND userId = @userId`);
+        .query(`
+            IF EXISTS (
+                SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = 'Notifications' AND COLUMN_NAME = 'notificationId'
+            )
+                DELETE FROM Notifications WHERE notificationId = @id AND userId = @userId;
+            ELSE
+                DELETE FROM Notifications WHERE id = @id AND userId = @userId;
+        `);
 }
 
 export async function createNotification(
@@ -1818,6 +1904,7 @@ export async function createSkillExchange(
     providerId: string,
     credits: number
 ): Promise<string> {
+    await ensureFractionalCreditsSchema();
     if (requesterId === providerId) throw new Error('Cannot exchange with yourself');
     const db = await getPool();
     const id = crypto.randomUUID();
@@ -1860,6 +1947,7 @@ export async function updateRequestedSkillExchangeCredits(
     requesterId: string,
     newCredits: number
 ): Promise<number> {
+    await ensureFractionalCreditsSchema();
     const db = await getPool();
     const txn = new sql.Transaction(db);
     await txn.begin();

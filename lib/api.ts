@@ -434,6 +434,13 @@ export async function getCreditsBalance(): Promise<{ balance: number; reserved: 
     return apiFetch<{ balance: number; reserved: number }>('/api/v1/credits/balance');
 }
 
+export async function grantTestCredits(amount: number): Promise<{ message: string }> {
+    return apiFetch<{ message: string }>('/api/v1/credits/grant-test', {
+        method: 'POST',
+        body: JSON.stringify({ amount }),
+    });
+}
+
 // ── Skill Exchanges ───────────────────────────────────────────
 
 export interface SkillExchange {
@@ -509,7 +516,7 @@ export interface AdminReportedListing {
     credits: number;
 }
 
-export async function createExchangeRequest(listingId: string, credits: number): Promise<{ exchangeId: string; credits?: number }> {
+export async function createExchangeRequest(listingId: string, credits: number): Promise<{ exchangeId: string; credits?: number; debug?: any }> {
     if (!Number.isFinite(credits)) {
         throw new Error('Invalid credits value');
     }

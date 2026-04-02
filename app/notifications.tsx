@@ -31,7 +31,11 @@ export default function NotificationsScreen() {
         const isUnread = !notif.isRead && !notif.read;
 
         if (isUnread && notifId) {
-            await markRead(notifId);
+            try {
+                await markRead(notifId);
+            } catch {
+                // Do not block navigation when mark-read fails.
+            }
         }
 
         // Navigate using actionUrl if available, otherwise fallback to type-based navigation

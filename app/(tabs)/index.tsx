@@ -22,6 +22,7 @@ export default function HomeScreen() {
   const [matches, setMatches] = useState<MatchedUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [credits, setCredits] = useState<number | null>(null);
+  const [reserved, setReserved] = useState(0);
 
   const activeListings = listings.filter((l) => l.status === 'OPEN');
   const myListingsCount = listings.filter((l) => l.userId === user?.id).length;
@@ -44,13 +45,19 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!user?.id) return;
-    getCreditsBalance().then(({ balance }) => setCredits(balance)).catch(() => {});
+    getCreditsBalance().then(({ balance, reserved }) => {
+      setCredits(Math.max(0, balance - (reserved ?? 0)));
+      setReserved(reserved ?? 0);
+    }).catch(() => {});
   }, [user?.id]);
 
   useFocusEffect(
     React.useCallback(() => {
       if (!user?.id) return;
-      void getCreditsBalance().then(({ balance }) => setCredits(balance)).catch(() => {});
+      void getCreditsBalance().then(({ balance, reserved }) => {
+        setCredits(Math.max(0, balance - (reserved ?? 0)));
+        setReserved(reserved ?? 0);
+      }).catch(() => {});
       void refreshNotifications();
     }, [user?.id, refreshNotifications])
   );
@@ -62,7 +69,10 @@ export default function HomeScreen() {
       tasks.push(
         getRecommendedUsers(user.id, user.skills ?? [], user.weaknesses ?? [], user.interests ?? [])
           .then(setMatches).catch(() => {}),
-        getCreditsBalance().then(({ balance }) => setCredits(balance)).catch(() => {}),
+        getCreditsBalance().then(({ balance, reserved }) => {
+          setCredits(Math.max(0, balance - (reserved ?? 0)));
+          setReserved(reserved ?? 0);
+        }).catch(() => {}),
         refreshNotifications(),
       );
     }

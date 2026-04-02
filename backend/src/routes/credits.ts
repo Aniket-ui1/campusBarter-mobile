@@ -1,9 +1,10 @@
 // backend/src/routes/credits.ts
 
-import { Router, Request, Response } from 'express';
+import { Request, Response, Router } from 'express';
 import { body, query } from 'express-validator';
+import sql from 'mssql';
+import { getCreditsBalance, getCreditsHistory, getPool, transferCredits } from '../db';
 import { validate } from '../middleware/validate';
-import { getCreditsBalance, getCreditsHistory, transferCredits } from '../db';
 
 export const creditsRouter = Router();
 
@@ -56,3 +57,36 @@ creditsRouter.post('/transfer', validate(transferRules), async (req: Request, re
         res.status(status).json({ error: message });
     }
 });
+
+// POST /api/v1/credits/grant-test — Dev-only endpoint to grant test credits
+creditsRouter.post('/grant-test',
+    validate([body('amount').isInt({ min: 1 }).withMessage('Amount must be a positive integer')]),
+    async (req: Request, res: Response) => {
+        // Only allow in dev/local environments
+        const isDev = process.env.NODE_ENV !== 'production';
+        if (!isDev && !req.headers['x-dev-grant-key']) {
+            res.status(403).json({ error: 'Test credits can only be granted in development' });
+            return;
+        }
+
+        try {
+            const { amount } = req.body;
+            const userId = req.user!.id;
+            
+            const db = await getPool();
+            
+            await db.request()
+                .input('userId', sql.NVarChar(128), userId)
+                .input('amount', sql.Decimal(10, 2), Number(amount))
+                .query(`
+                    UPDATE Users
+                    SET credits = credits + @amount, updatedAt = GETUTCDATE()
+                    WHERE id = @userId
+                `);
+            
+            res.json({ message: `${amount} test credits granted to your account` });
+        } catch (err) {
+            res.status(500).json({ error: 'Failed to grant test credits' });
+        }
+    }
+);

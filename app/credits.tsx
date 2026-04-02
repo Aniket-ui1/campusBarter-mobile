@@ -1,12 +1,12 @@
 // app/credits.tsx — Time Credits Screen (Task 7)
 
+import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
+import { getCreditsBalance } from '@/lib/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
-import { getCreditsBalance } from '@/lib/api';
 
 interface CreditTransaction {
     id: string;
@@ -65,7 +65,7 @@ export default function CreditsScreen() {
                     <Animated.View entering={FadeInDown.delay(80).duration(400)} style={styles.balanceCard}>
                         <Text style={styles.balanceLabel}>Available Balance</Text>
                         <View style={styles.balanceRow}>
-                            <Text style={styles.balanceNum}>{balance ?? 0}</Text>
+                            <Text style={styles.balanceNum}>{Math.max(0, (balance ?? 0) - (reserved ?? 0))}</Text>
                             <Text style={styles.balanceCoin}>⏱️</Text>
                         </View>
                         <Text style={styles.balanceHint}>Credits are earned by helping others</Text>

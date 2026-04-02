@@ -154,6 +154,8 @@ export default function SkillDetailScreen() {
                 ? requestedCreditsRef.current
                 : requestedCredits;
             
+            console.log(`[Request] Selected credits from slider: ${selectedCredits} (${formatDuration(selectedCredits)})`);
+            
             // Validate selection is in valid range
             if (!Number.isFinite(selectedCredits) || selectedCredits < 0.5) {
                 Alert.alert('Invalid Selection', 'Please select a valid request duration (minimum 30 minutes).');
@@ -171,7 +173,8 @@ export default function SkillDetailScreen() {
             }
 
             // Create exchange — notifies the provider server-side
-            const { exchangeId, credits: appliedCredits } = await createExchangeRequest(listing.id, selectedCredits);
+            const { exchangeId, credits: appliedCredits, debug } = await createExchangeRequest(listing.id, selectedCredits);
+            console.log(`[Request] API response: sent=${selectedCredits}, applied=${appliedCredits}, debug=${JSON.stringify(debug)}`);
 
             // Reconcile requested credits explicitly to avoid environments that default to listing/base credits.
             let finalCredits = typeof appliedCredits === 'number' ? appliedCredits : selectedCredits;
@@ -205,6 +208,7 @@ export default function SkillDetailScreen() {
             }
 
             const diagnostics = `Selected: ${formatCredits(selectedCredits)} | Stored: ${formatCredits(finalCredits)}`;
+            console.log(`[Request] Final diagnostics: ${diagnostics}`);
 
             // Also add a requester-side bell notification for immediate in-app feedback.
             pushLocalNotification({

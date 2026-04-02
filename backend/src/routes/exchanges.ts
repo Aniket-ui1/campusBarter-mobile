@@ -54,10 +54,28 @@ exchangesRouter.post('/',
 
             const exchangeId = await createSkillExchange(listingId, requesterId, listing.userId as string, requestedCredits);
             notifyExchangeRequested(listing.userId as string, req.user!.displayName ?? 'Someone', listing.title as string, exchangeId);
-            res.status(201).json({ exchangeId, credits: requestedCredits });
+            
+            // Debug: verify what was stored
+            let debugInfo: any = {};
+            try {
+                const checkExchange = await getSkillExchangeById(exchangeId, requesterId);
+                if (checkExchange) {
+                    debugInfo = {
+                        sentCredits: requestedCredits,
+                        storedCredits: checkExchange.credits,
+                        match: Math.abs(Number(checkExchange.credits) - requestedCredits) < 0.001,
+                    };
+                }
+            } catch { }
+            
+            res.status(201).json({ exchangeId, credits: requestedCredits, debug: debugInfo });
         } catch (err: any) {
             const msg = err?.message ?? '';
             if (msg === 'Insufficient credits') { res.status(402).json({ error: 'Insufficient credits' }); return; }
+                if (msg.includes('Fractional credits migration required')) {
+                    res.status(500).json({ error: msg });
+                    return;
+                }
             if (msg.includes('duplicate') || msg.includes('UQ_') || msg.includes('UX_')) {
                 res.status(409).json({ error: 'You already have an active request for this listing' }); return;
             }
@@ -111,6 +129,10 @@ exchangesRouter.post('/:id/credits',
             const msg = err?.message ?? 'Could not update exchange credits';
             if (msg === 'Insufficient credits') { res.status(402).json({ error: msg }); return; }
             if (msg.includes('not found') || msg.includes('REQUESTED')) { res.status(400).json({ error: msg }); return; }
+                if (msg.includes('Fractional credits migration required')) { 
+                    res.status(500).json({ error: msg }); 
+                    return; 
+                }
             res.status(500).json({ error: msg });
         }
     }

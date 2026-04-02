@@ -535,7 +535,11 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     const markRead = async (notifId: string) => {
-        await apiMarkRead(notifId);
+        try {
+            await apiMarkRead(notifId);
+        } catch {
+            // Keep optimistic local update so notification taps still work.
+        }
         setNotifications(ns => ns.map(n =>
             (n.notificationId === notifId || n.id === notifId) ? { ...n, read: true, isRead: true } : n
         ));
