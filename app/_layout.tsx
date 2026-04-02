@@ -35,6 +35,7 @@ export default function RootLayout() {
   }, []);
 
   return (
+<<<<<<< Updated upstream
     <ErrorBoundary>
       <ThemeProvider value={CampusBarterTheme}>
         <AuthProvider>
@@ -74,5 +75,22 @@ export default function RootLayout() {
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>
+=======
+    <AuthProvider>
+      <DataProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="reviews/[exchangeId]" options={{ title: 'Leave a Review' }} />
+            <Stack.Screen
+              name="modal"
+              options={{ presentation: 'modal', title: 'Modal' }}
+            />
+          </Stack>
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </DataProvider>
+    </AuthProvider>
+>>>>>>> Stashed changes
   );
 }

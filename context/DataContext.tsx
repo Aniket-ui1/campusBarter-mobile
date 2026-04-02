@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 // context/DataContext.tsx
 // ─────────────────────────────────────────────────────────────────
 // All app data (listings, chats, notifications) now fetched from
@@ -72,10 +73,104 @@ function dedupeChatsByParticipant(chats: Chat[]): Chat[] {
         const rightTime = new Date(right.lastMessageAt || 0).getTime();
         return rightTime - leftTime;
     });
+=======
+import React, { createContext, useContext, useState } from "react";
+
+export interface Listing {
+    id: string;
+    type: "OFFER" | "REQUEST";
+    title: string;
+    description: string;
+    credits: number;
+    userId: string;
+    userName: string;
+    createdAt: string;
+    status: "OPEN" | "CLOSED";
+}
+
+interface Message {
+    id: string;
+    senderId: string;
+    text: string;
+    timestamp: string;
+}
+
+export interface Chat {
+    id: string;
+    listingId: string;
+    listingTitle: string;
+    participants: string[];
+    participantNames: Record<string, string>;
+    messages: Message[];
+    exchangeConfirmedAt?: string;
+    exchangeConfirmedBy?: string;
+}
+
+export interface Review {
+    id: string;
+    exchangeId: string;
+    reviewerId: string;
+    reviewerName: string;
+    revieweeId: string;
+    revieweeName: string;
+    rating: number;
+    comment: string;
+    createdAt: string;
+}
+
+export interface PendingReview {
+    exchangeId: string;
+    listingId: string;
+    listingTitle: string;
+    revieweeId: string;
+    revieweeName: string;
+}
+
+export interface ListingReport {
+    id: string;
+    listingId: string;
+    listingTitle: string;
+    listingOwnerId: string;
+    listingOwnerName: string;
+    reportedById: string;
+    reportedByName: string;
+    reason: string;
+    createdAt: string;
+    status: "OPEN" | "RESOLVED";
+    resolvedAt?: string;
+    resolvedById?: string;
+}
+
+export interface AuditLogEntry {
+    id: string;
+    action: "REPORT_LISTING" | "DELETE_LISTING";
+    actorId: string;
+    actorName: string;
+    targetType: "LISTING";
+    targetId: string;
+    details: string;
+    createdAt: string;
+}
+
+interface ChatParticipant {
+    id: string;
+    name: string;
+}
+
+interface ReviewSubmission {
+    exchangeId: string;
+    reviewerId: string;
+    reviewerName: string;
+    revieweeId: string;
+    revieweeName: string;
+    rating: number;
+    comment: string;
+>>>>>>> Stashed changes
 }
 
 interface DataContextType {
     listings: Listing[];
+<<<<<<< Updated upstream
     addListing: (listing: Omit<Listing, "id" | "createdAt" | "status"> & { category?: string }) => Promise<void>;
     getListingById: (id: string) => Listing | undefined;
     closeListing: (id: string) => Promise<void>;
@@ -106,11 +201,34 @@ interface DataContextType {
     deleteNotification: (notifId: string) => Promise<void>;
     markAllRead: () => Promise<void>;
     refreshNotifications: () => Promise<void>;
+=======
+    chats: Chat[];
+    reviews: Review[];
+    reports: ListingReport[];
+    auditLog: AuditLogEntry[];
+    addListing: (listing: Omit<Listing, "id" | "createdAt" | "status" | "userName">) => void;
+    getListingById: (id: string) => Listing | undefined;
+    startChat: (listingId: string, listingTitle: string, participants: ChatParticipant[]) => string;
+    sendMessage: (chatId: string, text: string, senderId: string) => void;
+    getChatById: (chatId: string) => Chat | undefined;
+    confirmExchange: (chatId: string, confirmedById: string) => void;
+    getPendingReviewsForUser: (userId: string) => PendingReview[];
+    getPendingReviewForExchange: (exchangeId: string, userId: string) => PendingReview | undefined;
+    submitReview: (review: ReviewSubmission) => void;
+    getReviewsForUser: (userId: string) => Review[];
+    getAverageRatingForUser: (userId: string) => number;
+    reportListing: (listingId: string, reportedById: string, reportedByName: string, reason: string) => void;
+    deleteListingAsAdmin: (listingId: string, adminId: string, adminName: string) => void;
+>>>>>>> Stashed changes
 }
 
 // ── Context ───────────────────────────────────────────────────────
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
+
+const createId = () => Math.random().toString(36).slice(2, 10);
+
+const seededAt = new Date().toISOString();
 
 export const useData = () => {
     const ctx = useContext(DataContext);
@@ -118,12 +236,68 @@ export const useData = () => {
     return ctx;
 };
 
+<<<<<<< Updated upstream
 // ── Provider ──────────────────────────────────────────────────────
+=======
+const MOCK_LISTINGS: Listing[] = [
+    {
+        id: "1",
+        type: "OFFER",
+        title: "Math Tutoring (Calculus I)",
+        description: "I can help with derivatives and integrals. Available evenings.",
+        credits: 1,
+        userId: "user2",
+        userName: "MathWhiz",
+        createdAt: new Date().toISOString(),
+        status: "OPEN",
+    },
+    {
+        id: "2",
+        type: "REQUEST",
+        title: "Moving Help",
+        description: "Need help moving a couch this Saturday.",
+        credits: 2,
+        userId: "user3",
+        userName: "MoverNeeded",
+        createdAt: new Date().toISOString(),
+        status: "OPEN",
+    },
+];
+>>>>>>> Stashed changes
+
+const MOCK_REPORTS: ListingReport[] = [
+    {
+        id: createId(),
+        listingId: "2",
+        listingTitle: "Moving Help",
+        listingOwnerId: "user3",
+        listingOwnerName: "MoverNeeded",
+        reportedById: "user2",
+        reportedByName: "MathWhiz",
+        reason: "Possible duplicate listing spam.",
+        createdAt: seededAt,
+        status: "OPEN",
+    },
+];
+
+const MOCK_AUDIT_LOG: AuditLogEntry[] = [
+    {
+        id: createId(),
+        action: "REPORT_LISTING",
+        actorId: "user2",
+        actorName: "MathWhiz",
+        targetType: "LISTING",
+        targetId: "2",
+        details: "Reported listing \"Moving Help\": Possible duplicate listing spam.",
+        createdAt: seededAt,
+    },
+];
 
 export const DataProvider = ({ children }: { children: React.ReactNode }) => {
     const { user, isLoading: authLoading } = useAuth();
     const [listings, setListings] = useState<Listing[]>([]);
     const [chats, setChats] = useState<Chat[]>([]);
+<<<<<<< Updated upstream
     const [notifications, setNotifications] = useState<AppNotification[]>([]);
     const locallyDeletedNotificationIds = useRef<Set<string>>(new Set());
     const injectedNotifications = useRef<Record<string, AppNotification>>({});
@@ -558,13 +732,14 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
 
     const markAllRead = async () => {
         await apiMarkAllRead();
-        setNotifications(ns => ns.map(n => ({ ...n, read: true, isRead: true })));
+        setNotifications(ns => ns.map(n => ({ ...n, read: true })));
     };
 
     return (
         <DataContext.Provider
             value={{
                 listings,
+<<<<<<< Updated upstream
                 addListing,
                 getListingById,
                 closeListing: handleCloseListing,
@@ -589,6 +764,26 @@ export const DataProvider = ({ children }: { children: React.ReactNode }) => {
                 refreshNotifications,
             }}
         >
+=======
+                chats,
+                reviews,
+                reports,
+                auditLog,
+                addListing,
+                getListingById,
+                startChat,
+                sendMessage,
+                getChatById,
+                confirmExchange,
+                getPendingReviewsForUser,
+                getPendingReviewForExchange,
+                submitReview,
+                getReviewsForUser,
+                getAverageRatingForUser,
+                reportListing,
+                deleteListingAsAdmin,
+            }}>
+>>>>>>> Stashed changes
             {children}
         </DataContext.Provider>
     );
