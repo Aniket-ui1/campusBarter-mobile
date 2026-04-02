@@ -11,6 +11,7 @@ export default function TabLayout() {
   const { user } = useAuth();
   const { unreadChatsCount } = useData();
   if (!user) return <Redirect href="/(auth)/welcome" />;
+  if (user.role === 'Admin') return <Redirect href="/admin" />;
 
   return (
     <>

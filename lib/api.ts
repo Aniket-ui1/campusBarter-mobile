@@ -7,13 +7,40 @@
 // Token is injected by AuthContext after login via setApiToken().
 // ─────────────────────────────────────────────────────────────
 const AZURE_URL = 'https://campusbarter-api-f3b4ascaemgthae3.canadacentral-01.azurewebsites.net';
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? AZURE_URL;
+const rawApiBase = process.env.EXPO_PUBLIC_API_URL;
+
+function resolveApiBase(): string {
+    if (!rawApiBase || rawApiBase.trim().length === 0) return AZURE_URL;
+
+    const candidate = rawApiBase.trim().replace(/\/$/, '');
+    const isHttp = /^https?:\/\//i.test(candidate);
+    if (!isHttp) return AZURE_URL;
+
+    // Guard against accidentally pointing API to Metro/web dev server origin.
+    // That causes HTML "Cannot POST /api/..." responses.
+    const isFrontendDevOrigin = /:\/\/(localhost|127\.0\.0\.1):8081$/i.test(candidate);
+    if (isFrontendDevOrigin) return AZURE_URL;
+
+    const isReactNative = typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
+    const isLocalhostApi = /:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(candidate);
+
+    // Physical devices cannot reach your machine's localhost.
+    // Use Azure automatically on native to avoid dead localhost API targets.
+    if (isReactNative && isLocalhostApi) return AZURE_URL;
+
+    return candidate;
+}
+
+const API_BASE = resolveApiBase();
+const REPORT_DEBUG_VERSION = 'RPT-2026-04-01-V1';
 
 // ── Token store ───────────────────────────────────────────────
 // AuthContext calls setApiToken(idToken) after login and
 // clearApiToken() after logout.
 
 let _token: string | null = null;
+const TOKEN_KEY = 'campusbarter_token';
+const AUTH_KEY = 'campusbarter_user';
 
 export function setApiToken(token: string) { _token = token; }
 export function clearApiToken() { _token = null; }
@@ -30,9 +57,9 @@ class ApiError extends Error {
 }
 
 // ── Type for dev user info stored alongside mock token ────────
-let _devUser: { id: string; email: string; name: string } | null = null;
+let _devUser: { id: string; email: string; name: string; role?: string } | null = null;
 
-export function setDevUser(info: { id: string; email: string; name: string }) {
+export function setDevUser(info: { id: string; email: string; name: string; role?: string }) {
     _devUser = info;
 }
 
@@ -47,6 +74,73 @@ function resolveAuthToken(): string | null {
     return null;
 }
 
+async function resolveAuthTokenAsync(): Promise<string | null> {
+    const inMemory = resolveAuthToken();
+    if (inMemory) return inMemory;
+
+    // Native fallback: recover token from SecureStore when in-memory state is lost.
+    try {
+        if (typeof navigator !== 'undefined' && navigator.product === 'ReactNative') {
+            const SecureStore = await import('expo-secure-store');
+            const restored = await SecureStore.getItemAsync(TOKEN_KEY);
+            if (restored) {
+                _token = restored;
+                return restored;
+            }
+        }
+    } catch {
+        // ignore secure-store lookup failures
+    }
+
+    return null;
+}
+
+async function ensureDevUserFromStorage(): Promise<void> {
+    if (_devUser) return;
+
+    // Web fallback
+    if (typeof window !== 'undefined' && window.localStorage) {
+        const storedUser = window.localStorage.getItem(AUTH_KEY);
+        if (storedUser) {
+            try {
+                const parsed = JSON.parse(storedUser) as { id?: string; email?: string; displayName?: string; name?: string; role?: string };
+                if (parsed?.id && parsed?.email) {
+                    _devUser = {
+                        id: parsed.id,
+                        email: parsed.email,
+                        name: parsed.displayName || parsed.name || 'SAIT Student',
+                        role: parsed.role,
+                    };
+                }
+            } catch {
+                // ignore malformed local storage entry
+            }
+        }
+        return;
+    }
+
+    // Native fallback
+    try {
+        if (typeof navigator !== 'undefined' && navigator.product === 'ReactNative') {
+            const SecureStore = await import('expo-secure-store');
+            const storedUser = await SecureStore.getItemAsync(AUTH_KEY);
+            if (!storedUser) return;
+
+            const parsed = JSON.parse(storedUser) as { id?: string; email?: string; displayName?: string; name?: string; role?: string };
+            if (parsed?.id && parsed?.email) {
+                _devUser = {
+                    id: parsed.id,
+                    email: parsed.email,
+                    name: parsed.displayName || parsed.name || 'SAIT Student',
+                    role: parsed.role,
+                };
+            }
+        }
+    } catch {
+        // ignore secure-store lookup failures
+    }
+}
+
 async function apiFetch<T>(
     path: string,
     options: RequestInit = {}
@@ -56,25 +150,44 @@ async function apiFetch<T>(
         ...(options.headers as Record<string, string>),
     };
 
-    const token = resolveAuthToken();
+    const token = await resolveAuthTokenAsync();
 
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
 
         // When using a mock token (local dev), also send x-dev-* headers
         // so the backend dev bypass can identify the user without JWT.
+        if (token.startsWith('mock-')) {
+            await ensureDevUserFromStorage();
+        }
+
         if (token.startsWith('mock-') && _devUser) {
             headers['x-dev-user-id'] = _devUser.id;
             headers['x-dev-email'] = _devUser.email;
             headers['x-dev-name'] = _devUser.name;
+            if (_devUser.role) {
+                headers['x-dev-role'] = _devUser.role;
+            }
         }
     }
 
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
     if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: 'Unknown error' }));
-        throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`);
+        let errorMessage = `HTTP ${res.status}`;
+        try {
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                const body = await res.json() as { error?: string; message?: string };
+                errorMessage = body?.error || body?.message || errorMessage;
+            } else {
+                const textBody = (await res.text()).trim();
+                if (textBody) errorMessage = textBody.slice(0, 300);
+            }
+        } catch {
+            if (res.status === 401) errorMessage = 'Authentication required. Please sign in again.';
+        }
+        throw new ApiError(res.status, errorMessage);
     }
 
     // 204 No Content — return empty object
@@ -441,21 +554,57 @@ export async function submitReport(data: {
     reason: string;
     details?: string;
 }): Promise<number> {
-    try {
-        const res = await apiFetch<{ reportId: number }>('/api/v1/reports', {
-            method: 'POST',
-            body: JSON.stringify(data),
-        });
-        return res.reportId;
-    } catch (error) {
-        const status = (error as { status?: number }).status;
-        if (status !== 404) throw error;
-        const res = await apiFetch<{ reportId: number }>('/api/reports', {
-            method: 'POST',
-            body: JSON.stringify(data),
-        });
-        return res.reportId;
+    const reportUrl = `${AZURE_URL}/api/v1/reports`;
+    console.log(`[${REPORT_DEBUG_VERSION}] submitReport called`, {
+        reportUrl,
+        targetType: data.targetType,
+        targetId: data.targetId,
+    });
+
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+    };
+
+    const token = await resolveAuthTokenAsync();
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+
+        if (token.startsWith('mock-')) {
+            await ensureDevUserFromStorage();
+        }
+
+        if (token.startsWith('mock-') && _devUser) {
+            headers['x-dev-user-id'] = _devUser.id;
+            headers['x-dev-email'] = _devUser.email;
+            headers['x-dev-name'] = _devUser.name;
+        }
     }
+
+    const res = await fetch(reportUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(data),
+    });
+
+    if (!res.ok) {
+        let errorMessage = `HTTP ${res.status}`;
+        try {
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                const body = await res.json() as { error?: string; message?: string };
+                errorMessage = body?.error || body?.message || errorMessage;
+            } else {
+                const textBody = (await res.text()).trim();
+                if (textBody) errorMessage = textBody.slice(0, 300);
+            }
+        } catch {
+            if (res.status === 401) errorMessage = 'Authentication required. Please sign in again.';
+        }
+        throw new ApiError(res.status, `[${REPORT_DEBUG_VERSION}] ${errorMessage}`);
+    }
+
+    const payload = await res.json() as { reportId: number };
+    return payload.reportId;
 }
 
 export async function getAdminReports(status?: ApiReport['status']): Promise<ApiReport[]> {

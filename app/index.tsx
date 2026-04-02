@@ -24,6 +24,10 @@ export default function Index() {
         return <Redirect href="/(onboarding)/tutorial" />;
     }
 
+    if (user.role === 'Admin') {
+        return <Redirect href="/admin" />;
+    }
+
     return <Redirect href="/(tabs)" />;
 }
 

@@ -760,7 +760,19 @@ export default function ChatScreen() {
             }] : []),
             {
                 text: 'Report',
-                onPress: () => {},
+                onPress: () => {
+                    router.push({
+                        pathname: '/report',
+                        params: {
+                            targetType: 'MESSAGE',
+                            targetId: message.messageId,
+                            messageText: message.textContent ?? '',
+                            senderName: message.senderName ?? '',
+                            messageCreatedAt: message.createdAt,
+                            conversationId: message.conversationId || id,
+                        },
+                    });
+                },
             },
             {
                 text: 'Cancel',
@@ -808,6 +820,11 @@ export default function ChatScreen() {
                             item.isDeleted && styles.bubbleDeleted,
                             highlightedMessageId === item.messageId && styles.bubbleHighlighted,
                         ]}
+                        onPress={() => {
+                            if (Platform.OS === 'web') {
+                                handleMessageLongPress(item);
+                            }
+                        }}
                         onLongPress={() => handleMessageLongPress(item)}
                     >
                         {/* Show deleted placeholder or message content */}

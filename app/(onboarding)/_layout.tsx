@@ -11,6 +11,10 @@ export default function OnboardingLayout() {
         return <Redirect href="/(auth)/welcome" />;
     }
 
+    if (user.role === 'Admin') {
+        return <Redirect href="/admin" />;
+    }
+
     if (hasSeenOnboarding) {
         return <Redirect href="/(tabs)" />;
     }

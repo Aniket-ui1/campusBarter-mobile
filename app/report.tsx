@@ -5,13 +5,20 @@ import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from '
 import { AppColors, Radii, Spacing } from '@/constants/theme';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { submitReport } from '@/lib/api';
+import { getApiBase, submitReport } from '@/lib/api';
 
 const REASONS = ['Inappropriate behavior', 'Spam or scam', 'Harassment', 'Fake listing', 'Other'];
 
 export default function ReportScreen() {
     const router = useRouter();
-    const params = useLocalSearchParams<{ targetType?: string; targetId?: string }>();
+    const params = useLocalSearchParams<{
+        targetType?: string;
+        targetId?: string;
+        messageText?: string;
+        senderName?: string;
+        messageCreatedAt?: string;
+        conversationId?: string;
+    }>();
     const [reason, setReason] = useState('');
     const [description, setDescription] = useState('');
     const [submitting, setSubmitting] = useState(false);
@@ -28,21 +35,58 @@ export default function ReportScreen() {
         if (!reason) { Alert.alert('Please select a reason'); return; }
 
         const rawTargetId = String(params.targetId ?? '').trim();
+        const targetType = resolveTargetType();
+
+        if (targetType === 'MESSAGE' && !rawTargetId) {
+            Alert.alert('Could not submit', 'Missing message identifier for this report. Please try again from the message options.');
+            return;
+        }
+
         const targetId = rawTargetId || `MANUAL-${Date.now()}`;
+
+        const messageSnapshot = targetType === 'MESSAGE'
+            ? [
+                `Message: ${String(params.messageText ?? '').trim() || '(empty message)'}`,
+                `Sender: ${String(params.senderName ?? '').trim() || '(unknown sender)'}`,
+                `Message Time: ${String(params.messageCreatedAt ?? '').trim() || '(unknown time)'}`,
+                `Conversation ID: ${String(params.conversationId ?? '').trim() || '(unknown conversation)'}`,
+                `Message ID: ${targetId}`,
+            ].join('\n')
+            : '';
+
+        const userDetails = description.trim();
+        const combinedDetails = [
+            messageSnapshot,
+            userDetails ? `Additional details:\n${userDetails}` : '',
+        ]
+            .filter(Boolean)
+            .join('\n\n')
+            .slice(0, 2000);
 
         try {
             setSubmitting(true);
+            if (__DEV__) {
+                const debugMessage = [
+                    'Report submit function hit.',
+                    `API_BASE: ${getApiBase()}`,
+                    'submitReport endpoint: hardcoded Azure /api/v1/reports',
+                ].join('\n');
+                console.log('[REPORT_SCREEN_DEBUG]', debugMessage);
+                Alert.alert('Report Debug', debugMessage);
+            }
+
             await submitReport({
-                targetType: resolveTargetType(),
+                targetType,
                 targetId,
                 reason,
-                details: description,
+                details: combinedDetails,
             });
 
             Alert.alert('Report Submitted', 'Thank you. We will review this report and take action.');
             router.back();
-        } catch {
-            Alert.alert('Could not submit', 'Please try again in a moment.');
+        } catch (error) {
+            const message = (error as { message?: string })?.message ?? 'Please try again in a moment.';
+            Alert.alert('Could not submit (RPT-2026-04-01-V1)', message);
         } finally {
             setSubmitting(false);
         }

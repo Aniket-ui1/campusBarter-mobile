@@ -1,9 +1,9 @@
 // app/admin.tsx — Admin Dashboard (Task 9)
-// Only visible when user.role === 'Admin' or 'Moderator'
+// Only visible when user.role === 'Admin'
 // Lists reported listings, allows deletion, shows audit log, user list
 
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { Redirect } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator, Alert, Platform, Pressable,
@@ -42,8 +42,7 @@ async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T
 }
 
 export default function AdminDashboard() {
-    const router = useRouter();
-    const { user } = useAuth();
+    const { user, logout } = useAuth();
     const [tab, setTab] = useState<Tab>('reports');
     const [listings, setListings]   = useState<any[]>([]);
     const [users, setUsers]         = useState<any[]>([]);
@@ -80,7 +79,8 @@ export default function AdminDashboard() {
     useEffect(() => { void loadData(); }, []);
 
     // Guard: only render for logged-in users (role check can be added here)
-    if (!user) return null;
+        if (!user) return <Redirect href="/(auth)/welcome" />;
+        if (user.role !== 'Admin') return <Redirect href="/(tabs)" />;
 
     const deleteListing = async (id: string) => {
         Alert.alert('Delete Listing', 'This will permanently remove the listing.', [
@@ -161,6 +161,21 @@ export default function AdminDashboard() {
 
     const openReports = reports.filter(r => r.status === 'OPEN' || r.status === 'IN_REVIEW');
 
+    const handleSignOut = () => {
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+            const shouldSignOut = window.confirm('Are you sure you want to sign out?');
+            if (shouldSignOut) {
+                void logout();
+            }
+            return;
+        }
+
+        Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Sign Out', style: 'destructive', onPress: () => void logout() },
+        ]);
+    };
+
     const TABS: { key: Tab; label: string; icon: string; count: number }[] = [
         { key: 'reports', label: 'Reports', icon: 'alert-circle-outline', count: openReports.length },
         { key: 'disputes', label: 'Disputes', icon: 'flag-outline', count: openDisputes.length },
@@ -175,10 +190,11 @@ export default function AdminDashboard() {
 
             {/* Header */}
             <View style={styles.header}>
-                <Pressable style={styles.backBtn} onPress={() => router.back()}>
-                    <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+                <Pressable style={styles.signOutBtn} onPress={handleSignOut}>
+                    <Ionicons name="log-out-outline" size={22} color="#FFFFFF" />
+                    <Text style={styles.signOutText}>Sign out</Text>
                 </Pressable>
-                <View>
+                <View style={styles.headerCenter} pointerEvents="none">
                     <Text style={styles.headerTitle}>Admin Dashboard</Text>
                     <Text style={styles.headerSub}>CampusBarter Control Panel</Text>
                 </View>
@@ -383,11 +399,28 @@ const styles = StyleSheet.create({
 
     header: {
         backgroundColor: AppColors.primaryDark,
-        flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
         paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg,
+        position: 'relative',
     },
-    backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-    refreshBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginLeft: 'auto' },
+    signOutBtn: {
+        minWidth: 104,
+        height: 36,
+        borderRadius: 18,
+        paddingHorizontal: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+    },
+    signOutText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+    headerCenter: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+    },
+    refreshBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
     headerTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
     headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.6)' },
 

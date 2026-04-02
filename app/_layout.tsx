@@ -1,10 +1,10 @@
 import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { useEffect } from 'react';
 import { AppColors } from '@/constants/theme';
-import { AuthProvider } from '@/context/AuthContext';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { DataProvider } from '@/context/DataContext';
 import { OnboardingProvider } from '@/context/OnboardingContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -28,6 +28,40 @@ const CampusBarterTheme = {
   },
 };
 
+function isAdminEmail(email?: string): boolean {
+  if (!email) return false;
+  const csv = process.env.EXPO_PUBLIC_ADMIN_EMAILS ?? 'admin@campusbarter.onmicrosoft.com';
+  const allowed = new Set(csv.split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
+  return allowed.has(email.toLowerCase().trim());
+}
+
+function RoleRouteGuard() {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const firstSegment = segments[0];
+    const isAdminRoute = firstSegment === 'admin';
+    const isAdminUser = user?.role === 'Admin' || isAdminEmail(user?.email);
+
+    if (isAdminUser) {
+      if (!isAdminRoute) {
+        router.replace('/admin');
+      }
+      return;
+    }
+
+    if (isAdminRoute) {
+      router.replace(user ? '/(tabs)' : '/(auth)/welcome');
+    }
+  }, [isLoading, router, segments, user]);
+
+  return null;
+}
+
 export default function RootLayout() {
   // Register the notification tap handler and clean it up when layout unmounts
   useEffect(() => {
@@ -40,6 +74,7 @@ export default function RootLayout() {
         <AuthProvider>
           <DataProvider>
             <OnboardingProvider>
+              <RoleRouteGuard />
               <Stack
                 screenOptions={{
                   headerShown: false,
@@ -48,6 +83,7 @@ export default function RootLayout() {
                 }}
               >
                 <Stack.Screen name="index" />
+                <Stack.Screen name="admin" />
                 <Stack.Screen name="(auth)" />
                 <Stack.Screen name="(onboarding)" />
                 <Stack.Screen name="(tabs)" />

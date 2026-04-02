@@ -68,6 +68,8 @@ export interface User {
     role?: 'Student' | 'Moderator' | 'Admin';
 }
 
+type UserRole = 'Student' | 'Moderator' | 'Admin';
+
 // ── SignUpData — used by register-step3.tsx ───────────────────────
 
 export interface SignUpData {
@@ -206,6 +208,56 @@ function isSaitEmail(email: string) {
     );
 }
 
+function normalizeRole(value: unknown): UserRole | undefined {
+    if (typeof value !== 'string') return undefined;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'admin') return 'Admin';
+    if (normalized === 'moderator') return 'Moderator';
+    if (normalized === 'student') return 'Student';
+    return undefined;
+}
+
+function getAdminEmailSet(): Set<string> {
+    const csv = process.env.EXPO_PUBLIC_ADMIN_EMAILS ?? 'admin@campusbarter.onmicrosoft.com';
+    return new Set(
+        csv
+            .split(',')
+            .map(e => e.trim().toLowerCase())
+            .filter(Boolean)
+    );
+}
+
+function isAdminEmail(email: string): boolean {
+    return getAdminEmailSet().has(email.toLowerCase().trim());
+}
+
+function getRoleFromTokenClaims(claims: Record<string, unknown>): UserRole | undefined {
+    const direct = normalizeRole(claims.campusbarter_role);
+    if (direct) return direct;
+
+    const extension = normalizeRole(claims.extension_campusbarter_role);
+    if (extension) return extension;
+
+    const roles = claims.roles;
+    if (Array.isArray(roles)) {
+        for (const role of roles) {
+            const parsed = normalizeRole(role);
+            if (parsed) return parsed;
+        }
+    }
+
+    return undefined;
+}
+
+function resolveUserRole(email: string, ...candidates: unknown[]): UserRole {
+    for (const candidate of candidates) {
+        const parsed = normalizeRole(candidate);
+        if (parsed) return parsed;
+    }
+    if (isAdminEmail(email)) return 'Admin';
+    return 'Student';
+}
+
 // ── Provider ─────────────────────────────────────────────────────
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
@@ -233,10 +285,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                         // Web refresh recovery: restore mock user headers too.
                         // Without this, a persisted mock token can fail API auth after reload.
                         if (savedToken.startsWith('mock-')) {
+                            const restoredRole = resolveUserRole(parsed.email ?? '', parsed.role);
                             setDevUser({
                                 id: parsed.id,
                                 email: parsed.email,
                                 name: parsed.displayName || parsed.name || 'SAIT Student',
+                                role: restoredRole,
                             });
                         }
 
@@ -259,7 +313,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                                 profileComplete: myProfile.profileComplete ?? parsed.profileComplete,
                                 rating: myProfile.rating ?? parsed.rating,
                                 reviewCount: myProfile.reviewCount ?? parsed.reviewCount,
-                                role: myProfile.role ?? parsed.role ?? 'Student',
+                                role: resolveUserRole(parsed.email ?? '', myProfile.role, parsed.role),
                             };
                             setUser(refreshed);
                             await storage.setItem(AUTH_KEY, JSON.stringify(refreshed));
@@ -334,11 +388,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (!email || !password) { alert("Please enter both email and password."); return; }
             if (!isSaitEmail(email)) { alert("Only SAIT student emails (@sait.ca / @edu.sait.ca) are allowed."); return; }
             const userId = "mock-" + email.toLowerCase().trim().replace(/[^a-z0-9]/g, "-");
+            const normalizedEmail = email.toLowerCase().trim();
+            const mockRole = resolveUserRole(normalizedEmail);
 
             // Generate mock token with "mock-" prefix so backend dev bypass accepts it
             const mockToken = `mock-${userId}`;
             setApiToken(mockToken);
-            setDevUser({ id: userId, email: email.toLowerCase().trim(), name: 'SAIT Student' });
+            setDevUser({ id: userId, email: normalizedEmail, name: 'SAIT Student', role: mockRole });
 
             // Restore existing profile from Azure API if it exists
             let existingProfile: any = null;
@@ -358,7 +414,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const u = makeUser(
                 userId,
                 existingProfile?.displayName ?? "SAIT Student",
-                email.toLowerCase().trim(),
+                normalizedEmail,
                 {
                     bio: existingProfile?.bio ?? "SAIT student ready to barter!",
                     program: existingProfile?.program ?? "",
@@ -371,11 +427,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     avatarUrl: existingProfile?.avatarUrl ?? "",
                     rating: existingProfile?.rating ?? 0,
                     reviewCount: existingProfile?.reviewCount ?? 0,
-                    role: existingProfile?.role ?? 'Student',
+                    role: resolveUserRole(normalizedEmail, existingProfile?.role, mockRole),
                 }
             );
             await persistUser(u, mockToken);
-            router.replace("/(tabs)");
+            router.replace(u.role === 'Admin' ? '/admin' : '/(tabs)');
         } finally {
             setIsLoading(false);
         }
@@ -392,7 +448,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     : Math.random().toString(36).slice(2);
             const u = makeUser(id, name, email.toLowerCase().trim());
             const mockToken = `mock-${id}`;
-            setDevUser({ id, email: email.toLowerCase().trim(), name });
+            setDevUser({ id, email: email.toLowerCase().trim(), name, role: 'Student' });
             await persistUser(u, mockToken);
             router.replace("/(tabs)");
         } finally {
@@ -432,7 +488,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 semester: data.semester,
             });
             const mockToken = `mock-${id}`;
-            setDevUser({ id, email: data.email.toLowerCase().trim(), name: data.displayName });
+            setDevUser({ id, email: data.email.toLowerCase().trim(), name: data.displayName, role: 'Student' });
             await persistUser(u, mockToken);
             router.replace("/(tabs)");
         } finally {
@@ -557,7 +613,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
                 const claims = decodeJwtPayload(idToken);
                 const email: string = claims.preferred_username ?? claims.email ?? "";
-                const tokenRole = claims.campusbarter_role as 'Student' | 'Moderator' | 'Admin' | undefined;
+                const tokenRole = getRoleFromTokenClaims(claims);
 
                 // CIAM controls who can authenticate — trust any user who passes OAuth
                 // No additional email domain check needed here
@@ -596,14 +652,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     avatarUrl: existingProfile?.avatarUrl ?? "",
                     rating: existingProfile?.rating ?? 0,
                     reviewCount: existingProfile?.reviewCount ?? 0,
-                    role: existingProfile?.role ?? tokenRole ?? 'Student',
+                    role: resolveUserRole(userEmail, existingProfile?.role, tokenRole),
                 });
 
                 await persistUser(u, idToken);
                 // Always go to tabs — ProfileSetupOverlay modal
                 // will appear on top if profileComplete is false
 
-                router.replace("/(tabs)");
+                router.replace(u.role === 'Admin' ? '/admin' : '/(tabs)');
             } catch (err) {
                 console.error("Token exchange failed:", err);
                 alert(err instanceof Error ? err.message : "Microsoft login failed");
