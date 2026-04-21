@@ -14,32 +14,18 @@ import { AppColors, Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import {
     ApiReport,
+    deleteListing as deleteListingApi,
     getAdminAuditLog,
     getAdminDisputes,
     getAdminReports,
+    getListings,
     getAdminUsers,
-    getApiToken,
-    getApiBase,
     resolveAdminDispute,
     updateAdminReport,
     ExchangeDispute,
 } from '@/lib/api';
 
 type Tab = 'reports' | 'disputes' | 'listings' | 'users' | 'audit';
-
-async function adminFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const token = getApiToken();
-    const res = await fetch(`${getApiBase()}${path}`, {
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(options.headers as Record<string, string>),
-        },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-}
 
 export default function AdminDashboard() {
     const { user, logout } = useAuth();
@@ -57,7 +43,7 @@ export default function AdminDashboard() {
         setLoading(true);
         try {
             const [l, u, a, d, r] = await Promise.allSettled([
-                adminFetch<any[]>('/api/listings'),
+                getListings(),
                 getAdminUsers(),
                 getAdminAuditLog(),
                 getAdminDisputes(),
@@ -83,19 +69,26 @@ export default function AdminDashboard() {
         if (user.role !== 'Admin') return <Redirect href="/(tabs)" />;
 
     const deleteListing = async (id: string) => {
+        const runDelete = async () => {
+            try {
+                await deleteListingApi(id);
+                setListings(ls => ls.filter(l => l.id !== id));
+                Alert.alert('Success', 'Listing deleted');
+            } catch {
+                Alert.alert('Error', 'Could not delete listing');
+            }
+        };
+
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+            const shouldDelete = window.confirm('This will permanently remove the listing.');
+            if (!shouldDelete) return;
+            await runDelete();
+            return;
+        }
+
         Alert.alert('Delete Listing', 'This will permanently remove the listing.', [
             { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Delete', style: 'destructive', onPress: async () => {
-                    try {
-                        await adminFetch(`/api/listings/${id}`, { method: 'DELETE' });
-                        setListings(ls => ls.filter(l => l.id !== id));
-                        Alert.alert('✅ Listing deleted');
-                    } catch {
-                        Alert.alert('Error', 'Could not delete listing');
-                    }
-                }
-            },
+            { text: 'Delete', style: 'destructive', onPress: () => void runDelete() },
         ]);
     };
 
@@ -331,7 +324,7 @@ export default function AdminDashboard() {
                         ) : listings.map((l, i) => (
                             <Animated.View key={l.id} entering={FadeInDown.delay(i * 40).duration(300)}>
                                 <View style={styles.card}>
-                                    <View style={{ flex: 1 }}>
+                                    <View style={styles.cardBody}>
                                         <Text style={styles.cardTitle} numberOfLines={1}>{l.title}</Text>
                                         <Text style={styles.cardMeta}>By {l.userName} · {l.type} · {l.status}</Text>
                                     </View>
@@ -446,9 +439,24 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFFFFF', borderRadius: Radii.md,
         padding: Spacing.lg, borderWidth: 1, borderColor: AppColors.border,
     },
+    cardBody: { flex: 1, minWidth: 0 },
     cardTitle: { fontSize: 14, fontWeight: '700', color: AppColors.text },
     cardMeta: { fontSize: 12, color: AppColors.textMuted, marginTop: 2 },
-    deleteBtn: { width: 36, height: 36, borderRadius: 8, backgroundColor: AppColors.error + '10', alignItems: 'center', justifyContent: 'center' },
+    deleteBtn: {
+        width: 40,
+        height: 40,
+        flexShrink: 0,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: 'rgba(239,68,68,0.25)',
+        backgroundColor: 'rgba(239,68,68,0.08)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        ...Platform.select({
+            web: { cursor: 'pointer' as any },
+            default: {},
+        }),
+    },
     rolePill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radii.full },
     roleText: { fontSize: 11, fontWeight: '700' },
 
