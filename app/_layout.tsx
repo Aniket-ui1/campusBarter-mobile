@@ -1,15 +1,15 @@
-import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
-import { useEffect } from 'react';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { AppColors } from '@/constants/theme';
 import { AuthProvider } from '@/context/AuthContext';
 import { DataProvider } from '@/context/DataContext';
 import { OnboardingProvider } from '@/context/OnboardingContext';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { OfflineBanner } from '@/components/OfflineBanner';
 import { setupNotificationHandler, setupNotificationResponseListener } from '@/lib/notifications';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
+import 'react-native-reanimated';
 // import { ActionSheetProvider } from '@expo/react-native-action-sheet';
 
 // Configure foreground notification display once, before any screen mounts
@@ -35,7 +35,6 @@ export default function RootLayout() {
   }, []);
 
   return (
-<<<<<<< Updated upstream
     <ErrorBoundary>
       <ThemeProvider value={CampusBarterTheme}>
         <AuthProvider>
@@ -75,22 +74,5 @@ export default function RootLayout() {
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>
-=======
-    <AuthProvider>
-      <DataProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="reviews/[exchangeId]" options={{ title: 'Leave a Review' }} />
-            <Stack.Screen
-              name="modal"
-              options={{ presentation: 'modal', title: 'Modal' }}
-            />
-          </Stack>
-          <StatusBar style="auto" />
-        </ThemeProvider>
-      </DataProvider>
-    </AuthProvider>
->>>>>>> Stashed changes
   );
 }

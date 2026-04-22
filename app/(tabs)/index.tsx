@@ -1,5 +1,3 @@
-<<<<<<< Updated upstream
-
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
@@ -14,18 +12,10 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
-import { AppColors, CATEGORY_EMOJIS, Radii, Shadows, Spacing } from '@/constants/theme';
-import { useAuth } from '@/context/AuthContext';
-import { Card } from '@/components/ui/Card';
-import { Avatar } from '@/components/ui/Avatar';
-import { useData } from '@/context/DataContext';
-import { getRecommendedUsers, MatchedUser } from '@/lib/matching';
-import { CATEGORIES } from '@/constants/categories';
-import { SkeletonLoader } from '@/components/ui/SkeletonLoader';
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const { unreadCount, listings, refreshListings } = useData();
+  const { unreadCount, listings, refreshListings, refreshNotifications } = useData();
   const router = useRouter();
   const [refreshing, setRefreshing] = React.useState(false);
   const [matches, setMatches] = useState<MatchedUser[]>([]);
@@ -35,11 +25,6 @@ export default function HomeScreen() {
 
   const activeListings = listings.filter((l) => l.status === 'OPEN');
   const myListingsCount = listings.filter((l) => l.userId === user?.id).length;
-=======
-  const [filter, setFilter] = useState<'OFFER' | 'REQUEST'>('OFFER');
-
-  const filteredListings = listings.filter(l => l.type === filter && l.status === 'OPEN');
->>>>>>> Stashed changes
 
   // Stop loading once listings arrive OR after 3s timeout (for empty feeds)
   useEffect(() => {

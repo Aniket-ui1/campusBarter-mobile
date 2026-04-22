@@ -1,5 +1,5 @@
+import * as AuthSession from "expo-auth-session";
 import { router } from "expo-router";
-<<<<<<< Updated upstream
 import * as WebBrowser from "expo-web-browser";
 import {
     createContext,
@@ -10,10 +10,19 @@ import {
 } from "react";
 import { Platform } from "react-native";
 import azureConfig from "../config/azureConfig";
-import { clearApiToken, getMyProfile, registerPushToken, setApiToken, setDevUser, updateMyProfile, upsertUserProfile } from "../lib/api";
+import {
+    clearApiToken,
+    getMyProfile,
+    registerPushToken,
+    setApiToken,
+    setDevUser,
+    updateMyProfile,
+    upsertUserProfile,
+} from "../lib/api";
 import { connectSocket, disconnectSocket } from "../lib/socket";
 
-// Cross-platform storage: SecureStore on native, localStorage on web
+WebBrowser.maybeCompleteAuthSession();
+
 const storage = {
     async getItem(key: string): Promise<string | null> {
         if (Platform.OS === "web") {
@@ -39,27 +48,10 @@ const storage = {
         await SecureStore.deleteItemAsync(key);
     },
 };
-import {
-    createContext,
-    ReactNode,
-    useContext,
-    useEffect,
-    useState,
-} from "react";
-import azureConfig from "../config/azureConfig";
-import { setApiToken, clearApiToken, setDevUser, registerPushToken, upsertUserProfile, getUserById, updateMyProfile } from "../lib/api";
-import { connectSocket, disconnectSocket } from "../lib/socket";
-
-export type UserRole = "ADMIN" | "STUDENT";
-
-// ── User type — covers every field used across all screens ───────
 
 export interface User {
-<<<<<<< Updated upstream
     id: string;
-    /** Primary display name shown in the UI */
     name: string;
-    /** Alias used by profile.tsx / edit-profile.tsx */
     displayName: string;
     email: string;
     bio?: string;
@@ -72,13 +64,10 @@ export interface User {
     skills?: string[];
     weaknesses?: string[];
     interests?: string[];
-    /** false until the user completes the profile-setup screen */
     profileComplete?: boolean;
     avatarUrl?: string;
-    role?: 'Student' | 'Moderator' | 'Admin';
+    role?: string;
 }
-
-// ── SignUpData — used by register-step3.tsx ───────────────────────
 
 export interface SignUpData {
     email: string;
@@ -89,45 +78,21 @@ export interface SignUpData {
     semester: number;
     campus?: string;
     bio?: string;
-
-=======
-  id: string;
-  name: string;
-  email: string;
-  bio?: string;
-  credits: number;
-  role: UserRole;
 }
-
-interface AuthContextType {
-  user: User | null;
-  users: User[];
-  isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
-  logout: () => void;
->>>>>>> Stashed changes
-}
-
-// ── Context type — all methods past + present ─────────────────────
 
 interface AuthContextType {
     user: User | null;
+    users: User[];
     isLoading: boolean;
-
-    // New canonical names
-
     login: (email: string, password: string) => Promise<void>;
     register: (name: string, email: string, password: string) => Promise<void>;
-    logout: () => void;
+    logout: () => Promise<void>;
     loginWithMicrosoft: () => Promise<void>;
-
-    // Legacy aliases (used by existing screens — kept for compatibility)
     signIn: (email: string, password: string) => Promise<void>;
-    signOut: () => void;
+    signOut: () => Promise<void>;
     signUp: (data: SignUpData) => Promise<void>;
     resetPassword: (email: string) => Promise<void>;
-    updateProfile: (updates: Partial<Omit<User, "id" | "email">>) => void;
+    updateProfile: (updates: Partial<Omit<User, "id" | "email">>) => Promise<void>;
     completeProfile: (data: {
         program: string;
         major: string;
@@ -136,65 +101,12 @@ interface AuthContextType {
         weaknesses: string[];
         interests: string[];
     }) => Promise<void>;
-
 }
-
-// ── Constants ─────────────────────────────────────────────────────
 
 const AUTH_KEY = "campusbarter_user";
 const TOKEN_KEY = "campusbarter_token";
 
-// ── Context ───────────────────────────────────────────────────────
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const createId = () => Math.random().toString(36).slice(2, 10);
-
-const isValidSaitEmail = (email: string) =>
-  email.endsWith("@edu.sait.ca") || email.endsWith("@sait.ca");
-
-const resolveRoleFromEmail = (email: string): UserRole =>
-  email.startsWith("admin@") ? "ADMIN" : "STUDENT";
-
-const defaultNameFromEmail = (email: string) => {
-  const localPart = email.split("@")[0] ?? "student";
-  const cleaned = localPart.replace(/[._-]+/g, " ").trim();
-  if (!cleaned) {
-    return "SAIT Student";
-  }
-
-  return cleaned
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-};
-
-const MOCK_USERS: User[] = [
-  {
-    id: "admin1",
-    name: "Campus Admin",
-    email: "admin@sait.ca",
-    credits: 999,
-    bio: "Platform administrator account",
-    role: "ADMIN",
-  },
-  {
-    id: "user2",
-    name: "MathWhiz",
-    email: "mathwhiz@edu.sait.ca",
-    credits: 5,
-    bio: "Calculus tutor",
-    role: "STUDENT",
-  },
-  {
-    id: "user3",
-    name: "MoverNeeded",
-    email: "moverneeded@edu.sait.ca",
-    credits: 2,
-    bio: "Happy to trade campus help",
-    role: "STUDENT",
-  },
-];
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = () => {
     const context = useContext(AuthContext);
@@ -204,33 +116,29 @@ export const useAuth = () => {
     return context;
 };
 
-<<<<<<< Updated upstream
-// ── JWT decode helper ─────────────────────────────────────────────
-
 function decodeJwtPayload(token: string): Record<string, any> {
     const base64Url = token.split(".")[1];
     const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
     const jsonPayload = decodeURIComponent(
         atob(base64)
             .split("")
-            .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+            .map((character) => "%" + ("00" + character.charCodeAt(0).toString(16)).slice(-2))
             .join("")
     );
     return JSON.parse(jsonPayload);
 }
 
-function normalizeRole(value: unknown): User['role'] | undefined {
-    if (typeof value !== 'string') return undefined;
-    const v = value.trim().toLowerCase();
-    if (v === 'admin') return 'Admin';
-    if (v === 'moderator') return 'Moderator';
-    if (v === 'student') return 'Student';
-    return undefined;
+function normalizeRole(value: unknown): string | undefined {
+    if (typeof value !== "string") return undefined;
+    const normalized = value.trim();
+    if (!normalized) return undefined;
+    const lower = normalized.toLowerCase();
+    if (lower === "admin" || lower === "administrator") return "Admin";
+    if (lower === "moderator") return "Moderator";
+    if (lower === "student") return "Student";
+    return normalized;
 }
 
-// ── Azure API user profile helper ─────────────────────────────────
-
-/** Syncs user profile to Azure API (best-effort — may fail for mock login) */
 async function syncUserToApi(user: User) {
     await upsertUserProfile({
         id: user.id,
@@ -251,7 +159,6 @@ async function syncUserToApi(user: User) {
     });
 }
 
-/** Build a User object, keeping name and displayName in sync */
 function makeUser(
     id: string,
     displayName: string,
@@ -274,6 +181,7 @@ function makeUser(
         weaknesses: [],
         interests: [],
         profileComplete: false,
+        role: "Student",
         ...partial,
     };
 }
@@ -288,7 +196,7 @@ function mergeApiProfileIntoUser(base: User, profile: any): User {
         displayName,
         email: profile.email ?? base.email,
         bio: profile.bio ?? base.bio,
-        credits: typeof profile.credits === 'number' ? profile.credits : base.credits,
+        credits: typeof profile.credits === "number" ? profile.credits : base.credits,
         program: profile.program ?? base.program,
         major: profile.major ?? base.major,
         semester: profile.semester ?? base.semester,
@@ -299,94 +207,9 @@ function mergeApiProfileIntoUser(base: User, profile: any): User {
         interests: profile.interests ?? base.interests,
         profileComplete: profile.profileComplete ?? base.profileComplete,
         avatarUrl: profile.avatarUrl ?? base.avatarUrl,
-        role: profile.role ?? base.role,
+        role: normalizeRole(profile.role) ?? base.role,
     };
 }
-
-// ── Email domain guard ────────────────────────────────────────────
-=======
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Check for persisted user (mock)
-  useEffect(() => {
-    // In a real app, check AsyncStorage here
-  }, []);
-
-  const login = async (email: string, password: string) => {
-    setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
-      const normalizedEmail = email.trim().toLowerCase();
-
-      if (isValidSaitEmail(normalizedEmail)) {
-        const existingUser = users.find(
-          (knownUser) => knownUser.email.toLowerCase() === normalizedEmail
-        );
-
-        if (existingUser) {
-          setUser(existingUser);
-        } else {
-          const createdUser: User = {
-            id: createId(),
-            name: defaultNameFromEmail(normalizedEmail),
-            email: normalizedEmail,
-            credits: 3,
-            bio: "SAIT student ready to barter!",
-            role: resolveRoleFromEmail(normalizedEmail),
-          };
-
-          setUsers((currentUsers) => [createdUser, ...currentUsers]);
-          setUser(createdUser);
-        }
-
-        router.replace("/(tabs)");
-      } else {
-        alert("Invalid SAIT email or password");
-      }
-
-      setIsLoading(false);
-    }, 1000);
-  };
-
-  const register = async (name: string, email: string, password: string) => {
-    setIsLoading(true);
-    setTimeout(() => {
-      const normalizedEmail = email.trim().toLowerCase();
-
-      if (isValidSaitEmail(normalizedEmail)) {
-        const existingUser = users.find(
-          (knownUser) => knownUser.email.toLowerCase() === normalizedEmail
-        );
-
-        if (existingUser) {
-          alert("An account with this email already exists. Please sign in.");
-          setIsLoading(false);
-          return;
-        }
-
-        const newUser: User = {
-          id: createId(),
-          name,
-          email: normalizedEmail,
-          credits: 3, // Default starting credits
-          bio: "",
-          role: "STUDENT",
-        };
-
-        setUsers((currentUsers) => [newUser, ...currentUsers]);
-        setUser(newUser);
-        router.replace("/(tabs)");
-      } else {
-        alert("Registration failed. Please use a valid SAIT email.");
-      }
-
-      setIsLoading(false);
-    }, 1000);
-  };
->>>>>>> Stashed changes
 
 function isSaitEmail(email: string) {
     const lower = email.toLowerCase().trim();
@@ -397,179 +220,244 @@ function isSaitEmail(email: string) {
     );
 }
 
-<<<<<<< Updated upstream
-// ── Provider ─────────────────────────────────────────────────────
+function defaultNameFromEmail(email: string) {
+    const localPart = email.split("@")[0] ?? "student";
+    const cleaned = localPart.replace(/[._-]+/g, " ").trim();
+    if (!cleaned) {
+        return "SAIT Student";
+    }
+
+    return cleaned
+        .split(" ")
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+}
+
+function resolveRoleFromEmail(email: string): string {
+    return email.startsWith("admin@") ? "Admin" : "Student";
+}
+
+const MOCK_USERS: User[] = [
+    {
+        id: "admin1",
+        name: "Campus Admin",
+        displayName: "Campus Admin",
+        email: "admin@sait.ca",
+        credits: 999,
+        bio: "Platform administrator account",
+        role: "Admin",
+    },
+    {
+        id: "user2",
+        name: "MathWhiz",
+        displayName: "MathWhiz",
+        email: "mathwhiz@edu.sait.ca",
+        credits: 5,
+        bio: "Calculus tutor",
+        role: "Student",
+    },
+    {
+        id: "user3",
+        name: "MoverNeeded",
+        displayName: "MoverNeeded",
+        email: "moverneeded@edu.sait.ca",
+        credits: 2,
+        bio: "Happy to trade campus help",
+        role: "Student",
+    },
+];
+
+function createId() {
+    return Math.random().toString(36).slice(2, 10);
+}
+
+function upsertUser(list: User[], nextUser: User): User[] {
+    const index = list.findIndex(
+        (knownUser) => knownUser.id === nextUser.id || knownUser.email.toLowerCase() === nextUser.email.toLowerCase()
+    );
+
+    if (index === -1) {
+        return [nextUser, ...list];
+    }
+
+    const copy = [...list];
+    copy[index] = nextUser;
+    return copy;
+}
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
-    const [isLoading, setIsLoading] = useState(true); // true until SecureStore resolves
+    const [users, setUsers] = useState<User[]>(MOCK_USERS);
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Restore session on app open
     useEffect(() => {
         (async () => {
             try {
                 const stored = await storage.getItem(AUTH_KEY);
-                if (stored) {
-                    const parsed = JSON.parse(stored);
-                    // Ensure old sessions without profileComplete are handled
-                    if (parsed.profileComplete === undefined) {
-                        parsed.profileComplete = false;
-                    }
-                    setUser(parsed);
+                if (!stored) {
+                    return;
+                }
 
-                    // Restore API token so Azure API calls work after reload
-                    const savedToken = await storage.getItem(TOKEN_KEY);
-                    if (savedToken) {
-                        setApiToken(savedToken);
+                const parsed = JSON.parse(stored) as User;
+                const hydrated = {
+                    ...parsed,
+                    displayName: parsed.displayName ?? parsed.name,
+                    name: parsed.name ?? parsed.displayName,
+                    profileComplete: parsed.profileComplete ?? false,
+                    role: normalizeRole(parsed.role) ?? parsed.role,
+                };
 
-                        // Recover role from token claims so admin visibility works
-                        // even if cached profile data is stale.
-                        if (!savedToken.startsWith('mock-')) {
-                            try {
-                                const claims = decodeJwtPayload(savedToken);
-                                parsed.role = parsed.role ?? normalizeRole(
-                                    claims['campusbarter_role'] ?? claims['role'] ?? claims['roles']?.[0]
-                                );
-                            } catch {
-                                // Ignore malformed token decode here; API validation will handle auth.
-                            }
-                        }
+                setUser(hydrated);
+                setUsers((currentUsers) => upsertUser(currentUsers, hydrated));
 
-                        // Web refresh recovery: restore mock user headers too.
-                        // Without this, a persisted mock token can fail API auth after reload.
-                        if (savedToken.startsWith('mock-')) {
-                            setDevUser({
-                                id: parsed.id,
-                                email: parsed.email,
-                                name: parsed.displayName || parsed.name || 'SAIT Student',
-                            });
-                        }
+                const savedToken = await storage.getItem(TOKEN_KEY);
+                if (!savedToken) {
+                    return;
+                }
 
-                        connectSocket();
+                setApiToken(savedToken);
 
-                        // Validate restored session once; if token is no longer valid,
-                        // clear stale local session so the app doesn't appear signed in
-                        // while all posting/listing APIs fail with 401.
-                        try {
-                            const me = await getMyProfile();
-                            const refreshed = mergeApiProfileIntoUser(parsed, me);
-                            setUser(refreshed);
-                            await storage.setItem(AUTH_KEY, JSON.stringify(refreshed));
-                            // Session is valid — re-register push token in case it changed
-                            // (can happen after app reinstall or OS update)
-                            void registerDevicePushToken();
-                        } catch (error) {
-                            if ((error as { status?: number }).status === 401) {
-                                setUser(null);
-                                await storage.deleteItem(AUTH_KEY);
-                                await storage.deleteItem(TOKEN_KEY);
-                                clearApiToken();
-                                disconnectSocket();
-                            }
-                        }
+                if (savedToken.startsWith("mock-")) {
+                    setDevUser({
+                        id: hydrated.id,
+                        email: hydrated.email,
+                        name: hydrated.displayName || hydrated.name || "SAIT Student",
+                    });
+                }
+
+                connectSocket();
+
+                try {
+                    const profile = await getMyProfile();
+                    const refreshed = mergeApiProfileIntoUser(hydrated, profile);
+                    setUser(refreshed);
+                    setUsers((currentUsers) => upsertUser(currentUsers, refreshed));
+                    await storage.setItem(AUTH_KEY, JSON.stringify(refreshed));
+                    void registerDevicePushToken();
+                } catch (error) {
+                    if ((error as { status?: number }).status === 401) {
+                        setUser(null);
+                        await storage.deleteItem(AUTH_KEY);
+                        await storage.deleteItem(TOKEN_KEY);
+                        clearApiToken();
+                        disconnectSocket();
                     }
                 }
-            } catch (e) {
-                console.warn("Could not restore session:", e);
+            } catch (error) {
+                console.warn("Could not restore session:", error);
             } finally {
                 setIsLoading(false);
             }
         })();
     }, []);
 
-    /** Request permission, get Expo push token, and register it with the backend. */
     async function registerDevicePushToken(): Promise<void> {
-        if (Platform.OS === 'web') return; // push tokens not available on web
+        if (Platform.OS === "web") return;
+
         try {
-            const Notifications = await import('expo-notifications');
+            const Notifications = await import("expo-notifications");
             const { status } = await Notifications.requestPermissionsAsync();
-            if (status !== 'granted') return;
-            const tokenRes = await Notifications.getExpoPushTokenAsync();
-            const expoPushToken = tokenRes.data;
-            const platform = Platform.OS === 'ios' ? 'ios' : 'android';
-            // Register with both endpoints: legacy (Users.pushToken) and new multi-device (UserPushTokens)
-            await registerPushToken(expoPushToken).catch(() => { });
-            const { chatApi } = await import('../services/chatApi');
-            await chatApi.registerPushToken(expoPushToken, platform).catch(() => { });
-        } catch { /* push not available on simulator or restricted environments */ }
+            if (status !== "granted") return;
+
+            const tokenResult = await Notifications.getExpoPushTokenAsync();
+            const expoPushToken = tokenResult.data;
+            const platform = Platform.OS === "ios" ? "ios" : "android";
+
+            await registerPushToken(expoPushToken).catch(() => {});
+            const { chatApi } = await import("../services/chatApi");
+            await chatApi.registerPushToken(expoPushToken, platform).catch(() => {});
+        } catch {
+            // Push is optional on web and in simulator environments.
+        }
     }
 
-    const persistUser = async (u: User, idToken?: string) => {
-        setUser(u);
-        await storage.setItem(AUTH_KEY, JSON.stringify(u));
+    async function persistUser(nextUser: User, idToken?: string): Promise<void> {
+        setUser(nextUser);
+        setUsers((currentUsers) => upsertUser(currentUsers, nextUser));
+        await storage.setItem(AUTH_KEY, JSON.stringify(nextUser));
 
-        // Wire up Azure API + socket BEFORE syncing (so headers are present)
         if (idToken) {
             setApiToken(idToken);
             await storage.setItem(TOKEN_KEY, idToken);
             connectSocket();
         }
 
-        // Ensure user is synced to SQL before proceding (crucial for foreign key)
         try {
-            await syncUserToApi(u);
-        } catch (e) {
-            console.error("[Auth] User sync failed:", e);
+            await syncUserToApi(nextUser);
+        } catch (error) {
+            console.error("[Auth] User sync failed:", error);
         }
 
-        // Pull authoritative profile (including role) after sync so UI
-        // reflects server state immediately (e.g., Admin Dashboard visibility).
         try {
-            const me = await getMyProfile();
-            const refreshed = mergeApiProfileIntoUser(u, me);
+            const profile = await getMyProfile();
+            const refreshed = mergeApiProfileIntoUser(nextUser, profile);
             setUser(refreshed);
+            setUsers((currentUsers) => upsertUser(currentUsers, refreshed));
             await storage.setItem(AUTH_KEY, JSON.stringify(refreshed));
-        } catch (e) {
-            console.warn('[Auth] Could not refresh profile after sync:', e);
+        } catch (error) {
+            console.warn("[Auth] Could not refresh profile after sync:", error);
         }
 
-        // Register push token on fresh login (best effort — ignore failure)
         if (idToken) {
             void registerDevicePushToken();
         }
-    };
-
-    // ── Core auth actions ─────────────────────────────────────────
+    }
 
     const login = async (email: string, password: string) => {
         setIsLoading(true);
         try {
-            if (!email || !password) { alert("Please enter both email and password."); return; }
-            if (!isSaitEmail(email)) { alert("Only SAIT student emails (@sait.ca / @edu.sait.ca) are allowed."); return; }
-            const userId = "mock-" + email.toLowerCase().trim().replace(/[^a-z0-9]/g, "-");
+            const normalizedEmail = email.trim().toLowerCase();
 
-            // Generate mock token with "mock-" prefix so backend dev bypass accepts it
-            const mockToken = `mock-${userId}`;
-            setApiToken(mockToken);
-            setDevUser({ id: userId, email: email.toLowerCase().trim(), name: 'SAIT Student' });
-
-            // Restore existing profile from Azure API if it exists
-            let existingProfile: any = null;
-            try {
-                existingProfile = await getMyProfile();
-            } catch (e) {
-                console.warn("Could not check existing profile:", e);
+            if (!normalizedEmail || !password) {
+                alert("Please enter both email and password.");
+                return;
             }
 
-            const u = makeUser(
-                userId,
-                existingProfile?.displayName ?? "SAIT Student",
-                email.toLowerCase().trim(),
-                {
-                    bio: existingProfile?.bio ?? "SAIT student ready to barter!",
-                    program: existingProfile?.program ?? "",
-                    major: existingProfile?.major ?? "",
-                    semester: existingProfile?.semester ?? 1,
-                    skills: existingProfile?.skills ?? [],
-                    weaknesses: existingProfile?.weaknesses ?? [],
-                    interests: existingProfile?.interests ?? [],
-                    profileComplete: existingProfile?.profileComplete ?? false,
-                    avatarUrl: existingProfile?.avatarUrl ?? "",
-                    rating: existingProfile?.rating ?? 0,
-                    reviewCount: existingProfile?.reviewCount ?? 0,
-                }
+            if (!isSaitEmail(normalizedEmail)) {
+                alert("Only SAIT student emails (@sait.ca / @edu.sait.ca) are allowed.");
+                return;
+            }
+
+            const existingUser = users.find(
+                (knownUser) => knownUser.email.toLowerCase() === normalizedEmail
             );
-            await persistUser(u, mockToken);
+
+            const mockToken = `mock-${existingUser?.id ?? normalizedEmail.replace(/[^a-z0-9]/g, "-")}`;
+
+            setDevUser({
+                id: existingUser?.id ?? mockToken.slice(5),
+                email: normalizedEmail,
+                name: existingUser?.displayName ?? existingUser?.name ?? defaultNameFromEmail(normalizedEmail),
+            });
+
+            const existingProfile = await getMyProfile().catch((error) => {
+                console.warn("Could not check existing profile:", error);
+                return null;
+            });
+
+            const nextUser = existingUser
+                ? mergeApiProfileIntoUser(existingUser, existingProfile)
+                : makeUser(
+                    mockToken.slice(5),
+                    existingProfile?.displayName ?? defaultNameFromEmail(normalizedEmail),
+                    normalizedEmail,
+                    {
+                        bio: existingProfile?.bio ?? "SAIT student ready to barter!",
+                        program: existingProfile?.program ?? "",
+                        major: existingProfile?.major ?? "",
+                        semester: existingProfile?.semester ?? 1,
+                        skills: existingProfile?.skills ?? [],
+                        weaknesses: existingProfile?.weaknesses ?? [],
+                        interests: existingProfile?.interests ?? [],
+                        profileComplete: existingProfile?.profileComplete ?? false,
+                        avatarUrl: existingProfile?.avatarUrl ?? "",
+                        rating: existingProfile?.rating ?? 0,
+                        reviewCount: existingProfile?.reviewCount ?? 0,
+                        role: resolveRoleFromEmail(normalizedEmail),
+                    }
+                );
+
+            await persistUser(nextUser, mockToken);
             router.replace("/(tabs)");
         } finally {
             setIsLoading(false);
@@ -579,16 +467,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const register = async (name: string, email: string, password: string) => {
         setIsLoading(true);
         try {
-            if (!name || !email || !password) { alert("Please fill in all fields."); return; }
-            if (!isSaitEmail(email)) { alert("Registration failed. Please use a valid SAIT student email."); return; }
-            const id =
-                typeof crypto !== "undefined" && "randomUUID" in crypto
-                    ? crypto.randomUUID()
-                    : Math.random().toString(36).slice(2);
-            const u = makeUser(id, name, email.toLowerCase().trim());
+            const normalizedEmail = email.trim().toLowerCase();
+
+            if (!name || !normalizedEmail || !password) {
+                alert("Please fill in all fields.");
+                return;
+            }
+
+            if (!isSaitEmail(normalizedEmail)) {
+                alert("Registration failed. Please use a valid SAIT student email.");
+                return;
+            }
+
+            const existingUser = users.find(
+                (knownUser) => knownUser.email.toLowerCase() === normalizedEmail
+            );
+
+            if (existingUser) {
+                alert("An account with this email already exists. Please sign in.");
+                return;
+            }
+
+            const id = createId();
+            const nextUser = makeUser(id, name, normalizedEmail, {
+                role: resolveRoleFromEmail(normalizedEmail),
+            });
             const mockToken = `mock-${id}`;
-            setDevUser({ id, email: email.toLowerCase().trim(), name });
-            await persistUser(u, mockToken);
+
+            setDevUser({ id, email: normalizedEmail, name });
+            await persistUser(nextUser, mockToken);
             router.replace("/(tabs)");
         } finally {
             setIsLoading(false);
@@ -604,54 +511,56 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         router.replace("/(auth)/sign-in");
     };
 
-    // ── Legacy aliases (for backward-compatible screen code) ──────
-
     const signIn = login;
     const signOut = logout;
 
     const signUp = async (data: SignUpData) => {
         setIsLoading(true);
         try {
-            if (!isSaitEmail(data.email)) {
+            const normalizedEmail = data.email.trim().toLowerCase();
+
+            if (!isSaitEmail(normalizedEmail)) {
                 alert("Registration failed. Please use a valid SAIT student email.");
                 return;
             }
-            const id =
-                typeof crypto !== "undefined" && "randomUUID" in crypto
-                    ? crypto.randomUUID()
-                    : Math.random().toString(36).slice(2);
-            const u = makeUser(id, data.displayName, data.email.toLowerCase().trim(), {
+
+            const id = createId();
+            const nextUser = makeUser(id, data.displayName, normalizedEmail, {
                 bio: data.bio ?? "",
                 program: data.program,
                 major: data.major,
                 semester: data.semester,
+                role: resolveRoleFromEmail(normalizedEmail),
             });
             const mockToken = `mock-${id}`;
-            setDevUser({ id, email: data.email.toLowerCase().trim(), name: data.displayName });
-            await persistUser(u, mockToken);
+
+            setDevUser({ id, email: normalizedEmail, name: data.displayName });
+            await persistUser(nextUser, mockToken);
             router.replace("/(tabs)");
         } finally {
             setIsLoading(false);
         }
     };
 
-    const resetPassword = async (email: string) => {
-        // With Azure AD: password reset is done via Azure portal.
-        // Here we just show a friendly message.
+    const resetPassword = async (_email: string) => {
         alert(
-            `Password reset is managed by your Microsoft account.\n\nVisit: https://aka.ms/sspr\nto reset your @sait.ca or @edu.sait.ca password.`
+            "Password reset is managed by your Microsoft account.\n\nVisit: https://aka.ms/sspr\nto reset your @sait.ca or @edu.sait.ca password."
         );
     };
 
     const updateProfile = async (updates: Partial<Omit<User, "id" | "email">>) => {
         if (!user) return;
+
         const updated: User = {
             ...user,
             ...updates,
             name: updates.displayName ?? updates.name ?? user.name,
             displayName: updates.displayName ?? user.displayName,
+            role: updates.role ?? user.role,
         };
+
         await persistUser(updated);
+
         try {
             await updateMyProfile({
                 ...(updates.displayName ? { displayName: updates.displayName } : {}),
@@ -663,9 +572,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 ...(updates.weaknesses ? { weaknesses: updates.weaknesses } : {}),
                 ...(updates.interests ? { interests: updates.interests } : {}),
                 ...(updates.avatarUrl !== undefined ? { avatarUrl: updates.avatarUrl } : {}),
+                ...(updates.role ? { role: updates.role } : {}),
             });
-        } catch (e) {
-            console.warn("API profile update failed:", e);
+        } catch (error) {
+            console.warn("API profile update failed:", error);
         }
     };
 
@@ -678,6 +588,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         interests: string[];
     }) => {
         if (!user) return;
+
         setIsLoading(true);
         try {
             const updated: User = {
@@ -685,32 +596,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 ...data,
                 profileComplete: true,
             };
+
             await persistUser(updated);
+
             try {
                 await updateMyProfile({
                     ...data,
                     profileComplete: true,
                 });
-            } catch (e) {
-                console.warn("API completeProfile failed:", e);
+            } catch (error) {
+                console.warn("API completeProfile failed:", error);
             }
+
             router.replace("/(tabs)");
         } finally {
             setIsLoading(false);
         }
     };
 
-    // ── Microsoft Entra ID login ──────────────────────────────────
-
     const discovery = AuthSession.useAutoDiscovery(azureConfig.discoveryUrl);
 
     const redirectUri = AuthSession.makeRedirectUri({
         path: "redirect",
     });
-
-    // Log the redirect URI so you know exactly what to register in Azure
-    console.log("🔑 Auth redirect URI:", redirectUri);
-
 
     const [request, response, promptAsync] = AuthSession.useAuthRequest(
         {
@@ -747,32 +655,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 const idToken = tokenResponse.idToken;
                 if (!idToken) {
                     throw new Error("No id_token returned from Azure. Make sure 'openid' scope is included.");
-
                 }
 
                 const claims = decodeJwtPayload(idToken);
-                const email: string = claims.preferred_username ?? claims.email ?? "";
+                const email = String(claims.preferred_username ?? claims.email ?? "").toLowerCase().trim();
+                const userId = String(claims.oid ?? claims.sub ?? "azure-user-id");
+                const displayName = String(claims.name ?? "SAIT Student");
+                const roleFromClaims = normalizeRole(
+                    claims["campusbarter_role"] ?? claims["role"] ?? claims["roles"]?.[0]
+                );
 
-                // CIAM controls who can authenticate — trust any user who passes OAuth
-                // No additional email domain check needed here
-
-                const userId = claims.oid ?? claims.sub ?? "azure-user-id";
-                const displayName = claims.name ?? "SAIT Student";
-                const userEmail = email.toLowerCase().trim();
-                const roleFromClaims = normalizeRole(claims['campusbarter_role'] ?? claims['role'] ?? claims['roles']?.[0]);
-
-                // Set the API token BEFORE any API calls
                 setApiToken(idToken);
 
-                // Check if user already has a complete profile in Azure API
-                let existingProfile: any = null;
-                try {
-                    existingProfile = await getMyProfile();
-                } catch (e) {
-                    console.warn("Could not check existing profile:", e);
-                }
+                const existingProfile = await getMyProfile().catch((error) => {
+                    console.warn("Could not check existing profile:", error);
+                    return null;
+                });
 
-                const u = makeUser(userId, displayName, userEmail, {
+                const nextUser = makeUser(userId, displayName, email, {
                     bio: existingProfile?.bio ?? "CampusBarter student ready to trade skills!",
                     program: existingProfile?.program ?? "",
                     major: existingProfile?.major ?? "",
@@ -787,31 +687,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     role: normalizeRole(existingProfile?.role) ?? roleFromClaims,
                 });
 
-                await persistUser(u, idToken);
-                // Always go to tabs — ProfileSetupOverlay modal
-                // will appear on top if profileComplete is false
-
+                await persistUser(nextUser, idToken);
                 router.replace("/(tabs)");
-            } catch (err) {
-                console.error("Token exchange failed:", err);
-                alert(err instanceof Error ? err.message : "Microsoft login failed");
+            } catch (error) {
+                console.error("Token exchange failed:", error);
+                alert(error instanceof Error ? error.message : "Microsoft login failed");
             } finally {
                 setIsLoading(false);
             }
         })();
-
-    }, [response, discovery]);
+    }, [response, discovery, request, redirectUri]);
 
     const loginWithMicrosoft = async () => {
         if (!request) {
             alert("Microsoft login not ready yet. Please try again in a moment.");
             return;
         }
+
         setIsLoading(true);
         try {
             await promptAsync();
-        } catch (err) {
-            console.error("promptAsync failed:", err);
+        } catch (error) {
+            console.error("promptAsync failed:", error);
         } finally {
             setIsLoading(false);
         }
@@ -821,6 +718,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         <AuthContext.Provider
             value={{
                 user,
+                users,
                 isLoading,
                 login,
                 register,
@@ -833,16 +731,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 updateProfile,
                 completeProfile,
             }}
-
         >
             {children}
         </AuthContext.Provider>
     );
-=======
-  return (
-    <AuthContext.Provider value={{ user, users, isLoading, login, register, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
->>>>>>> Stashed changes
 };

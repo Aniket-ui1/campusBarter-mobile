@@ -31,7 +31,6 @@ export default function ListingDetail() {
             return;
         }
 
-<<<<<<< Updated upstream
         try {
             const conv = await chatApi.findOrCreate(listing.userId);
             const convId = (conv as any)?.conversation?.conversationId ?? (conv as any)?.conversationId;
@@ -45,18 +44,6 @@ export default function ListingDetail() {
                 Alert.alert("Error", "Could not start chat.");
             }
         }
-=======
-        if (listing.status === "CLOSED") {
-            Alert.alert("Exchange closed", "This listing has already been completed.");
-            return;
-        }
-
-        const chatId = startChat(listing.id, listing.title, [
-            { id: user.id, name: user.name },
-            { id: listing.userId, name: listing.userName },
-        ]);
-        router.push(`/chat/${chatId}`);
->>>>>>> Stashed changes
     };
 
     const submitReport = (reason: string) => {
