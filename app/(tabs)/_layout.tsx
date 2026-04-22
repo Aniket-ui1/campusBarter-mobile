@@ -77,6 +77,8 @@ export default function TabLayout() {
             </View>
           ),
         }} />
+        <Tabs.Screen name="chat" options={{ href: null }} />
+        <Tabs.Screen name="admin" options={{ href: null }} />
         {/* Hide explore from tab bar */}
         <Tabs.Screen name="explore" options={{ href: null }} />
       </Tabs>

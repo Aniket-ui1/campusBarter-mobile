@@ -24,40 +24,33 @@ export default function SkillDetailScreen() {
     const requestedCreditsRef = useRef(1);
     const [availableCredits, setAvailableCredits] = useState<number | null>(null);
     const listingId = listing?.id;
-    const listingCreditsRaw = Number(listing?.credits ?? 1);
 
     const isOwner = listing?.userId === user?.id;
 
     const formatDuration = (credits: number): string => {
-        if (credits === 0.5) return '30 minutes';
         return `${credits} hour${credits !== 1 ? 's' : ''}`;
     };
 
     const formatCredits = (credits: number): string => `${credits % 1 === 0 ? credits.toFixed(0) : credits.toFixed(1)} credit${credits !== 1 ? 's' : ''}`;
 
-    const roundToHalf = (value: number) => Math.round(value * 2) / 2;
-    const walletMaxCredits = availableCredits == null ? 8 : Math.max(0.5, Math.min(8, Math.floor((availableCredits + 1e-9) * 2) / 2));
-    const maxRequestCredits = Math.max(0.5, walletMaxCredits);
+    const maxRequestCredits = 3;
 
     const updateRequestedCredits = (rawValue: unknown) => {
         const numericValue = typeof rawValue === 'number'
             ? rawValue
-            : Number((rawValue as any)?.nativeEvent?.value ?? rawValue);
+            : Number((rawValue as any)?.nativeEvent?.value ?? (rawValue as any)?.value ?? rawValue);
         if (!Number.isFinite(numericValue)) return;
 
-        const rounded = Math.max(0.5, Math.min(maxRequestCredits, roundToHalf(numericValue)));
+        const rounded = Math.max(1, Math.min(maxRequestCredits, Math.round(numericValue)));
         requestedCreditsRef.current = rounded;
         setRequestedCredits(rounded);
     };
 
     useEffect(() => {
         if (!listingId) return;
-        if (Number.isFinite(listingCreditsRaw)) {
-            const clamped = Math.max(0.5, Math.min(8, roundToHalf(listingCreditsRaw)));
-            requestedCreditsRef.current = clamped;
-            setRequestedCredits(clamped);
-        }
-    }, [listingId, listingCreditsRaw]);
+        requestedCreditsRef.current = 1;
+        setRequestedCredits(1);
+    }, [listingId]);
 
     useEffect(() => {
         if (!user?.id) return;
@@ -75,7 +68,7 @@ export default function SkillDetailScreen() {
 
     useEffect(() => {
         setRequestedCredits((current) => {
-            const next = Math.max(0.5, Math.min(maxRequestCredits, roundToHalf(current)));
+            const next = Math.max(1, Math.min(maxRequestCredits, Math.round(current)));
             requestedCreditsRef.current = next;
             return next;
         });
@@ -157,14 +150,21 @@ export default function SkillDetailScreen() {
             console.log(`[Request] Selected credits from slider: ${selectedCredits} (${formatDuration(selectedCredits)})`);
             
             // Validate selection is in valid range
-            if (!Number.isFinite(selectedCredits) || selectedCredits < 0.5) {
-                Alert.alert('Invalid Selection', 'Please select a valid request duration (minimum 30 minutes).');
+            if (!Number.isFinite(selectedCredits) || !Number.isInteger(selectedCredits) || selectedCredits < 1 || selectedCredits > maxRequestCredits) {
+                Alert.alert('Invalid Selection', 'Please select a valid request duration between 1 and 3 hours.');
                 return;
             }
 
             // Check if user has enough credits
             if (currentBalance != null && currentBalance < selectedCredits) {
-                const maxAffordable = Math.max(0.5, Math.min(8, roundToHalf(currentBalance)));
+                const maxAffordable = Math.min(maxRequestCredits, Math.floor(currentBalance));
+                if (maxAffordable < 1) {
+                    Alert.alert(
+                        'Not Enough Credits',
+                        `You have ${formatCredits(currentBalance)} available, but requests require at least 1 credit (1 hour). Earn more by teaching your own skills.`
+                    );
+                    return;
+                }
                 Alert.alert(
                     'Not Enough Credits',
                     `You have ${formatCredits(currentBalance)} available, but this request needs ${formatCredits(selectedCredits)} (${formatDuration(selectedCredits)}).\n\nYou can request up to ${formatDuration(maxAffordable)} with your current balance. Earn more by teaching your own skills.`
@@ -358,9 +358,9 @@ export default function SkillDetailScreen() {
                             </View>
                             <Text style={styles.durationSub}>1 credit = 1 hour</Text>
                             <Slider
-                                minimumValue={0.5}
+                                minimumValue={1}
                                 maximumValue={maxRequestCredits}
-                                step={0.5}
+                                step={1}
                                 value={requestedCredits}
                                 onValueChange={updateRequestedCredits}
                                 onSlidingComplete={updateRequestedCredits}
@@ -369,8 +369,8 @@ export default function SkillDetailScreen() {
                                 thumbTintColor={catColor}
                             />
                             <View style={styles.durationScaleRow}>
-                                <Text style={styles.durationScaleText}>30 min</Text>
-                                <Text style={styles.durationScaleText}>{formatDuration(maxRequestCredits)}</Text>
+                                <Text style={styles.durationScaleText}>1 hour</Text>
+                                <Text style={styles.durationScaleText}>3 hours</Text>
                             </View>
                             <Text style={styles.durationCredits}>{formatCredits(requestedCredits)}</Text>
                         </View>

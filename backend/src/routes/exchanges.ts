@@ -26,10 +26,8 @@ exchangesRouter.post('/',
         body('credits')
             .exists().withMessage('credits is required')
             .bail()
-            .isFloat({ min: 0.5, max: 8 })
-            .withMessage('credits must be between 0.5 and 8')
-            .custom((value) => Math.round(Number(value) * 2) === Number(value) * 2)
-            .withMessage('credits must increment by 0.5'),
+            .isInt({ min: 1, max: 3 })
+            .withMessage('credits must be an integer between 1 and 3'),
     ]),
     async (req: Request, res: Response) => {
         try {
@@ -47,8 +45,8 @@ exchangesRouter.post('/',
             }
 
             const requestedCredits = Number(credits);
-            if (!Number.isFinite(requestedCredits) || requestedCredits < 0.5 || requestedCredits > 8) {
-                res.status(400).json({ error: 'Requested credits must be between 0.5 and 8' });
+            if (!Number.isFinite(requestedCredits) || !Number.isInteger(requestedCredits) || requestedCredits < 1 || requestedCredits > 3) {
+                res.status(400).json({ error: 'Requested credits must be an integer between 1 and 3' });
                 return;
             }
 
@@ -115,10 +113,7 @@ exchangesRouter.post('/:id/credits',
         body('credits')
             .exists().withMessage('credits is required')
             .bail()
-            .isFloat({ min: 0.5, max: 8 }).withMessage('credits must be between 0.5 and 8')
-            .bail()
-            .custom((value) => Math.round(Number(value) * 2) === Number(value) * 2)
-            .withMessage('credits must increment by 0.5'),
+            .isInt({ min: 1, max: 3 }).withMessage('credits must be an integer between 1 and 3'),
     ]),
     async (req: Request, res: Response) => {
         try {
